@@ -6,3 +6,5 @@ samples/full/
 data/
 checkpoints/
 .superpowers/
+~$*
+.claude/
