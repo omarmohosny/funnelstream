@@ -1,0 +1,182 @@
+"""Single table specification for the Gold tables and the Databricks Silver mirror.
+
+warehouse/ddl.sql (PostgreSQL fallback) and warehouse/databricks_ddl.sql (Delta) are both generated from
+this module by scripts/gen_ddl.py, so the two dialects cannot drift. Logical types: string, int, bigint,
+decimal(p,s), boolean, date, timestamp. Float is not allowed (money is decimal).
+"""
+import re
+from dataclasses import dataclass, field
+from typing import Optional, Tuple
+
+_TYPE_RE = re.compile(r"^(string|int|bigint|boolean|date|timestamp|decimal\(\d+,\d+\))$")
+
+
+@dataclass(frozen=True)
+class Column:
+    name: str
+    type: str
+    nullable: bool = True
+    identity: bool = False
+    note: str = ""
+
+    def __post_init__(self):
+        if not _TYPE_RE.match(self.type):
+            raise ValueError("unsupported logical type %r for column %s" % (self.type, self.name))
+
+
+@dataclass(frozen=True)
+class Table:
+    name: str
+    schema_group: str
+    columns: Tuple[Column, ...]
+    keys: Tuple[str, ...]
+    partition: Optional[str] = None
+    comment: str = ""
+
+    def __post_init__(self):
+        if self.schema_group not in ("gold", "silver"):
+            raise ValueError("schema_group must be gold or silver: %s" % self.schema_group)
+
+    def column_names(self):
+        return [c.name for c in self.columns]
+
+    def column(self, name):
+        return next(c for c in self.columns if c.name == name)
+
+
+def _parse(spec: str, keys, identity=()):
+    """'name:type[?]' items separated by whitespace; '?' marks nullable. Key columns and identity are NOT NULL."""
+    cols = []
+    for item in spec.split():
+        name, typ = item.split(":")
+        nullable = typ.endswith("?")
+        typ = typ.rstrip("?")
+        if name in keys or name in identity:
+            nullable = False
+        cols.append(Column(name, typ, nullable=nullable, identity=name in identity))
+    return tuple(cols)
+
+
+def _gold(name, spec, keys, identity=(), comment=""):
+    return Table(name, "gold", _parse(spec, keys, identity), tuple(keys), comment=comment)
+
+
+M = "decimal(12,2)"
+R = "decimal(8,4)"
+_SCD2 = "SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC"
+
+GOLD_TABLES = [
+    _gold("dim_customer",
+          "customer_key:bigint customer_id:string country:string? city:string? signup_date:date? "
+          "primary_device:string? marketing_consent:boolean? valid_from:timestamp valid_to:timestamp "
+          "is_current:boolean",
+          ["customer_key"], identity=["customer_key"], comment=_SCD2 + "; tracked: city, primary_device"),
+    _gold("dim_product",
+          "product_key:bigint product_id:string name:string? category:string? price:%s? is_active:boolean? "
+          "valid_from:timestamp valid_to:timestamp is_current:boolean" % M,
+          ["product_key"], identity=["product_key"], comment=_SCD2 + "; tracked: category, price"),
+    _gold("dim_campaign",
+          "campaign_key:bigint campaign_id:string utm_campaign:string? platform:string? name:string? "
+          "start_date:date? end_date:date?",
+          ["campaign_key"], identity=["campaign_key"], comment="campaign dimension, no history"),
+    _gold("dim_date",
+          "date_key:int date:date week:int month:int is_weekend:boolean is_friday_saturday:boolean "
+          "is_ramadan:boolean is_eid:boolean is_holiday:boolean",
+          ["date_key"], comment="calendar day, date_key is yyyymmdd"),
+    _gold("fact_orders",
+          "order_id:string customer_key:bigint? session_id:string? channel:string? utm_source:string? "
+          "utm_campaign:string? click_id:string? campaign_id:string? payment_method:string? carrier:string? "
+          "city:string? country:string? order_total:%s? current_status:string? status_rank:int? "
+          "order_created_at:timestamp? delivered_at:timestamp? cancelled_at:timestamp? "
+          "delivery_lead_hours:%s? delivery_failed_count:int? first_attempt_delivered:boolean? "
+          "is_cancelled:boolean? is_delivered:boolean? order_seq:int? is_first_order:boolean? date_key:int?"
+          % (M, M),
+          ["order_id"], comment="one row per order, current state"),
+    _gold("fact_order_lines",
+          "order_id:string line_no:int customer_key:bigint? product_key:bigint? date_key:int? city:string? "
+          "quantity:int? line_total:%s?" % M,
+          ["order_id", "line_no"], comment="one row per order line"),
+    _gold("fact_funnel_daily",
+          "event_date:date country:string channel:string payment_method:string sessions:bigint? "
+          "product_views:bigint? cart_sessions:bigint? checkout_sessions:bigint? orders:bigint? "
+          "cart_abandon_rate:%s? checkout_abandon_rate:%s?" % (R, R),
+          ["event_date", "country", "channel", "payment_method"],
+          comment="day, country, channel, payment method"),
+    _gold("fact_attribution",
+          "order_id:string model:string campaign_id:string? click_id:string? order_total:%s?" % M,
+          ["order_id", "model"], comment="model is last_touch or first_touch; NULL campaign means direct"),
+    _gold("fact_campaign_daily",
+          "campaign_id:string report_date:date platform:string? impressions:bigint? clicks:bigint? "
+          "spend:decimal(12,4)? orders_placed:bigint? orders_delivered:bigint? revenue_placed:{m}? "
+          "revenue_delivered:{m}? orders_cancelled:bigint? orders_failed_delivery:bigint? cancel_rate:{r}? "
+          "failed_delivery_rate:{r}? new_customer_orders:bigint? aov:{m}? ctr:{r}? conversion_rate:{r}? "
+          "cpa:{m}? roas_placed:{m}? roas_delivered:{m}? direct_share:{r}?".format(m=M, r=R),
+          ["campaign_id", "report_date"], comment="campaign per report date"),
+    _gold("fact_product_recs",
+          "segment_level:string segment_value:string anchor_product_id:string rank:int rec_product_id:string? "
+          "co_view_count:bigint? window_end:date?",
+          ["segment_level", "segment_value", "anchor_product_id", "rank"], comment="co-view recommendations"),
+    _gold("fact_city_product_daily",
+          "city:string product_id:string date_key:int sessions_viewed:bigint? add_to_cart:bigint? "
+          "units:bigint? revenue:%s?" % M,
+          ["city", "product_id", "date_key"], comment="city, product, day"),
+    _gold("fact_customer_360",
+          "customer_id:string customer_key:bigint? country:string? city:string? total_sessions:bigint? "
+          "product_views:bigint? add_to_cart_count:bigint? checkouts_count:bigint? orders_count:bigint? "
+          "delivered_count:bigint? cancelled_count:bigint? total_spend:%s? avg_order_value:%s? "
+          "first_order_at:timestamp? last_order_at:timestamp? last_seen_at:timestamp? "
+          "days_since_last_order:int? top_category:string? preferred_payment_method:string? "
+          "last_campaign_id:string? is_repeat_buyer:boolean?" % (M, M),
+          ["customer_id"], comment="customer current state (stretch)"),
+]
+
+
+def _spark_type(dt) -> str:
+    from pyspark.sql.types import BooleanType, DateType, DecimalType, IntegerType, StringType, TimestampType
+    if isinstance(dt, DecimalType):
+        return "decimal(%d,%d)" % (dt.precision, dt.scale)
+    for cls, name in ((StringType, "string"), (IntegerType, "int"), (BooleanType, "boolean"),
+                      (DateType, "date"), (TimestampType, "timestamp")):
+        if isinstance(dt, cls):
+            return name
+    raise ValueError("unmapped Spark type %r" % (dt,))
+
+
+_SILVER_KEYS = {
+    "silver_events": ("event_id",),
+    "silver_orders": ("order_id",),
+    "silver_order_status": ("event_id",),
+    "silver_order_items": ("order_id", "line_no"),
+    "silver_quarantine": (),
+    "silver_products": ("product_id", "updated_at"),
+    "silver_customers": ("customer_id", "updated_at"),
+}
+_PARTITIONED = ("silver_events", "silver_orders", "silver_order_status")
+
+
+def _silver_mirror():
+    from streaming.silver.spark_schemas import SCHEMAS
+    tables = []
+    for name in ("silver_events", "silver_orders", "silver_order_status", "silver_order_items",
+                 "silver_quarantine", "silver_products", "silver_customers"):
+        cols = tuple(Column(f.name, _spark_type(f.dataType)) for f in SCHEMAS[name].fields)
+        tables.append(Table(name, "silver", cols, _SILVER_KEYS[name],
+                            partition="event_date" if name in _PARTITIONED else None,
+                            comment="Databricks mirror of local Silver"))
+    snap = _parse("campaign_id:string? report_date:date? pulled_at:timestamp? utm_campaign:string? "
+                  "platform:string? impressions:bigint? clicks:bigint? spend:decimal(12,4)? currency:string?",
+                  keys=())
+    tables.append(Table("silver_campaign_snapshots", "silver", snap, ("campaign_id", "report_date", "pulled_at"),
+                        comment="Databricks mirror of local Silver"))
+    return tables
+
+
+SILVER_MIRROR_TABLES = _silver_mirror()
+
+
+def all_tables():
+    return list(GOLD_TABLES) + list(SILVER_MIRROR_TABLES)
+
+
+def gold_table(name: str) -> Table:
+    return next(t for t in GOLD_TABLES if t.name == name)

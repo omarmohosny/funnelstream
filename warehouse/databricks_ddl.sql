@@ -1,0 +1,334 @@
+-- GENERATED FILE, edit warehouse/tables.py and run scripts/gen_ddl.py
+-- Databricks (Delta, Unity Catalog). Keys are documented in COMMENT, not enforced.
+
+CREATE SCHEMA IF NOT EXISTS funnelstream.gold;
+
+CREATE SCHEMA IF NOT EXISTS funnelstream.silver;
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_customer (
+    customer_key BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id STRING NOT NULL,
+    country STRING,
+    city STRING,
+    signup_date DATE,
+    primary_device STRING,
+    marketing_consent BOOLEAN,
+    valid_from TIMESTAMP NOT NULL,
+    valid_to TIMESTAMP NOT NULL,
+    is_current BOOLEAN NOT NULL
+)
+USING DELTA
+COMMENT 'keys: customer_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; tracked: city, primary_device';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_product (
+    product_key BIGINT GENERATED ALWAYS AS IDENTITY,
+    product_id STRING NOT NULL,
+    name STRING,
+    category STRING,
+    price DECIMAL(12,2),
+    is_active BOOLEAN,
+    valid_from TIMESTAMP NOT NULL,
+    valid_to TIMESTAMP NOT NULL,
+    is_current BOOLEAN NOT NULL
+)
+USING DELTA
+COMMENT 'keys: product_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; tracked: category, price';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_campaign (
+    campaign_key BIGINT GENERATED ALWAYS AS IDENTITY,
+    campaign_id STRING NOT NULL,
+    utm_campaign STRING,
+    platform STRING,
+    name STRING,
+    start_date DATE,
+    end_date DATE
+)
+USING DELTA
+COMMENT 'keys: campaign_key (documented, not enforced); campaign dimension, no history';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_date (
+    date_key INT NOT NULL,
+    date DATE NOT NULL,
+    week INT NOT NULL,
+    month INT NOT NULL,
+    is_weekend BOOLEAN NOT NULL,
+    is_friday_saturday BOOLEAN NOT NULL,
+    is_ramadan BOOLEAN NOT NULL,
+    is_eid BOOLEAN NOT NULL,
+    is_holiday BOOLEAN NOT NULL
+)
+USING DELTA
+COMMENT 'keys: date_key (documented, not enforced); calendar day, date_key is yyyymmdd';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_orders (
+    order_id STRING NOT NULL,
+    customer_key BIGINT,
+    session_id STRING,
+    channel STRING,
+    utm_source STRING,
+    utm_campaign STRING,
+    click_id STRING,
+    campaign_id STRING,
+    payment_method STRING,
+    carrier STRING,
+    city STRING,
+    country STRING,
+    order_total DECIMAL(12,2),
+    current_status STRING,
+    status_rank INT,
+    order_created_at TIMESTAMP,
+    delivered_at TIMESTAMP,
+    cancelled_at TIMESTAMP,
+    delivery_lead_hours DECIMAL(12,2),
+    delivery_failed_count INT,
+    first_attempt_delivered BOOLEAN,
+    is_cancelled BOOLEAN,
+    is_delivered BOOLEAN,
+    order_seq INT,
+    is_first_order BOOLEAN,
+    date_key INT
+)
+USING DELTA
+COMMENT 'keys: order_id (documented, not enforced); one row per order, current state';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_order_lines (
+    order_id STRING NOT NULL,
+    line_no INT NOT NULL,
+    customer_key BIGINT,
+    product_key BIGINT,
+    date_key INT,
+    city STRING,
+    quantity INT,
+    line_total DECIMAL(12,2)
+)
+USING DELTA
+COMMENT 'keys: order_id, line_no (documented, not enforced); one row per order line';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_funnel_daily (
+    event_date DATE NOT NULL,
+    country STRING NOT NULL,
+    channel STRING NOT NULL,
+    payment_method STRING NOT NULL,
+    sessions BIGINT,
+    product_views BIGINT,
+    cart_sessions BIGINT,
+    checkout_sessions BIGINT,
+    orders BIGINT,
+    cart_abandon_rate DECIMAL(8,4),
+    checkout_abandon_rate DECIMAL(8,4)
+)
+USING DELTA
+COMMENT 'keys: event_date, country, channel, payment_method (documented, not enforced); day, country, channel, payment method';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_attribution (
+    order_id STRING NOT NULL,
+    model STRING NOT NULL,
+    campaign_id STRING,
+    click_id STRING,
+    order_total DECIMAL(12,2)
+)
+USING DELTA
+COMMENT 'keys: order_id, model (documented, not enforced); model is last_touch or first_touch; NULL campaign means direct';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_campaign_daily (
+    campaign_id STRING NOT NULL,
+    report_date DATE NOT NULL,
+    platform STRING,
+    impressions BIGINT,
+    clicks BIGINT,
+    spend DECIMAL(12,4),
+    orders_placed BIGINT,
+    orders_delivered BIGINT,
+    revenue_placed DECIMAL(12,2),
+    revenue_delivered DECIMAL(12,2),
+    orders_cancelled BIGINT,
+    orders_failed_delivery BIGINT,
+    cancel_rate DECIMAL(8,4),
+    failed_delivery_rate DECIMAL(8,4),
+    new_customer_orders BIGINT,
+    aov DECIMAL(12,2),
+    ctr DECIMAL(8,4),
+    conversion_rate DECIMAL(8,4),
+    cpa DECIMAL(12,2),
+    roas_placed DECIMAL(12,2),
+    roas_delivered DECIMAL(12,2),
+    direct_share DECIMAL(8,4)
+)
+USING DELTA
+COMMENT 'keys: campaign_id, report_date (documented, not enforced); campaign per report date';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_product_recs (
+    segment_level STRING NOT NULL,
+    segment_value STRING NOT NULL,
+    anchor_product_id STRING NOT NULL,
+    rank INT NOT NULL,
+    rec_product_id STRING,
+    co_view_count BIGINT,
+    window_end DATE
+)
+USING DELTA
+COMMENT 'keys: segment_level, segment_value, anchor_product_id, rank (documented, not enforced); co-view recommendations';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_city_product_daily (
+    city STRING NOT NULL,
+    product_id STRING NOT NULL,
+    date_key INT NOT NULL,
+    sessions_viewed BIGINT,
+    add_to_cart BIGINT,
+    units BIGINT,
+    revenue DECIMAL(12,2)
+)
+USING DELTA
+COMMENT 'keys: city, product_id, date_key (documented, not enforced); city, product, day';
+
+CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_customer_360 (
+    customer_id STRING NOT NULL,
+    customer_key BIGINT,
+    country STRING,
+    city STRING,
+    total_sessions BIGINT,
+    product_views BIGINT,
+    add_to_cart_count BIGINT,
+    checkouts_count BIGINT,
+    orders_count BIGINT,
+    delivered_count BIGINT,
+    cancelled_count BIGINT,
+    total_spend DECIMAL(12,2),
+    avg_order_value DECIMAL(12,2),
+    first_order_at TIMESTAMP,
+    last_order_at TIMESTAMP,
+    last_seen_at TIMESTAMP,
+    days_since_last_order INT,
+    top_category STRING,
+    preferred_payment_method STRING,
+    last_campaign_id STRING,
+    is_repeat_buyer BOOLEAN
+)
+USING DELTA
+COMMENT 'keys: customer_id (documented, not enforced); customer current state (stretch)';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_events (
+    event_id STRING,
+    event_type STRING,
+    event_time TIMESTAMP,
+    kafka_timestamp TIMESTAMP,
+    is_late BOOLEAN,
+    is_bot BOOLEAN,
+    event_version STRING,
+    session_id STRING,
+    customer_id STRING,
+    device STRING,
+    channel STRING,
+    country STRING,
+    city STRING,
+    campaign_id STRING,
+    utm_source STRING,
+    utm_campaign STRING,
+    click_id STRING,
+    product_id STRING,
+    element STRING,
+    dwell_seconds INT,
+    cart_id STRING,
+    order_id STRING,
+    search_term STRING,
+    event_date DATE
+)
+USING DELTA
+PARTITIONED BY (event_date)
+COMMENT 'keys: event_id (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_orders (
+    order_id STRING,
+    customer_id STRING,
+    session_id STRING,
+    channel STRING,
+    utm_source STRING,
+    utm_campaign STRING,
+    click_id STRING,
+    payment_method STRING,
+    city STRING,
+    country STRING,
+    order_total DECIMAL(12,2),
+    order_created_at TIMESTAMP,
+    event_date DATE
+)
+USING DELTA
+PARTITIONED BY (event_date)
+COMMENT 'keys: order_id (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_order_status (
+    event_id STRING,
+    order_id STRING,
+    customer_id STRING,
+    status STRING,
+    status_rank INT,
+    status_time TIMESTAMP,
+    payment_method STRING,
+    carrier STRING,
+    reason STRING,
+    event_date DATE
+)
+USING DELTA
+PARTITIONED BY (event_date)
+COMMENT 'keys: event_id (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_order_items (
+    order_id STRING,
+    line_no INT,
+    product_id STRING,
+    quantity INT,
+    unit_price DECIMAL(12,2),
+    line_total DECIMAL(12,2),
+    currency STRING,
+    order_time TIMESTAMP
+)
+USING DELTA
+COMMENT 'keys: order_id, line_no (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_quarantine (
+    quarantine_id STRING,
+    raw_payload STRING,
+    source_topic STRING,
+    error_code STRING,
+    error_detail STRING,
+    received_at TIMESTAMP
+)
+USING DELTA
+COMMENT 'keys: none; Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_products (
+    product_id STRING,
+    updated_at TIMESTAMP,
+    name STRING,
+    category STRING,
+    price DECIMAL(10,2),
+    is_active BOOLEAN
+)
+USING DELTA
+COMMENT 'keys: product_id, updated_at (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_customers (
+    customer_id STRING,
+    updated_at TIMESTAMP,
+    country STRING,
+    city STRING,
+    signup_date DATE,
+    primary_device STRING,
+    marketing_consent BOOLEAN
+)
+USING DELTA
+COMMENT 'keys: customer_id, updated_at (documented, not enforced); Databricks mirror of local Silver';
+
+CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_campaign_snapshots (
+    campaign_id STRING,
+    report_date DATE,
+    pulled_at TIMESTAMP,
+    utm_campaign STRING,
+    platform STRING,
+    impressions BIGINT,
+    clicks BIGINT,
+    spend DECIMAL(12,4),
+    currency STRING
+)
+USING DELTA
+COMMENT 'keys: campaign_id, report_date, pulled_at (documented, not enforced); Databricks mirror of local Silver';

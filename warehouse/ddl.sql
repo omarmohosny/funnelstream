@@ -1,0 +1,221 @@
+-- GENERATED FILE, edit warehouse/tables.py and run scripts/gen_ddl.py
+-- PostgreSQL fallback for the Gold tables. Safe to run more than once.
+
+-- Roles are created NOLOGIN: logins are created by the operator and granted analyst or engineer.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'analyst') THEN
+        CREATE ROLE analyst NOLOGIN;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'engineer') THEN
+        CREATE ROLE engineer NOLOGIN;
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS dim_customer (
+    customer_key bigint GENERATED ALWAYS AS IDENTITY,
+    customer_id text NOT NULL,
+    country text,
+    city text,
+    signup_date date,
+    primary_device text,
+    marketing_consent boolean,
+    valid_from timestamptz NOT NULL,
+    valid_to timestamptz NOT NULL,
+    is_current boolean NOT NULL,
+    PRIMARY KEY (customer_key),
+    UNIQUE (customer_id, valid_from)
+);
+
+CREATE TABLE IF NOT EXISTS dim_product (
+    product_key bigint GENERATED ALWAYS AS IDENTITY,
+    product_id text NOT NULL,
+    name text,
+    category text,
+    price numeric(12,2),
+    is_active boolean,
+    valid_from timestamptz NOT NULL,
+    valid_to timestamptz NOT NULL,
+    is_current boolean NOT NULL,
+    PRIMARY KEY (product_key),
+    UNIQUE (product_id, valid_from)
+);
+
+CREATE TABLE IF NOT EXISTS dim_campaign (
+    campaign_key bigint GENERATED ALWAYS AS IDENTITY,
+    campaign_id text NOT NULL,
+    utm_campaign text,
+    platform text,
+    name text,
+    start_date date,
+    end_date date,
+    PRIMARY KEY (campaign_key)
+);
+
+CREATE TABLE IF NOT EXISTS dim_date (
+    date_key integer NOT NULL,
+    date date NOT NULL,
+    week integer NOT NULL,
+    month integer NOT NULL,
+    is_weekend boolean NOT NULL,
+    is_friday_saturday boolean NOT NULL,
+    is_ramadan boolean NOT NULL,
+    is_eid boolean NOT NULL,
+    is_holiday boolean NOT NULL,
+    PRIMARY KEY (date_key)
+);
+
+CREATE TABLE IF NOT EXISTS fact_orders (
+    order_id text NOT NULL,
+    customer_key bigint,
+    session_id text,
+    channel text,
+    utm_source text,
+    utm_campaign text,
+    click_id text,
+    campaign_id text,
+    payment_method text,
+    carrier text,
+    city text,
+    country text,
+    order_total numeric(12,2),
+    current_status text,
+    status_rank integer,
+    order_created_at timestamptz,
+    delivered_at timestamptz,
+    cancelled_at timestamptz,
+    delivery_lead_hours numeric(12,2),
+    delivery_failed_count integer,
+    first_attempt_delivered boolean,
+    is_cancelled boolean,
+    is_delivered boolean,
+    order_seq integer,
+    is_first_order boolean,
+    date_key integer,
+    PRIMARY KEY (order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_orders_date_key ON fact_orders (date_key);
+
+CREATE TABLE IF NOT EXISTS fact_order_lines (
+    order_id text NOT NULL,
+    line_no integer NOT NULL,
+    customer_key bigint,
+    product_key bigint,
+    date_key integer,
+    city text,
+    quantity integer,
+    line_total numeric(12,2),
+    PRIMARY KEY (order_id, line_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_order_lines_date_key ON fact_order_lines (date_key);
+
+CREATE TABLE IF NOT EXISTS fact_funnel_daily (
+    event_date date NOT NULL,
+    country text NOT NULL,
+    channel text NOT NULL,
+    payment_method text NOT NULL,
+    sessions bigint,
+    product_views bigint,
+    cart_sessions bigint,
+    checkout_sessions bigint,
+    orders bigint,
+    cart_abandon_rate numeric(8,4),
+    checkout_abandon_rate numeric(8,4),
+    PRIMARY KEY (event_date, country, channel, payment_method)
+);
+
+CREATE TABLE IF NOT EXISTS fact_attribution (
+    order_id text NOT NULL,
+    model text NOT NULL,
+    campaign_id text,
+    click_id text,
+    order_total numeric(12,2),
+    PRIMARY KEY (order_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS fact_campaign_daily (
+    campaign_id text NOT NULL,
+    report_date date NOT NULL,
+    platform text,
+    impressions bigint,
+    clicks bigint,
+    spend numeric(12,4),
+    orders_placed bigint,
+    orders_delivered bigint,
+    revenue_placed numeric(12,2),
+    revenue_delivered numeric(12,2),
+    orders_cancelled bigint,
+    orders_failed_delivery bigint,
+    cancel_rate numeric(8,4),
+    failed_delivery_rate numeric(8,4),
+    new_customer_orders bigint,
+    aov numeric(12,2),
+    ctr numeric(8,4),
+    conversion_rate numeric(8,4),
+    cpa numeric(12,2),
+    roas_placed numeric(12,2),
+    roas_delivered numeric(12,2),
+    direct_share numeric(8,4),
+    PRIMARY KEY (campaign_id, report_date)
+);
+
+CREATE TABLE IF NOT EXISTS fact_product_recs (
+    segment_level text NOT NULL,
+    segment_value text NOT NULL,
+    anchor_product_id text NOT NULL,
+    rank integer NOT NULL,
+    rec_product_id text,
+    co_view_count bigint,
+    window_end date,
+    PRIMARY KEY (segment_level, segment_value, anchor_product_id, rank)
+);
+
+CREATE TABLE IF NOT EXISTS fact_city_product_daily (
+    city text NOT NULL,
+    product_id text NOT NULL,
+    date_key integer NOT NULL,
+    sessions_viewed bigint,
+    add_to_cart bigint,
+    units bigint,
+    revenue numeric(12,2),
+    PRIMARY KEY (city, product_id, date_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_city_product_daily_date_key ON fact_city_product_daily (date_key);
+
+CREATE TABLE IF NOT EXISTS fact_customer_360 (
+    customer_id text NOT NULL,
+    customer_key bigint,
+    country text,
+    city text,
+    total_sessions bigint,
+    product_views bigint,
+    add_to_cart_count bigint,
+    checkouts_count bigint,
+    orders_count bigint,
+    delivered_count bigint,
+    cancelled_count bigint,
+    total_spend numeric(12,2),
+    avg_order_value numeric(12,2),
+    first_order_at timestamptz,
+    last_order_at timestamptz,
+    last_seen_at timestamptz,
+    days_since_last_order integer,
+    top_category text,
+    preferred_payment_method text,
+    last_campaign_id text,
+    is_repeat_buyer boolean,
+    PRIMARY KEY (customer_id)
+);
+
+GRANT SELECT ON dim_customer, dim_product, dim_campaign, dim_date, fact_orders, fact_order_lines, fact_funnel_daily, fact_attribution, fact_campaign_daily, fact_product_recs, fact_city_product_daily, fact_customer_360 TO analyst;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON dim_customer, dim_product, dim_campaign, dim_date, fact_orders, fact_order_lines, fact_funnel_daily, fact_attribution, fact_campaign_daily, fact_product_recs, fact_city_product_daily, fact_customer_360 TO engineer;
