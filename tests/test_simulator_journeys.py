@@ -125,3 +125,42 @@ def test_reproducibility_with_seed():
         assert e1["event_type"] == e2["event_type"], "Event types differ"
         assert e1["event_time"] == e2["event_time"], "Event times differ"
         assert e1["payload"] == e2["payload"], "Payloads differ"
+
+
+def test_id_format_and_uniqueness():
+    """Test that IDs have correct format and no duplicates across 5000 journeys."""
+    import re
+
+    catalog = make_catalog(11)
+    customers = make_customers(11, 50)
+    rng = random.Random(11)
+
+    all_event_ids = []
+    all_session_ids_set = set()
+    all_order_ids = []
+    id_pattern = re.compile(r"^(evt|sess|ord)_[0-9a-f]{16}$")
+
+    for i in range(5000):
+        cust = customers[i % len(customers)]
+        camp = CAMPAIGN if i % 2 == 0 else None
+        events = journey(rng, cust, catalog, camp, START)
+
+        for e in events:
+            # Check event_id format and collect
+            assert id_pattern.match(e["event_id"]), f"Invalid event_id format: {e['event_id']}"
+            all_event_ids.append(e["event_id"])
+
+            # Check session_id format and collect
+            assert id_pattern.match(e["session_id"]), f"Invalid session_id format: {e['session_id']}"
+            all_session_ids_set.add(e["session_id"])
+
+            # Check order_id format if present
+            if "order_id" in e["payload"]:
+                order_id = e["payload"]["order_id"]
+                assert id_pattern.match(order_id), f"Invalid order_id format: {order_id}"
+                all_order_ids.append(order_id)
+
+    # Check for duplicates
+    assert len(all_event_ids) == len(set(all_event_ids)), f"Found duplicate event_ids: {len(all_event_ids)} events but {len(set(all_event_ids))} unique IDs"
+    assert len(all_session_ids_set) == 5000, f"Expected 5000 unique session_ids, got {len(all_session_ids_set)}"
+    assert len(all_order_ids) == len(set(all_order_ids)), f"Found duplicate order_ids: {len(all_order_ids)} orders but {len(set(all_order_ids))} unique IDs"

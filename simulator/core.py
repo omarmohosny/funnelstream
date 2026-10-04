@@ -1,8 +1,11 @@
+import random
 from datetime import timedelta
 
 
 def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None):
-    event_id = f"evt_{rng.getrandbits(48):012x}" if rng else "evt_placeholder"
+    if rng is None:
+        rng = random.Random()
+    event_id = f"evt_{rng.getrandbits(64):016x}"
     e = {
         "event_id": event_id,
         "event_type": event_type,
@@ -22,7 +25,7 @@ def _event(event_type, t, session_id, customer_id, device, channel, country, cit
 
 def journey(rng, customer, catalog, campaign, start):
     """Build one session of app events. Funnel drop-off happens at each step."""
-    session_id = f"sess_{rng.getrandbits(40):010x}"
+    session_id = f"sess_{rng.getrandbits(64):016x}"
     customer_id = customer["customer_id"] if customer else None
     device = customer["device_primary"] if customer else rng.choice(["mobile", "desktop"])
     city = customer["city"] if customer else "Cairo"
@@ -65,6 +68,6 @@ def journey(rng, customer, catalog, campaign, start):
         if rng.random() < 0.45:
             add("checkout_started", {"cart_id": cart_id})
             if rng.random() < 0.7:
-                order_id = f"ord_{rng.getrandbits(32):08x}"
+                order_id = f"ord_{rng.getrandbits(64):016x}"
                 add("purchase", {"order_id": order_id, "total": item["price"]})
     return events
