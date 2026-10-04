@@ -1,0 +1,29 @@
+import random
+from datetime import date, datetime, timezone
+
+CAMPAIGNS = [
+    {"campaign_id": "camp_201", "utm_campaign": "eid_sale_1", "utm_source": "google", "platform": "google", "channel": "paid_search", "daily_budget": 1500.0},
+    {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1", "utm_source": "meta", "platform": "meta", "channel": "paid_social", "daily_budget": 2000.0},
+    {"campaign_id": "camp_203", "utm_campaign": "retarget_cart_1", "utm_source": "meta", "platform": "meta", "channel": "paid_social", "daily_budget": 600.0},
+]
+
+
+def campaign_numbers(campaign_id: str, report_date: date, as_of: datetime, seed: int) -> dict:
+    camp = next(c for c in CAMPAIGNS if c["campaign_id"] == campaign_id)
+    day_start = datetime(report_date.year, report_date.month, report_date.day, tzinfo=timezone.utc)
+    frac = max(0.0, min(1.0, (as_of - day_start).total_seconds() / 86400))
+    rng = random.Random(f"{seed}-{campaign_id}-{report_date.isoformat()}")
+    cpm = rng.uniform(18, 35)
+    ctr = rng.uniform(0.01, 0.04)
+    full_spend = camp["daily_budget"] * rng.uniform(0.85, 1.05)
+    impressions = int(full_spend / cpm * 1000 * frac)
+    clicks = int(impressions * ctr)
+    return {
+        "campaign_id": campaign_id,
+        "report_date": report_date.isoformat(),
+        "pulled_at": as_of.isoformat(),
+        "impressions": impressions,
+        "clicks": clicks,
+        "spend": round(full_spend * frac, 4),
+        "currency": "EGP",
+    }
