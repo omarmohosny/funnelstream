@@ -29,8 +29,6 @@ def get_spark(app_name: str, with_kafka: bool = False) -> SparkSession:
         .config("spark.sql.shuffle.partitions", "8")
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.ui.enabled", "false")
-        .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.RawLocalFileSystem")
-        .config("spark.hadoop.fs.file.impl.disable.cache", "true")
     )
     extra = [KAFKA_PACKAGE] if with_kafka else []
     return configure_spark_with_delta_pip(builder, extra_packages=extra).getOrCreate()

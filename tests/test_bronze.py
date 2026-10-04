@@ -8,7 +8,9 @@ from pyspark.sql import Row
 from streaming.jobs.bronze_ingest import (
     BRONZE_TABLES,
     bronze_frame,
+    await_all,
     bronze_path,
+    kafka_options,
     checkpoint_path,
 )
 
@@ -18,7 +20,7 @@ VALUES = ['{"event_id":"evt_1"}', '{"name":"Zoë \u2603 \\"quoted\\" it\'s"}']
 def _raw(spark):
     ts = dt.datetime(2026, 1, 1, 12, 0, 0)
     rows = [
-        Row(key=b"k", value=v.encode("utf-8"), topic="app.events",
+        Row(key=b"k", value=None if v is None else v.encode("utf-8"), topic="app.events",
             partition=2, offset=17 + i, timestamp=ts)
         for i, v in enumerate(VALUES)
     ]
@@ -32,6 +34,7 @@ def test_bronze_keeps_raw_value_and_metadata(spark):
                            "kafka_offset", "kafka_timestamp", "ingest_time",
                            "ingest_date"]
     rows = sorted(out.collect(), key=lambda r: r["kafka_offset"])
+    assert len(rows) == len(VALUES)
     assert [r["raw_value"] for r in rows] == VALUES
     assert rows[0]["kafka_topic"] == "app.events"
     assert rows[0]["kafka_partition"] == 2
@@ -57,10 +60,10 @@ def test_delta_round_trip_is_append_only(spark, tmp_path):
     df = bronze_frame(_raw(spark))
     df.write.format("delta").partitionBy("ingest_date").mode("append").save(target)
     back = spark.read.format("delta").load(target)
-    assert back.count() == 2
-    assert sorted(r["raw_value"] for r in back.collect()) == sorted(VALUES)
+    assert back.count() == len(VALUES)
+    assert sorted((r["raw_value"] or "") for r in back.collect()) == sorted(v or "" for v in VALUES)
     df.write.format("delta").partitionBy("ingest_date").mode("append").save(target)
-    assert spark.read.format("delta").load(target).count() == 4
+    assert spark.read.format("delta").load(target).count() == 2 * len(VALUES)
 
 
 def test_no_object_store_references():
@@ -80,3 +83,48 @@ def test_run_against_kafka():
     finally:
         for q in queries:
             q.stop()
+
+
+def test_kafka_options():
+    o = kafka_options("h:1", "orders")
+    assert o["failOnDataLoss"] == "false"
+    assert o["startingOffsets"] == "earliest"
+    assert o["subscribe"] == "orders"
+    assert o["kafka.bootstrap.servers"] == "h:1"
+
+
+class _Q:
+    def __init__(self, err=None):
+        self.err, self.stopped = err, False
+
+    def awaitTermination(self):
+        if self.err:
+            raise self.err
+
+    def stop(self):
+        self.stopped = True
+
+
+class _Streams:
+    def __init__(self, err):
+        self.err = err
+
+    def awaitAnyTermination(self):
+        raise self.err
+
+
+class _Spark:
+    def __init__(self, err):
+        self.streams = _Streams(err)
+
+
+def test_await_all_raises_and_stops_others():
+    qs = [_Q(), _Q(), _Q()]
+    with pytest.raises(RuntimeError):
+        await_all(qs, _Spark(RuntimeError("boom")))
+    assert all(q.stopped for q in qs)
+
+
+def test_main_uses_await_any_termination():
+    text = Path("streaming/jobs/bronze_ingest.py").read_text(encoding="utf-8")
+    assert "awaitAnyTermination" in text

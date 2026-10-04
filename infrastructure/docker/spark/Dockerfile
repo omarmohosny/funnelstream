@@ -13,3 +13,5 @@ RUN pip install --no-cache-dir pyspark==3.5.1 delta-spark==3.2.0 pyyaml==6.0.1 \
 
 WORKDIR /app
 ENV PYTHONPATH=/app
+
+# Runs as root, so files written under data/ are owned by root on the host mount.
