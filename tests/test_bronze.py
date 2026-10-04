@@ -57,9 +57,8 @@ def test_tables_and_paths():
         "orders": "bronze_orders",
         "delivery.events": "bronze_delivery_events",
     }
-    assert Path(bronze_path("lake", "orders")) == Path("lake/bronze/bronze_orders")
-    assert Path(checkpoint_path("ck", "delivery.events")) == Path(
-        "ck/bronze_delivery_events")
+    assert Path(bronze_path("lake", "orders")) == Path("lake").resolve() / "bronze" / "bronze_orders"  # absolute
+    assert Path(checkpoint_path("ck", "delivery.events")) == Path("ck").resolve() / "bronze_delivery_events"
 
 
 @pytest.mark.spark

@@ -191,6 +191,7 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None):
 
 
 def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False):
+    lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
     spark = get_spark("silver_clean")
     frames = [spark.readStream.format("delta").option("maxBytesPerTrigger", "64m")
               .load(bronze_path(lake_root, topic)) for topic in BRONZE_TABLES]

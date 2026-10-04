@@ -1,6 +1,11 @@
 """Seed silver_products and silver_customers from the simulator catalog (reference data for Silver)."""
 import argparse
 import os
+import sys
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -54,6 +59,7 @@ def seed(spark, lake, updated_at, catalog, customers):
     from streaming.silver.spark_schemas import SCHEMAS, coerce_row
     from streaming.silver.writer import SILVER_KEYS, merge_insert, silver_path
 
+    lake = os.path.abspath(lake)
     products, custs = catalog_to_silver_rows(catalog, customers, updated_at)
     for table, rows in (("silver_products", products), ("silver_customers", custs)):
         path = silver_path(lake, table)

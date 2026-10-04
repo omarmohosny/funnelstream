@@ -1,9 +1,15 @@
 import argparse
 import json
+import os
 import random
+import sys
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from simulator.campaigns import CAMPAIGNS
 from simulator.catalog import make_catalog, make_customers
@@ -12,10 +18,10 @@ from simulator.noise import NoiseConfig, NoiseCounter, apply_noise, apply_noise_
 from simulator.orders import make_order
 from simulator.publish import Publisher, route
 
-AVG_EVENTS_PER_SESSION = 12  # rough mean (app events + order events) per session
+AVG_EVENTS_PER_SESSION = 12  # measured: 12.0 to 12.3 (app + order events) per session over seeds 3 and 11
 
 
-def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, mean_gap=None):
+def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, mean_gap=None, starts=None):
     """Yield (topic_hint, event) pairs session by session without touching Kafka.
 
     topic_hint is 'app' or 'order'. Stops after `sessions` journeys or once `max_events`
@@ -38,6 +44,8 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
         cust = rng.choice(customers) if rng.random() < 0.85 else None
         camp = rng.choice(CAMPAIGNS) if rng.random() < 0.4 else None
         events = journey(rng, cust, catalog, camp, t)
+        if starts is not None:
+            starts[events[0]["session_id"]] = t
         click_id = ("clk_" + events[0]["session_id"][5:]) if camp else None
         for e in events:
             if "utm_campaign" in e["payload"]:
@@ -104,6 +112,61 @@ def compress_orders(batch, time_scale):
     return batch
 
 
+def compress_sessions(batch, session_scale, starts=None):
+    """Live mode: shrink the time spread inside each session by session_scale.
+
+    A journey lasts minutes (median 131 s, max 300 s), so without this the last sessions keep emitting for
+    minutes after the last session starts and the effective rate falls far below --rate. Offsets from the
+    session start (first event if starts is not given) are divided by session_scale (monotone, so order is kept). The order_created
+    event follows its purchase; other events of that order keep their offset from order_created (shrunk
+    afterwards by compress_orders).
+    """
+    if not session_scale or session_scale == 1:
+        return batch
+    anchors = dict(starts or {})
+    for hint, e in batch:
+        if hint == "app" and e["session_id"] not in anchors:
+            t = datetime.fromisoformat(e["event_time"])
+            sid = e["session_id"]
+            if sid not in anchors or t < anchors[sid]:
+                anchors[sid] = t
+
+    def mapped(sid, t):
+        a = anchors[sid]
+        return a + (t - a) / session_scale
+
+    shift = {}
+    for hint, e in batch:
+        if hint == "order" and e["event_type"] == "order_created":
+            sid = e["payload"].get("session_id")
+            if sid in anchors:
+                t = datetime.fromisoformat(e["event_time"])
+                shift[e["order_id"]] = mapped(sid, t) - t
+    for hint, e in batch:
+        t = datetime.fromisoformat(e["event_time"])
+        if hint == "app":
+            e["event_time"] = mapped(e["session_id"], t).isoformat()
+        elif e["order_id"] in shift:
+            e["event_time"] = (t + shift[e["order_id"]]).isoformat()
+    return batch
+
+
+def cap_order_tail(batch, max_tail):
+    """Live mode: scale every order's offset from order_created so the longest is at most max_tail seconds."""
+    starts = {e["order_id"]: datetime.fromisoformat(e["event_time"])
+              for hint, e in batch if e["event_type"] == "order_created"}
+    longest = max((datetime.fromisoformat(e["event_time"]) - starts[e["order_id"]]).total_seconds()
+                  for hint, e in batch if hint == "order" and e["order_id"] in starts) if starts else 0
+    if not max_tail or longest <= max_tail:
+        return batch
+    f = max_tail / longest
+    for hint, e in batch:
+        if hint == "order" and e["order_id"] in starts:
+            s = starts[e["order_id"]]
+            e["event_time"] = (s + (datetime.fromisoformat(e["event_time"]) - s) * f).isoformat()
+    return batch
+
+
 def pace_stream(timed, emit, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
     """Like pace_live for a (hint, payload, pace_time) stream: never emit before pace_time."""
     for hint, payload, t in timed:
@@ -121,7 +184,12 @@ def build_parser():
     ap.add_argument("--start", default=None, help="ISO start time; default now-7d (history mode)")
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--rate", type=float, default=200.0, help="live: events per second")
-    ap.add_argument("--time-scale", type=float, default=3600.0, help="live: order lifecycle compression")
+    ap.add_argument("--time-scale", type=float, default=21600.0,
+                    help="live: order lifecycle compression (21600: 6 hours become 1 second)")
+    ap.add_argument("--session-scale", type=float, default=60.0,
+                    help="live: compress the time spread inside a session (a 5 minute session takes 5 s)")
+    ap.add_argument("--max-tail-seconds", type=float, default=60.0,
+                    help="live: longest delay of an order lifecycle event after its order_created")
     ap.add_argument("--noise-off", action="store_true", help="publish clean events only")
     ap.add_argument("--noise-scale", type=float, default=1.0, help="multiply every noise rate")
     ap.add_argument("--manifest", default="noise_manifest.json", help="where to write the noise manifest")
@@ -129,7 +197,7 @@ def build_parser():
 
 
 def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, rate=200.0,
-                 time_scale=3600.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
+                 time_scale=21600.0, session_scale=60.0, max_tail=60.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
     """iter_batch -> (history guard) -> apply_noise -> publish; writes the noise manifest.
 
     The history guard runs BEFORE noise, so future_timestamp noise events (intentionally in
@@ -150,8 +218,12 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
 
     if live:
         mean_gap = AVG_EVENTS_PER_SESSION / rate
-        batch = list(iter_batch(rng, customers, catalog, start, max_events=events, mean_gap=mean_gap))
+        starts = {}
+        batch = list(iter_batch(rng, customers, catalog, start, max_events=events, mean_gap=mean_gap,
+                                starts=starts))
+        compress_sessions(batch, session_scale, starts)
         compress_orders(batch, time_scale)
+        cap_order_tail(batch, max_tail)
         batch.sort(key=lambda he: datetime.fromisoformat(he[1]["event_time"]))
         timed = apply_noise_timed(iter(batch), noise_rng, config, catalog_ids, counter, now=now)
         pace_stream(timed, emit, now_fn, sleep_fn)
@@ -172,7 +244,8 @@ def main():
     config = NoiseConfig.off() if args.noise_off else NoiseConfig().scaled(args.noise_scale)
     pub = Publisher(args.bootstrap)
     counts = run_pipeline(seed=args.seed, events=args.events, start=start, now=now, live=args.live, pub=pub,
-                          config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale)
+                          config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale,
+                          session_scale=args.session_scale, max_tail=args.max_tail_seconds)
     print(dict(counts), "total", sum(counts.values()))
 
 

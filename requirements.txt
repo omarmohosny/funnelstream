@@ -1,4 +1,4 @@
-# pyspark and delta-spark need Python 3.11 and Java 17
+# pyspark and delta-spark run in the Docker image (Python 3.11 and Java are inside it); no Java is needed on the host
 pyspark==3.5.1
 delta-spark==3.2.0
 confluent-kafka==2.4.0

@@ -16,11 +16,11 @@ BRONZE_TABLES = {
 
 
 def bronze_path(lake_root: str, topic: str) -> str:
-    return os.path.join(lake_root, "bronze", BRONZE_TABLES[topic])
+    return os.path.join(os.path.abspath(lake_root), "bronze", BRONZE_TABLES[topic])
 
 
 def checkpoint_path(checkpoint_root: str, topic: str) -> str:
-    return os.path.join(checkpoint_root, BRONZE_TABLES[topic])
+    return os.path.join(os.path.abspath(checkpoint_root), BRONZE_TABLES[topic])
 
 
 def bronze_frame(raw: DataFrame) -> DataFrame:
@@ -63,6 +63,7 @@ def run(bootstrap: str, lake_root: str = "data/lake",
         checkpoint_root: str = "data/checkpoints", topics=None):
     from streaming.common.spark import get_spark
 
+    lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
     spark = get_spark("bronze_ingest", with_kafka=True)
     queries = []
     for topic in topics or list(BRONZE_TABLES):
@@ -82,5 +83,12 @@ def run(bootstrap: str, lake_root: str = "data/lake",
 if __name__ == "__main__":
     from pyspark.sql import SparkSession
 
-    qs = run(os.environ.get("KAFKA_BOOTSTRAP", "kafka:19092"))
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Continuous Bronze ingest from Kafka (stop with Ctrl+C or timeout)")
+    ap.add_argument("--bootstrap", default=os.environ.get("KAFKA_BOOTSTRAP", "kafka:19092"))
+    ap.add_argument("--lake", default="data/lake")
+    ap.add_argument("--checkpoints", default="data/checkpoints")
+    args = ap.parse_args()
+    qs = run(args.bootstrap, args.lake, args.checkpoints)
     await_all(qs, SparkSession.getActiveSession())

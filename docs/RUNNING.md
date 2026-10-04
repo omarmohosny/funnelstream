@@ -40,32 +40,32 @@ Host (Spark tests are skipped on Windows). Takes about 6 seconds.
 .venv\Scripts\python -m pytest -q
 ```
 
-Observed: `231 passed, 43 skipped`. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
+Observed: `246 passed, 45 skipped`. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
 
-Everything including Spark tests, in Docker. Takes about 6 minutes (373 s observed).
+Everything including Spark tests, in Docker. Takes about 6 to 8 minutes (501 s observed).
 
 ```powershell
 docker compose build spark
 docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests -q
 ```
 
-Observed: `272 passed, 2 skipped`. The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
+Observed: `289 passed, 2 skipped` (about 8 minutes). The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
 
 ## Run the pipeline step by step
 
-Two rules for the Spark steps (see Troubleshooting for why):
+Notes:
 
-1. Run Python modules with `-m` (for example `python -m scripts.run_simulator`), not as `python scripts/run_simulator.py`, from the repo root.
-2. For jobs that create Delta tables through the MERGE API (seed, Silver) pass absolute container paths, `/app/data/lake` and `/app/data/checkpoints`. The repo is mounted at `/app` in the container.
+- Scripts run both as plain files (`python scripts/run_simulator.py`) and as modules (`python -m scripts.run_simulator`), from any folder.
+- Lake and checkpoint paths may be relative (`data/lake`, `data/checkpoints`); every job turns them into absolute paths itself. In the Spark container the working directory is `/app` (the repo is mounted there), so `data/lake` is the `data\lake` folder in the repo.
 
 ### 0. Clean state (only if you ran before)
 
 ```powershell
 Remove-Item -Recurse -Force data\lake, data\checkpoints, noise_manifest.json -ErrorAction SilentlyContinue
-docker compose down
+docker compose down -v
 ```
 
-`docker compose down` removes the Kafka container and its topics. Without it, old messages stay in Kafka and Bronze will ingest them again, so counts will not match a fresh run.
+Kafka keeps its messages inside its container. A rerun without `docker compose down` re-ingests the old Kafka messages (a new Bronze checkpoint reads the topics from the start), so counts will not match a fresh run. `docker compose down` removes the containers, and with them the Kafka topics and messages. `docker compose down -v` also deletes the named volumes: `pgdata` (Postgres data) and `ivycache` (the downloaded Spark jars, so the next Spark run downloads them again). Use plain `down` if you only want clean Kafka and want to keep the jar cache. After either, start again from step 1.
 
 ### 1. Start Kafka and create topics
 
@@ -95,7 +95,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafk
 ### 2. Generate data (history mode, noise on)
 
 ```powershell
-.venv\Scripts\python -m scripts.run_simulator --events 20000 --seed 7 --bootstrap localhost:9092
+.venv\Scripts\python scripts/run_simulator.py --events 20000 --seed 7 --bootstrap localhost:9092
 ```
 
 Takes a few seconds. Expected last line:
@@ -111,10 +111,10 @@ It also writes `noise_manifest.json` in the current folder (git-ignored). Its `t
 Bronze is a continuous stream. Run it for a bounded time and let `timeout` stop it:
 
 ```powershell
-docker compose run --rm spark timeout 120 python -m streaming.jobs.bronze_ingest
+docker compose run --rm spark timeout 120 python -m streaming.jobs.bronze_ingest --lake data/lake --checkpoints data/checkpoints
 ```
 
-It ends after 120 s with exit code 124 (expected, that is `timeout`). The first run also downloads Spark jars (extra minute or two). It writes Delta tables under `data/lake/bronze/` and checkpoints under `data/checkpoints/`. The data was consumed in well under 120 s.
+Bronze never finishes on its own, so `timeout` stops it: it ends after 120 s with exit code 124 (`$LASTEXITCODE` is 124). That is expected, not a failure. Data is safe because each 10 s micro-batch is committed to Delta. The first run also downloads Spark jars (extra minute or two). It writes Delta tables under `data/lake/bronze/` and checkpoints under `data/checkpoints/`. The data was consumed in well under 120 s.
 
 Count the Bronze rows. This uses a one-off Spark script; save it as `data\count.py` (inside the git-ignored `data` folder) and delete it afterwards:
 
@@ -139,7 +139,7 @@ Expected: 19053, 751, 402, total 20206, equal to the simulator total and `total_
 ### 4. Seed reference data (products and customers)
 
 ```powershell
-docker compose run --rm spark python -m scripts.seed_silver_reference --lake /app/data/lake
+docker compose run --rm spark python scripts/seed_silver_reference.py --lake data/lake
 ```
 
 About 15 s. Expected last line: `silver_products 200 rows offered; silver_customers 5000 rows offered`. Silver needs this to recognise valid product ids.
@@ -147,7 +147,7 @@ About 15 s. Expected last line: `silver_products 200 rows offered; silver_custom
 ### 5. Silver
 
 ```powershell
-docker compose run --rm spark python -m streaming.jobs.silver_clean --once --lake /app/data/lake --checkpoints /app/data/checkpoints
+docker compose run --rm spark python -m streaming.jobs.silver_clean --once --lake data/lake --checkpoints data/checkpoints
 ```
 
 About 40 s. Expected log line:
@@ -156,7 +156,7 @@ About 40 s. Expected log line:
 INFO:silver_clean:batch 0: {'silver_events': 18577, 'silver_orders': 151, 'silver_order_status': 1125, 'silver_order_items': 286, 'silver_quarantine': 301}
 ```
 
-Row counts after this step (same `count.py`, paths `/app/data/lake/silver/<table>`):
+Row counts after this step (same `count.py`, paths `data/lake/silver/<table>`):
 
 | Table | Rows |
 |---|---|
@@ -175,7 +175,7 @@ Running Silver again changes nothing (checked: same counts, and also the same af
 ### 6. Gold reference build
 
 ```powershell
-docker compose run --rm spark python -m streaming.gold.build --out data/lake/gold_ref
+docker compose run --rm spark python -m streaming.gold.build --lake data/lake --out data/lake/gold_ref
 ```
 
 About 25 s. Expected:
@@ -190,12 +190,12 @@ This is a local reference build under `data/lake/gold_ref`, not the real Gold st
 
 ### 7. Live metrics
 
-There is no command-line entry point for the refresh; call the function:
-
 ```powershell
-docker compose run --rm spark python -c "from streaming.common.spark import get_spark; from streaming.gold.live import refresh_live_metrics; print('WROTE', refresh_live_metrics(get_spark('live'), '/app/data/lake', minutes=60))"
-docker compose run --rm spark python scripts/show_live.py --lake /app/data/lake
+docker compose run --rm spark python -m streaming.gold.live --lake data/lake --minutes 60
+docker compose run --rm spark python scripts/show_live.py --lake data/lake
 ```
+
+Options of `streaming.gold.live`: `--lake` (default `data/lake`), `--minutes` (window, default 60), `--lookback-hours` (bot detection lookback, default 6). It prints `WROTE <path> (<n> minute rows)`; after the history run: `WROTE /app/data/lake/live/live_metrics_minute (0 minute rows)`.
 
 With history-mode data this table is empty (it only counts non-late events from the last 60 minutes; history events are 1 to 7 days old and flagged late). `show_live.py` then prints an empty table. Use the live demo below to see rows.
 
@@ -212,33 +212,32 @@ docker compose run --rm spark python -m streaming.jobs.bronze_ingest
 Terminal 2, Silver streaming:
 
 ```powershell
-docker compose run --rm spark python -m streaming.jobs.silver_clean --lake /app/data/lake --checkpoints /app/data/checkpoints
+docker compose run --rm spark python -m streaming.jobs.silver_clean --lake data/lake --checkpoints data/checkpoints
 ```
 
 Terminal 3, simulator:
 
 ```powershell
-.venv\Scripts\python -m scripts.run_simulator --live --rate 50 --events 3000 --seed 11 --bootstrap localhost:9092
+.venv\Scripts\python scripts/run_simulator.py --live --rate 50 --events 3000 --seed 11 --bootstrap localhost:9092
 ```
 
-Observed: `{'app.events': 2999, 'orders': 116, 'delivery.events': 70} total 3185`. It took 6 min 22 s, not the roughly 1 minute `--rate 50` suggests: the real rate was about 8 events per second. Use a smaller `--events` (for example 1000) for a shorter demo. Silver processed micro-batches every 10 s while it ran (about 200 to 370 events per batch). If you bound Bronze and Silver with `timeout`, make it longer than the simulator run, otherwise finish with one more Bronze run and `silver_clean --once`.
+Live options: `--rate` (sessions are spaced so the app-event rate is about this value), `--time-scale` (default 21600: order lifecycle delays are divided by it, so 6 hours become 1 second), `--session-scale` (default 60: the time spread inside one session is divided by it, so a 5 minute session takes 5 s), `--max-tail-seconds` (default 60: no order event comes later than this after its order_created). Event order is kept.
+
+Observed after the pacing fix: `{'app.events': 2853, 'orders': 115, 'delivery.events': 70} total 3038` in 66 s. Before the fix the same command took 6 min 22 s (about 8 events per second): a session lasts up to 5 minutes and was replayed in real time, so events kept coming for minutes after the last session started. Use a smaller `--events` for a shorter demo. If you bound Bronze and Silver with `timeout`, make it longer than the simulator run, otherwise finish with one more Bronze run (`timeout 60 ... bronze_ingest`) and `silver_clean --once`.
 
 Then refresh and show:
 
 ```powershell
-docker compose run --rm spark python -c "from streaming.common.spark import get_spark; from streaming.gold.live import refresh_live_metrics; print('WROTE', refresh_live_metrics(get_spark('live'), '/app/data/lake', minutes=60))"
-docker compose run --rm spark python scripts/show_live.py --lake /app/data/lake --n 5
+docker compose run --rm spark python -m streaming.gold.live --lake data/lake --minutes 60
+docker compose run --rm spark python scripts/show_live.py --lake data/lake --n 5
 ```
 
-Observed output (columns minute_start, country, events, active_sessions, product_views, add_to_cart, orders_placed), newest first:
+Observed after a history run plus the live run above (then `timeout 60` Bronze and `silver_clean --once`): `WROTE /app/data/lake/live/live_metrics_minute (2 minute rows)`. Columns: minute_start, country, events, active_sessions, product_views, add_to_cart, orders_placed, newest first:
 
 ```
-2026-10-04 20:01:00 EG    4   1   0   1  1
-2026-10-04 20:00:00 EG   44  20   7   9  6
-2026-10-04 19:59:00 EG  283  86  72  31  8
+2026-10-04 20:23:00  EG  1572  144  479  49  14
+2026-10-04 20:22:00  EG  1151  111  349  45  12
 ```
-
-After this run Bronze held 23391 rows (20206 + 3185, equal to the messages published) and Silver 21510 events, 174 orders, 1309 order_status, 335 order_items, 337 quarantine.
 
 ## What is not built yet
 
@@ -253,19 +252,19 @@ docker compose stop
 Remove-Item -Recurse -Force data\lake, data\checkpoints, data\count.py, noise_manifest.json -ErrorAction SilentlyContinue
 ```
 
-`stop` keeps the images and the Kafka container (and its messages). For a fully fresh Kafka use `docker compose down`.
+`stop` keeps the images and the Kafka container (and its messages). For a fully fresh Kafka use `docker compose down` (add `-v` to also delete the Postgres volume and the Spark jar cache; see step 0).
 
 ## Troubleshooting
 
-Problems hit during the smoke run:
+Problems hit during the smoke runs:
 
-- `ModuleNotFoundError: No module named 'simulator'` when running `.venv\Scripts\python scripts/run_simulator.py ...`. The script is not run as a module so the repo root is not on the path. Use `.venv\Scripts\python -m scripts.run_simulator ...` from the repo root (or set `$env:PYTHONPATH = "."`). The Spark container sets PYTHONPATH itself, which is why `python scripts/show_live.py` works there.
-- `AnalysisException: data/lake/silver/silver_products is not a valid name for tables/databases` from `scripts.seed_silver_reference` (and the same code path in Silver). Diagnosis: Delta's table builder treats the relative path as a table name. Pass absolute container paths: `--lake /app/data/lake` (and `--checkpoints /app/data/checkpoints` for Silver). Not tried: Silver with relative paths, but it uses the same writer.
+- `ModuleNotFoundError: No module named 'simulator'` when running `python scripts/run_simulator.py` (older checkouts). Fixed: every script in `scripts/` puts the repo root on `sys.path` itself.
+- `AnalysisException: data/lake/silver/silver_products is not a valid name for tables/databases` (older checkouts). Fixed: all jobs and writer helpers turn paths into absolute paths, so relative `data/lake` works.
 - Bash on Windows (Git Bash) rewrites `/opt/kafka/...` into a Windows path (`exec: "C:/Users/.../kafka-topics.sh": no such file`). Use PowerShell, or set `MSYS_NO_PATHCONV=1`.
 - PowerShell prints `NativeCommandError` or red text for Docker progress lines (for example "Container ... Creating"). Docker writes progress to stderr; it is not a failure. Check the exit code (`$LASTEXITCODE`) or the final output.
 - `silver_clean` without `--once` never exits; stop with Ctrl+C. Bronze ingest also never exits, hence `timeout 120` (exit code 124 is normal).
-- Bronze or Silver counts too high on a rerun: Kafka still holds the earlier messages. Run `docker compose down`, delete `data\lake` and `data\checkpoints`, then start again from step 1.
-- Live demo simulator much slower than `--rate` suggests (6 min for 3000 events at `--rate 50`). Use fewer events.
+- Bronze or Silver counts too high on a rerun: Kafka still holds the earlier messages. Run `docker compose down` (or `down -v`), delete `data\lake` and `data\checkpoints`, then start again from step 1.
+- Live demo slower than expected (older checkouts took 6 min for 3000 events at `--rate 50`). Fixed with `--session-scale` and `--max-tail-seconds`; 3000 events at `--rate 50` now take about 66 s.
 - Live metrics table empty after the history run. Expected, see step 7.
 
 General:

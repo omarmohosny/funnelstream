@@ -37,7 +37,7 @@ pip install -r requirements.txt
 pytest
 ```
 
-Spark tasks (7 onward) need Python 3.11 and Java 17. See the comment at the top of `requirements.txt`.
+Spark tasks (7 onward) run in Docker. The host needs Python 3.11 only for the simulator and the host tests. Java is NOT needed on the host: Java is inside the Spark Docker image. See [docs/RUNNING.md](docs/RUNNING.md).
 
 ## Spark in Docker
 

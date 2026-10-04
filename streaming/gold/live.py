@@ -14,7 +14,7 @@ DEFAULT_PATH = "data/lake/live/live_metrics_minute"
 
 
 def live_path(lake_root: str = "data/lake") -> str:
-    return os.path.join(lake_root, "live", "live_metrics_minute")
+    return os.path.join(os.path.abspath(lake_root), "live", "live_metrics_minute")
 
 
 def build_live_metrics_minute(silver_events: DataFrame) -> DataFrame:
@@ -38,6 +38,7 @@ def build_live_metrics_minute(silver_events: DataFrame) -> DataFrame:
 
 def write_live_metrics(df: DataFrame, path: str = DEFAULT_PATH) -> str:
     """Full overwrite (no replaceWhere) of the Delta table at path with the recomputed window."""
+    path = os.path.abspath(path)
     df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(path)
     return path
 
@@ -52,6 +53,7 @@ def refresh_live_metrics(spark, lake_root: str = "data/lake", minutes: int = 60,
     bot_lookback_hours but which has events inside the window is counted as normal.
     Returns the path written (<lake_root>/live/live_metrics_minute).
     """
+    lake_root = os.path.abspath(lake_root)
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is not None:
         now = now.astimezone(timezone.utc).replace(tzinfo=None)
@@ -64,3 +66,26 @@ def refresh_live_metrics(spark, lake_root: str = "data/lake", minutes: int = 60,
     flagged = recent.join(F.broadcast(bots.withColumn("_bot", F.lit(True))), "session_id", "left")
     flagged = flagged.withColumn("is_bot", F.coalesce(F.col("_bot"), F.lit(False))).select(*recent.columns)
     return write_live_metrics(build_live_metrics_minute(flagged), live_path(lake_root))
+
+
+def main(argv=None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Recompute live_metrics_minute from Silver")
+    ap.add_argument("--lake", default="data/lake")
+    ap.add_argument("--minutes", type=int, default=60)
+    ap.add_argument("--lookback-hours", type=float, default=6)
+    args = ap.parse_args(argv)
+    from streaming.common.spark import get_spark
+
+    spark = get_spark("live_refresh")
+    path = refresh_live_metrics(spark, args.lake, minutes=args.minutes, bot_lookback_hours=args.lookback_hours)
+    rows = spark.read.format("delta").load(path).count()
+    print("WROTE %s (%d minute rows)" % (path, rows))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

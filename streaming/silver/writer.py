@@ -28,7 +28,7 @@ PARTITION_COLS = {
 
 
 def silver_path(lake_root: str, table: str) -> str:
-    return os.path.join(lake_root, "silver", table)
+    return os.path.join(os.path.abspath(lake_root), "silver", table)
 
 
 def _literal(value):
@@ -60,6 +60,7 @@ def merge_insert(spark, path, df, key_cols, partition_col=None):
     With partition_col, the batch's distinct values of that column are added to the MERGE condition so
     Delta prunes partitions.
     """
+    path = os.path.abspath(path)  # Delta treats a relative location as a table name
     df = df.dropDuplicates(list(key_cols))
     if not DeltaTable.isDeltaTable(spark, path):
         b = DeltaTable.createIfNotExists(spark).location(path).addColumns(df.schema)

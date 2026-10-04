@@ -18,6 +18,9 @@ def build_all(spark, lake_root: str = "data/lake", out_root=None) -> dict:
     Returns {table_name: DataFrame}; with out_root also writes each as Delta under <out_root>/<table>
     (overwrite) and returns DataFrames reading the written tables back.
     """
+    lake_root = os.path.abspath(lake_root)
+    out_root = os.path.abspath(out_root) if out_root else None
+
     def read(table):
         return spark.read.format("delta").load(silver_path(lake_root, table))
 
