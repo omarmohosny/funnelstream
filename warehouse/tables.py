@@ -70,11 +70,11 @@ GOLD_TABLES = [
           "customer_key:bigint customer_id:string country:string? city:string? signup_date:date? "
           "primary_device:string? marketing_consent:boolean? valid_from:timestamp valid_to:timestamp "
           "is_current:boolean",
-          ["customer_key"], identity=["customer_key"], comment=_SCD2 + "; tracked: city, primary_device"),
+          ["customer_key"], identity=["customer_key"], comment=_SCD2 + "; lookup: customer_id, is_current; tracked: city, primary_device"),
     _gold("dim_product",
           "product_key:bigint product_id:string name:string? category:string? price:%s? is_active:boolean? "
           "valid_from:timestamp valid_to:timestamp is_current:boolean" % M,
-          ["product_key"], identity=["product_key"], comment=_SCD2 + "; tracked: category, price"),
+          ["product_key"], identity=["product_key"], comment=_SCD2 + "; lookup: product_id, is_current; tracked: category, price"),
     _gold("dim_campaign",
           "campaign_key:bigint campaign_id:string utm_campaign:string? platform:string? name:string? "
           "start_date:date? end_date:date?",

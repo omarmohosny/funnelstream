@@ -1,5 +1,6 @@
 -- GENERATED FILE, edit warehouse/tables.py and run scripts/gen_ddl.py
 -- PostgreSQL fallback for the Gold tables. Safe to run more than once.
+-- Assumes schema public: no GRANT USAGE ON SCHEMA is issued for any other schema.
 
 -- Roles are created NOLOGIN: logins are created by the operator and granted analyst or engineer.
 DO $$

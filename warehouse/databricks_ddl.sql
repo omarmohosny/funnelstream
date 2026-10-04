@@ -1,5 +1,7 @@
 -- GENERATED FILE, edit warehouse/tables.py and run scripts/gen_ddl.py
 -- Databricks (Delta, Unity Catalog). Keys are documented in COMMENT, not enforced.
+-- The catalog funnelstream must exist before running (CREATE CATALOG is deliberately not issued).
+-- CREATE TABLE IF NOT EXISTS does not change an existing table: schema changes need an explicit ALTER or a drop.
 
 CREATE SCHEMA IF NOT EXISTS funnelstream.gold;
 
@@ -18,7 +20,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_customer (
     is_current BOOLEAN NOT NULL
 )
 USING DELTA
-COMMENT 'keys: customer_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; tracked: city, primary_device';
+COMMENT 'keys: customer_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; lookup: customer_id, is_current; tracked: city, primary_device';
 
 CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_product (
     product_key BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_product (
     is_current BOOLEAN NOT NULL
 )
 USING DELTA
-COMMENT 'keys: product_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; tracked: category, price';
+COMMENT 'keys: product_key (documented, not enforced); SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC; lookup: product_id, is_current; tracked: category, price';
 
 CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_campaign (
     campaign_key BIGINT GENERATED ALWAYS AS IDENTITY,

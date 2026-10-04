@@ -1,7 +1,7 @@
 """Generate warehouse/ddl.sql and warehouse/databricks_ddl.sql from warehouse/tables.py.
 
 Usage: python scripts/gen_ddl.py [--check] [--out-dir DIR]
---check exits non-zero when the files in the directory differ from the generated output.
+--check exits non-zero when the files in the directory differ from the generated output (CRLF tolerated).
 """
 import argparse
 import sys
@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     files = generate()
     if args.check:
         bad = [n for n, text in files.items()
-               if not (out / n).exists() or (out / n).read_bytes() != text.encode("utf-8")]
+               if not (out / n).exists() or (out / n).read_bytes().replace(b"\r\n", b"\n") !=text.encode("utf-8")]
         for n in bad:
             print("DRIFT: %s differs from generated output" % (out / n), file=sys.stderr)
         return 1 if bad else 0

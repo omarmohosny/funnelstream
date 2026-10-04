@@ -54,7 +54,8 @@ def _role_block(role):
 
 def render_postgres(tables) -> str:
     gold = _gold(tables)
-    blocks = [HEADER + "\n-- PostgreSQL fallback for the Gold tables. Safe to run more than once.",
+    blocks = [HEADER + "\n-- PostgreSQL fallback for the Gold tables. Safe to run more than once.\n"
+              "-- Assumes schema public: no GRANT USAGE ON SCHEMA is issued for any other schema.",
               "-- Roles are created NOLOGIN: logins are created by the operator and granted analyst or engineer.\n"
               + _role_block("analyst") + "\n\n" + _role_block("engineer")]
     for t in gold:
@@ -67,7 +68,48 @@ def render_postgres(tables) -> str:
 
 
 def _sq(text):
-    return text.replace("'", "''")
+    """Escape for a Databricks single-quoted string literal (backslash escapes)."""
+    return text.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def split_statements(sql: str) -> list:
+    """Split SQL on semicolons outside single-quoted strings (doubled and backslash-escaped quotes handled).
+
+    Line comments outside strings are dropped; empty and comment-only chunks are omitted. Each returned
+    statement keeps its terminating semicolon.
+    """
+    out, buf, i, n, quoted = [], [], 0, len(sql), False
+    while i < n:
+        ch = sql[i]
+        if quoted:
+            buf.append(ch)
+            if ch == "\\" and i + 1 < n:
+                buf.append(sql[i + 1])
+                i += 1
+            elif ch == "'":
+                quoted = False  # a doubled quote closes and immediately reopens
+            i += 1
+            continue
+        if ch == "'":
+            quoted = True
+        elif sql.startswith("--", i):
+            while i < n and sql[i] != "\n":
+                i += 1
+            continue
+        elif ch == ";":
+            buf.append(ch)
+            stmt = "".join(buf).strip()
+            if stmt != ";":
+                out.append(stmt)
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        out.append(tail)
+    return out
 
 
 def _dbx_table(t):
@@ -89,7 +131,10 @@ def _dbx_table(t):
 
 
 def render_databricks(tables) -> str:
-    blocks = [HEADER + "\n-- Databricks (Delta, Unity Catalog). Keys are documented in COMMENT, not enforced.",
+    blocks = [HEADER + "\n-- Databricks (Delta, Unity Catalog). Keys are documented in COMMENT, not enforced.\n"
+              "-- The catalog funnelstream must exist before running (CREATE CATALOG is deliberately not issued).\n"
+              "-- CREATE TABLE IF NOT EXISTS does not change an existing table: schema changes need an explicit "
+              "ALTER or a drop.",
               "CREATE SCHEMA IF NOT EXISTS %s.gold;" % CATALOG,
               "CREATE SCHEMA IF NOT EXISTS %s.silver;" % CATALOG]
     blocks.extend(_dbx_table(t) for t in tables)

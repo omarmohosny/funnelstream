@@ -57,7 +57,8 @@ def test_gold_columns_match_spec_section_7():
         assert set(t.column_names()) == want, name
         assert len(t.column_names()) == len(set(t.column_names())), name
         compared += len(want)
-    assert compared == 142  # spec columns + keys across the 12 tables
+        assert len(t.column_names()) == len(want), name
+    assert compared == sum(len(gold_table(n).column_names()) for n in EXPECTED_ORDER)
     for name in ("dim_customer", "dim_product"):
         assert {"valid_from", "valid_to", "is_current"} <= set(gold_table(name).column_names())
 
@@ -174,6 +175,9 @@ def test_databricks_render():
     assert "GENERATED FILE, edit warehouse/tables.py and run scripts/gen_ddl.py" in sql
     blk = next(s for s in _statements(sql) if ".dim_customer (" in s)
     assert "customer_key BIGINT GENERATED ALWAYS AS IDENTITY" in blk and "COMMENT 'keys: customer_key" in blk
+    assert "lookup: customer_id, is_current" in blk
+    assert "lookup: product_id, is_current" in next(s for s in _statements(sql) if ".dim_product (" in s)
+    assert "must exist before running" in sql and "does not change an existing table" in sql
     assert "event_id STRING," in next(s for s in _statements(sql) if ".silver_events (" in s)
 
 
@@ -238,3 +242,39 @@ def test_postgres_ddl_applies_twice_and_roles():
         conn.execute("RESET ROLE")
         conn.execute("DROP SCHEMA IF EXISTS %s CASCADE" % schema)
         conn.close()
+
+
+# review fixes
+def test_gitattributes_forces_lf_for_sql():
+    ga = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "*.sql text eol=lf" in ga.splitlines()
+
+
+def test_check_tolerates_crlf_but_rejects_content_change(tmp_path):
+    from scripts import gen_ddl
+    for name, text in gen_ddl.generate().items():
+        (tmp_path / name).write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    assert gen_ddl.main(["--check", "--out-dir", str(tmp_path)]) == 0
+    p = tmp_path / "ddl.sql"
+    p.write_bytes(p.read_bytes().replace(b"integer", b"bigint", 1))
+    assert gen_ddl.main(["--check", "--out-dir", str(tmp_path)]) != 0
+
+
+def test_split_statements_real_file_and_edge_cases():
+    sql = (ROOT / "warehouse" / "databricks_ddl.sql").read_text(encoding="utf-8")
+    stmts = ddl_render.split_statements(sql)
+    assert len(stmts) == len(all_tables()) + 2 == sum(1 for s in stmts if s.startswith("CREATE"))
+    assert sum(s.startswith("CREATE SCHEMA") for s in stmts) == 2
+    assert all(s.endswith(";") for s in stmts)
+    assert any("; SCD2" in s or "; " in s for s in stmts if ".dim_customer (" in s)  # semicolon inside COMMENT
+    assert ddl_render.split_statements("-- a; b\nSELECT 'x; y'; ;\n-- only comment;\n") ==["SELECT 'x; y';"]
+    assert ddl_render.split_statements("SELECT 'it''s; ok'; SELECT 2;") == ["SELECT 'it''s; ok';", "SELECT 2;"]
+    assert ddl_render.split_statements("SELECT 'it\\'s; ok'; SELECT 2;") == ["SELECT 'it\\'s; ok';", "SELECT 2;"]
+
+
+def test_databricks_comment_single_quote_is_backslash_escaped():
+    from dataclasses import replace
+    t = replace(gold_table("dim_date"), comment="it's a day")
+    sql = ddl_render.render_databricks([t])
+    assert "it\\'s a day" in sql and "it''s" not in sql
+    assert len(ddl_render.split_statements(sql)) == 3
