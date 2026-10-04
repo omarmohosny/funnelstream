@@ -17,18 +17,26 @@ def _ensure_java() -> None:
         os.environ["PATH"] = os.path.join(home, "bin") + os.pathsep + os.environ.get("PATH", "")
 
 
+def spark_conf() -> dict:
+    """Session settings. Everything runs in UTC: session zone, driver JVM, executor JVMs and the
+    Python workers (executorEnv TZ), so Spark timestamps never depend on the machine's local zone."""
+    return {
+        "spark.driver.memory": "2g",
+        "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
+        "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        "spark.sql.shuffle.partitions": "8",
+        "spark.sql.session.timeZone": "UTC",
+        "spark.executorEnv.TZ": "UTC",
+        "spark.driver.extraJavaOptions": "-Duser.timezone=UTC",
+        "spark.executor.extraJavaOptions": "-Duser.timezone=UTC",
+        "spark.ui.enabled": "false",
+    }
+
+
 def get_spark(app_name: str, with_kafka: bool = False) -> SparkSession:
     _ensure_java()
-    builder = (
-        SparkSession.builder.appName(app_name)
-        .master("local[2]")
-        .config("spark.driver.memory", "2g")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.ui.enabled", "false")
-    )
+    builder = SparkSession.builder.appName(app_name).master("local[2]")
+    for key, value in spark_conf().items():
+        builder = builder.config(key, value)
     extra = [KAFKA_PACKAGE] if with_kafka else []
     return configure_spark_with_delta_pip(builder, extra_packages=extra).getOrCreate()

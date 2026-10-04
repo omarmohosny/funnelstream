@@ -99,3 +99,26 @@ def test_catalog_to_silver_rows_has_no_pii_and_normalized_city():
     assert custs[1]["primary_device"] in ("mobile", "desktop", "tablet")
     for table, rows in (("silver_products", products), ("silver_customers", custs)):
         assert list(coerce_row(table, rows[0])) == SCHEMAS[table].names
+
+
+def test_partition_condition_builder():
+    from streaming.silver.writer import partition_condition
+
+    assert partition_condition("event_date", []) == ""
+    assert partition_condition("event_date", [date(2026, 10, 4)]) == "t.`event_date` IN (DATE'2026-10-04')"
+    many = partition_condition("event_date", [date(2026, 10, 5), date(2026, 10, 4), date(2026, 10, 5)])
+    assert many == "t.`event_date` IN (DATE'2026-10-04', DATE'2026-10-05')"
+    bs = chr(92)
+    assert partition_condition("c", ["it's", "a" + bs + "b"]) == "t.`c` IN ('a" + bs + bs + "b', 'it''s')"
+    assert partition_condition("c", [None]) == "t.`c` IS NULL"
+    assert partition_condition("c", ["x", None]) == "(t.`c` IN ('x') OR t.`c` IS NULL)"
+
+
+def test_spark_conf_pins_utc_everywhere():
+    from streaming.common.spark import spark_conf
+
+    c = spark_conf()
+    assert c["spark.sql.session.timeZone"] == "UTC"
+    assert c["spark.executorEnv.TZ"] == "UTC"
+    assert c["spark.driver.extraJavaOptions"] == "-Duser.timezone=UTC"
+    assert c["spark.executor.extraJavaOptions"] == "-Duser.timezone=UTC"

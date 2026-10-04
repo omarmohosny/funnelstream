@@ -16,8 +16,12 @@ silver_quarantine instead of silver_order_status. Only cancels of the current ba
 already in Silver are never touched. LIMITATION: a cancel that arrives (is written to Silver) BEFORE its
 shipped event stays in silver_order_status; the Gold status rank resolves it.
 
-Timestamps: Python values given to Spark are naive UTC datetimes, so Python workers must run with
-TZ=UTC (the Spark container does).
+Timezone: the session zone is UTC (see spark_conf). Naive datetimes that reach the Python workers are
+read as UTC explicitly (as_utc); the driver never converts timestamps through Python datetimes (status
+times are fetched as ISO strings and quarantine times are cast in Spark), so the driver's TZ is irrelevant.
+
+Cancels already present in silver_order_status are treated as decided: never quarantined or re-inserted,
+so a full replay leaves every count unchanged.
 
 process_batch returns, per Silver table, the number of rows in this batch after de-duplication on the
 table key (rows offered to the MERGE, not rows newly inserted).
@@ -31,6 +35,7 @@ from functools import partial
 from delta.tables import DeltaTable
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession, functions as F
+from pyspark.sql.types import StringType, StructField, StructType
 
 from streaming.common.spark import get_spark
 from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path
@@ -38,7 +43,7 @@ from streaming.silver.orders import split_cancel_after_ship
 from streaming.silver.schemas import TABLE_COLUMNS
 from streaming.silver.spark_schemas import SCHEMAS, coerce_row
 from streaming.silver.transform import transform_message
-from streaming.silver.writer import SILVER_KEYS, merge_insert, silver_path
+from streaming.silver.writer import PARTITION_COLS, SILVER_KEYS, merge_insert, silver_path
 
 log = logging.getLogger("silver_clean")
 
@@ -47,7 +52,8 @@ SILVER_TABLES = list(TABLE_COLUMNS)
 _warned_no_products = False
 
 
-def _utc(value):
+def as_utc(value):
+    """A datetime received from Spark (naive, UTC session zone) as an aware UTC datetime."""
     if value is None:
         return None
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -57,8 +63,8 @@ def _transform_partition(rows, known_bc, now):
     """Executor side: Bronze rows to (table, tuple-in-schema-order) pairs."""
     known = known_bc.value if known_bc is not None else None
     for r in rows:
-        received = _utc(r["ingest_time"])
-        kafka_ts = _utc(r["kafka_timestamp"]) or received
+        received = as_utc(r["ingest_time"])
+        kafka_ts = as_utc(r["kafka_timestamp"]) or received
         for table, row in transform_message(r["raw_value"], r["kafka_topic"], kafka_ts, received, known, now):
             yield table, tuple(coerce_row(table, row).values())
 
@@ -84,19 +90,13 @@ def load_known_products(lake_root, spark=None):
     return {r["product_id"] for r in spark.read.format("delta").load(path).select("product_id").collect()}
 
 
-def _iso(value):
-    if isinstance(value, datetime):
-        return _utc(value).isoformat()
-    return value
+_ISO = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx"
 
 
 def _status_dicts(df):
-    out = []
-    for r in df.collect():
-        d = r.asDict()
-        d["status_time"] = _iso(d["status_time"])
-        out.append(d)
-    return out
+    """Rows as dicts with status_time as an ISO string (formatted by Spark in the UTC session zone)."""
+    df = df.withColumn("status_time", F.date_format("status_time", _ISO))
+    return [r.asDict() for r in df.collect()]
 
 
 def _split_chunked(rows, now):
@@ -122,6 +122,11 @@ def _split_chunked(rows, now):
     return kept, quarantined
 
 
+_QUARANTINE_STR = StructType([
+    StructField(f.name, StringType() if f.name == "received_at" else f.dataType, True)
+    for f in SCHEMAS["silver_quarantine"].fields])
+
+
 def _cancel_after_ship(spark, status_df, lake_root, now):
     """Return (status_df without quarantined cancels, list of quarantine row dicts)."""
     rows = _status_dicts(status_df)
@@ -129,22 +134,22 @@ def _cancel_after_ship(spark, status_df, lake_root, now):
     if not cancel_orders:
         return status_df, []
     batch_ids = {r["event_id"] for r in rows}
-    relevant = [r for r in rows if r["order_id"] in cancel_orders]
+    existing, decided = [], set()
     path = silver_path(lake_root, "silver_order_status")
     if DeltaTable.isDeltaTable(spark, path):
         ids_df = spark.createDataFrame([(o,) for o in cancel_orders], "order_id string")
-        existing = (spark.read.format("delta").load(path).where(F.col("status") == "order_shipped")
-                    .join(F.broadcast(ids_df), "order_id", "left_semi"))
-        relevant += [r for r in _status_dicts(existing) if r["event_id"] not in batch_ids]
+        existing = _status_dicts(spark.read.format("delta").load(path)
+                                 .join(F.broadcast(ids_df), "order_id", "left_semi"))
+        decided = {r["event_id"] for r in existing
+                   if r["status"] == "order_cancelled" and r["event_id"] in batch_ids}
+    relevant = [r for r in rows if r["order_id"] in cancel_orders and r["event_id"] not in decided]
+    relevant += [r for r in existing if r["status"] == "order_shipped" and r["event_id"] not in batch_ids]
     _, quarantined = _split_chunked(relevant, now)
     quarantined = [q for q in quarantined if json.loads(q["raw_payload"])["event_id"] in batch_ids]
     if not quarantined:
         return status_df, []
-    bad_ids = {json.loads(q["raw_payload"])["event_id"] for q in quarantined}
-    kept_rows = [r for r in rows if r["event_id"] not in bad_ids]
-    kept_df = spark.createDataFrame([tuple(coerce_row("silver_order_status", r).values()) for r in kept_rows],
-                                    SCHEMAS["silver_order_status"])
-    return kept_df, quarantined
+    bad_ids = [json.loads(q["raw_payload"])["event_id"] for q in quarantined]
+    return status_df.where(~F.col("event_id").isin(bad_ids)), quarantined
 
 
 def process_batch(spark, bronze_df, lake_root, known_products, now=None):
@@ -165,16 +170,19 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None):
         frames["silver_order_status"], cancelled = _cancel_after_ship(
             spark, frames["silver_order_status"], lake_root, now)
         if cancelled:
-            extra = spark.createDataFrame(
-                [tuple(coerce_row("silver_quarantine", q).values()) for q in cancelled],
-                SCHEMAS["silver_quarantine"])
+            extra = (spark.createDataFrame(
+                [tuple(q["received_at"].isoformat() if c == "received_at" else q[c]
+                       for c in TABLE_COLUMNS["silver_quarantine"]) for q in cancelled], _QUARANTINE_STR)
+                .withColumn("received_at", F.col("received_at").cast("timestamp"))
+                .select(*TABLE_COLUMNS["silver_quarantine"]))
             frames["silver_quarantine"] = frames["silver_quarantine"].unionByName(extra)
         for table in SILVER_TABLES:
             df = frames[table].dropDuplicates(SILVER_KEYS[table])
             n = df.count()
             counts[table] = n
             if n:
-                merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table])
+                merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table],
+                             PARTITION_COLS.get(table))
     finally:
         pairs.unpersist()
         if known_bc is not None:

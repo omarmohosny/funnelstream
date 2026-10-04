@@ -42,12 +42,12 @@ MANIFEST_KINDS = ["malformed_json", "missing_field", "unknown_type", "bad_versio
 
 
 @lru_cache(maxsize=None)
-def simulated(max_events, noise=True, seed=SEED):
+def simulated(max_events, noise=True, seed=SEED, start=START):
     """(messages, manifest): messages are (topic, raw_value, kafka_timestamp) tuples."""
     rng, noise_rng = random.Random(seed), random.Random(seed * 1_000_003 + 7)
     counter = NoiseCounter()
     cfg = NoiseConfig() if noise else NoiseConfig.off()
-    stream = iter_batch(rng, CUSTOMERS, CATALOG, START, max_events=max_events)
+    stream = iter_batch(rng, CUSTOMERS, CATALOG, start, max_events=max_events)
     msgs = []
     for hint, payload in apply_noise(stream, noise_rng, cfg, CATALOG_IDS, counter, now=NOW):
         topic, _ = route(hint, payload)
@@ -266,3 +266,124 @@ def test_known_products_loading_and_unknown_product_quarantine(spark, tmp_path):
     lake2 = str(tmp_path / "lake2")
     process_batch(spark, bronze_df(spark, msgs), lake2, None, now=NOW)
     assert code_counts(spark, lake2).get("UNKNOWN_PRODUCT", 0) == 0
+
+
+# ---- review fixes ----
+def ref_counts(spark, lake):
+    return {t: silver(spark, lake, t).count() for t in ("silver_products", "silver_customers")}
+
+
+def test_seed_is_idempotent_and_adds_versions_only_for_changes(spark, tmp_path):
+    import copy as _copy
+    from scripts.seed_silver_reference import seed
+
+    lake = str(tmp_path / "lake")
+    t0 = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    customers = make_customers(SEED, 300)
+    assert seed(spark, lake, t0, CATALOG, customers) == (200, 300)
+    seed(spark, lake, t0, CATALOG, customers)
+    c = ref_counts(spark, lake)
+    assert c["silver_products"] == 200 and c["silver_customers"] == 300
+    t1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    seed(spark, lake, t1, CATALOG, customers)
+    c = ref_counts(spark, lake)
+    assert c["silver_products"] == 200 and c["silver_customers"] == 300  # nothing changed, no new version
+    changed = _copy.deepcopy(CATALOG)
+    changed[0]["price"] = changed[0]["price"] + 10
+    seed(spark, lake, t1, changed, customers)
+    seed(spark, lake, t1, changed, customers)
+    c = ref_counts(spark, lake)
+    print("\nSEED counts after changed price=%s" % c)
+    assert c["silver_products"] == 201 and c["silver_customers"] == 300
+    rows = silver(spark, lake, "silver_products").where(
+        F.col("product_id") == changed[0]["product_id"]).collect()
+    assert len(rows) == 2
+
+
+def test_silver_tables_are_partitioned_and_older_date_replay_dedups(spark, tmp_path):
+    from streaming.silver.writer import PARTITION_COLS
+
+    lake = str(tmp_path / "lake")
+    old, _ = simulated(4_000, seed=21, start=START)
+    new, _ = simulated(4_000, seed=22, start=START + timedelta(days=10))
+    process_batch(spark, bronze_df(spark, old), lake, None, now=NOW)
+    process_batch(spark, bronze_df(spark, new), lake, None, now=NOW)
+    first = silver_counts(spark, lake)
+    for table in ("silver_events", "silver_orders", "silver_order_status"):
+        detail = spark.sql("DESCRIBE DETAIL delta.`%s`" % silver_path(lake, table)).collect()[0]
+        assert list(detail["partitionColumns"]) == ["event_date"] == [PARTITION_COLS[table]]
+    for table in ("silver_order_items", "silver_quarantine"):
+        detail = spark.sql("DESCRIBE DETAIL delta.`%s`" % silver_path(lake, table)).collect()[0]
+        assert list(detail["partitionColumns"]) == []
+    n_dates = silver(spark, lake, "silver_events").select("event_date").distinct().count()
+    assert n_dates >= 2
+    process_batch(spark, bronze_df(spark, old), lake, None, now=NOW)  # replay the older date
+    print("\nPART dates=%d counts=%s replay_equal=%s" % (n_dates, first, silver_counts(spark, lake) == first))
+    assert silver_counts(spark, lake) == first
+    assert_unique_keys(spark, lake)
+
+
+def test_cancel_before_ship_stays_and_full_replay_changes_nothing(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    evs = _order_events("ord_r", CUSTOMERS[3], shipped=True, seed=8)
+    created, ship, cancel = evs
+    process_batch(spark, bronze_df(spark, _as_msgs([created, cancel])), lake, None, now=NOW)
+    process_batch(spark, bronze_df(spark, _as_msgs([ship])), lake, None, now=NOW)
+    first = silver_counts(spark, lake)
+    assert silver(spark, lake, "silver_order_status").where("status = 'order_cancelled'").count() == 1
+    assert first["silver_quarantine"] == 0
+    process_batch(spark, bronze_df(spark, _as_msgs(evs)), lake, None, now=NOW)
+    assert silver_counts(spark, lake) == first
+    print("\nCANCEL-BEFORE-SHIP counts=%s unchanged after replay" % first)
+
+
+def test_ship_then_cancel_gives_one_quarantine_row_and_replay_keeps_one(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    evs = _order_events("ord_s", CUSTOMERS[4], shipped=True, seed=9)
+    created, ship, cancel = evs
+    process_batch(spark, bronze_df(spark, _as_msgs([created, ship])), lake, None, now=NOW)
+    process_batch(spark, bronze_df(spark, _as_msgs([cancel])), lake, None, now=NOW)
+    first = silver_counts(spark, lake)
+    assert first["silver_quarantine"] == 1
+    process_batch(spark, bronze_df(spark, _as_msgs(evs)), lake, None, now=NOW)
+    assert silver_counts(spark, lake) == first
+    assert silver(spark, lake, "silver_order_status").where("status = 'order_cancelled'").count() == 0
+
+
+def test_driver_timezone_does_not_change_results(spark, tmp_path):
+    import os
+    import time
+
+    if not hasattr(time, "tzset"):
+        pytest.skip("tzset not available")
+    base = None
+    for hint, e in iter_batch(random.Random(3), CUSTOMERS, CATALOG, START, max_events=300):
+        if e["event_type"] == "page_view":
+            base = e
+            break
+    assert base is not None
+    msgs = []
+    for i, minutes_before in enumerate((5, 20)):  # kafka time is 2026-10-04T23:30Z
+        e = copy.deepcopy(base)
+        e["event_id"] = "evt_tz_%d" % i
+        e["event_time"] = (datetime(2026, 10, 4, 23, 30, tzinfo=timezone.utc)
+                           - timedelta(minutes=minutes_before)).isoformat()
+        msgs.append(("app.events", json.dumps(e), datetime(2026, 10, 4, 23, 30)))
+    df = bronze_df(spark, msgs)
+    lake = str(tmp_path / "lake")
+    old_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Tokyo"
+    time.tzset()
+    try:
+        process_batch(spark, df, lake, None, now=datetime(2026, 10, 6, tzinfo=timezone.utc))
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()
+    rows = {r["event_id"]: r for r in silver(spark, lake, "silver_events").collect()}
+    print("\nTZ rows=%s" % {k: (str(v["event_date"]), v["is_late"]) for k, v in rows.items()})
+    assert len(rows) == 2
+    assert all(str(r["event_date"]) == "2026-10-05" for r in rows.values())  # 23:xx UTC is 02:xx Cairo next day
+    assert rows["evt_tz_0"]["is_late"] is False and rows["evt_tz_1"]["is_late"] is True
