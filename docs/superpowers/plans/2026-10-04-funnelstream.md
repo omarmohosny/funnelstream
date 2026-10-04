@@ -1190,6 +1190,24 @@ Downstream handling is part of later tasks, and their tests must use noisy input
 
 ---
 
+## Amendment A: Databricks hybrid (replaces MinIO; ruled 2026-10-04, spec section 3)
+
+Binding changes to the tasks below. Where an older task text says MinIO, `s3a://`, or "Postgres serves Gold", this amendment wins.
+
+- **Task 1c (new, small, do first):** remove the `minio` service and `miniodata` volume from `docker-compose.yml`, remove MinIO variables from `.env.example`, update `tests/test_compose.py` (`REQUIRED = {"kafka", "postgres", "airflow"}`), keep the memory-limit test. Add `data/` to the layout (already git-ignored).
+- **Task 7:** Bronze path `data/lake/bronze/<table>`, checkpoint `data/checkpoints/<job>`. No `s3a://`, no hadoop-aws. `run()` takes local paths.
+- **Task 8:** Silver path `data/lake/silver/<table>`. Use `contracts.validate.validate_raw`, `contracts.normalize` and `streaming.common.bots.find_bot_sessions` as ruled in the ledger.
+- **Task 9:** the Gold builders stay pure Spark functions (`build_fact_orders`, `build_fact_order_lines`, `build_fact_funnel_daily`, `build_live_metrics_minute`). They run on Databricks over the Silver mirror, except `build_live_metrics_minute`, which also runs locally. No streaming writer to Postgres.
+- **Task 10:** `warehouse/ddl.sql` stays as the Postgres fallback schema. Add the Databricks DDL `warehouse/databricks_ddl.sql` (same tables in schema `funnelstream.gold`).
+- **Task 10b (new, after Task 10):** `warehouse/store.py` with `GoldStore` (abstract `upsert(table, rows, key_cols) -> int`), `PostgresStore` (wraps Task 10's `upsert`), `DatabricksStore` (databricks-sql-connector, `MERGE INTO` on the key columns, reads `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID` from the environment) and `get_store()` choosing the backend from env `GOLD_BACKEND` (`databricks` or `postgres`, default `postgres`). Add `scripts/publish_silver.py` that exports local Silver Delta tables to Parquet and uploads them to a Databricks volume, then runs `COPY INTO`/`MERGE` into the Silver mirror. Tests use a fake connection (no network): MERGE statement text per table, idempotence, backend selection, missing env raises a clear error. Add `databricks-sql-connector` and `databricks-sdk` to `requirements.txt`.
+- **Task 12, 13, 14, 15:** all writes go through `get_store()`; none imports psycopg directly.
+- **Task 16:** SQL checks run through the store's `query()` (add `query(sql) -> list[tuple]` to `GoldStore`); Databricks SQL dialect differences are covered by writing checks in ANSI SQL.
+- **Task 17:** `export_samples` reads from the store; the failure demo runs the local stream job only.
+- **Task 18:** Power BI connects with the Databricks connector (fallback: PostgreSQL connector).
+- **Prerequisite (human):** create a Databricks workspace, a SQL warehouse, and a personal access token; put the three values in `.env`. The code is built and tested without them (fake connection), so the build is not blocked.
+
+---
+
 ## Task 7: Spark session and Bronze ingest
 
 **Files:**

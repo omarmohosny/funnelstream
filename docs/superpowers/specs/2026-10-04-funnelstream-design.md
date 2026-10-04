@@ -23,8 +23,8 @@ Business questions:
 - Kafka topics: `app.events`, `orders`, `delivery.events`.
 - Spark Structured Streaming: Bronze, Silver, funnel and order Gold tables.
 - Airflow DAG (manual trigger): campaign pulls, catalog/customer batch loads, Gold batch tables, recommendations.
-- Delta Lake on MinIO, Medallion layers.
-- Postgres serving Gold tables.
+- Delta Lake, Medallion layers: Bronze and Silver on local disk (streaming path), Gold in Databricks.
+- Databricks (Free Edition or trial workspace) as the cloud lakehouse and SQL serving layer for Gold. Postgres stays as a fallback serving store behind the same loader interface.
 - Power BI dashboard, Import mode, refreshed after each DAG run.
 - Metric dictionary (`docs/metrics.md`) and SQL data-quality checks.
 - Volume: pipeline runs end to end at 1–2 million events.
@@ -49,23 +49,28 @@ Business questions:
 ## 3. Architecture
 
 **Stream path (live):**
-Simulator → Kafka (`app.events`, `orders`, `delivery.events`) → Spark `bronze_ingest` → Bronze Delta → Spark `silver_clean` → Silver Delta → Spark writes its Gold tables to Postgres.
+Simulator → Kafka (`app.events`, `orders`, `delivery.events`) → Spark `bronze_ingest` → Bronze Delta (local disk) → Spark `silver_clean` → Silver Delta (local disk). The local streaming job also writes `live_metrics_minute` to local Delta.
+
+**Publish to Databricks (new):** an export step uploads the Silver tables to a Databricks Unity Catalog volume as Parquet and loads them with `COPY INTO` or `MERGE` into Silver mirror tables. Databricks cannot reach the laptop's Kafka, so this upload is how data crosses; it runs on demand and after each stream session.
 
 **Batch path (manual Airflow trigger):**
-- Ad API pull → Bronze campaign snapshots (`pulled_at`) → Silver → Gold → Postgres.
-- Catalog and customer export → Bronze → Silver (with `updated_at`) → SCD2 dimensions → Postgres.
-- Recommendations and city-product tables computed from Silver.
+- Ad API pull → Bronze campaign snapshots (`pulled_at`) → Silver → Databricks Gold.
+- Catalog and customer export → Bronze → Silver (with `updated_at`) → SCD2 dimensions in Databricks.
+- Gold facts, attribution, campaign daily, recommendations and city-product tables are built in Databricks SQL or notebooks from the Silver mirror.
 - Fallback: if Airflow is not stable by 11 Oct, the same steps run as a Python script (`scripts/run_batch.py`). The tables and rules do not change.
+- Fallback: if Databricks is not usable by 10 Oct, the same Gold tables load into local Postgres through the same loader interface and Power BI reads Postgres.
 
 **Surrogate keys** are resolved at load time. Spark and Airflow look up `customer_key`, `product_key` and `campaign_key` from the dimension version valid at event time, and store them. Rows with no match go to `silver_quarantine`.
 
-**Single writer per table.** Each Gold table has one owner:
-- Spark stream owns: `fact_orders`, `fact_order_lines`, `fact_funnel_daily`.
-- Airflow owns: `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_attribution`, `fact_campaign_daily`, `fact_product_recs`, `fact_city_product_daily`, `fact_customer_360` (stretch).
+**Single writer per table.** Every Gold table is written only by the Databricks Gold build (the job that runs after Silver is published). The local Spark stream writes only Bronze, Silver and `live_metrics_minute`. This is simpler than the earlier Spark/Airflow split and keeps one writer per table.
 
-**Serving:** Postgres holds Gold only. Power BI reads Postgres in Import mode.
+**Serving:** Databricks SQL warehouse holds Gold. Power BI connects with the Databricks connector in Import mode. `live_metrics_minute` stays local and is shown in the demo from the local table (not in Power BI).
 
-**Storage:** Delta tables on MinIO in three buckets: `bronze`, `silver`, `gold`. Checkpoints on MinIO under `checkpoints/`.
+**Storage:** Bronze and Silver are Delta folders under `data/lake/{bronze,silver}`. Spark checkpoints live under `data/checkpoints/`. No object store (MinIO is removed). Gold is Delta in Databricks (Unity Catalog `funnelstream.gold`).
+
+**Access:** Databricks host, token and warehouse id live in `.env` (never committed). The team creates the workspace; the code reads `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID`.
+
+**Loader interface:** `warehouse/store.py` defines `GoldStore.upsert(table, rows, key_cols)` with two backends, `DatabricksStore` (SQL connector, `MERGE`) and `PostgresStore`. All batch code depends only on the interface.
 
 **Processing guarantee:** at-least-once delivery, with idempotent writes. Silver deduplicates on `event_id` and uses Delta `MERGE`. Gold upserts on its primary key. Results are exactly-once in effect, not by a broker switch.
 
@@ -160,7 +165,7 @@ Branches:
 
 ## 7. Medallion Layers
 
-All layers are Delta tables on MinIO.
+All layers are Delta tables: Bronze and Silver on local disk, Gold in Databricks (Silver is also mirrored into Databricks).
 
 ### Bronze (raw, append only, kept forever)
 
@@ -279,7 +284,7 @@ Run after every DAG load. Failed checks stop the Gold load.
 
 ## 11. Reliability
 
-- Kafka to Spark: checkpoints on MinIO record committed offsets. A restarted job resumes without losing rows.
+- Kafka to Spark: checkpoints on local disk record committed offsets. A restarted job resumes without losing rows.
 - Duplicates: removed in Silver by `event_id` or natural key. `MERGE` makes replays idempotent. Gold upserts on its key.
 - Late events: 10-minute watermark for live metrics. Late rows kept in Silver and corrected in Gold by the batch run.
 - Out-of-order status: resolved by status rank.
@@ -290,7 +295,7 @@ Run after every DAG load. Failed checks stop the Gold load.
 ## 12. Security
 
 - Secrets in `.env`, never in Git. `.env.example` lists the names.
-- Postgres roles: `analyst` (read Gold), `engineer` (write), `admin`. Power BI connects as `analyst`.
+- Databricks: Power BI connects with a read-only token or a service principal limited to `funnelstream.gold`. The write token is used only by the load job. Tokens live in `.env`. Fallback Postgres roles: `analyst` (read), `engineer` (write), `admin`.
 - Gold holds no names or phone numbers.
 - Synthetic data only. No real personal data.
 
@@ -311,7 +316,8 @@ Run after every DAG load. Failed checks stop the Gold load.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | 9 days to deadline | Incomplete demo | Cut order: Customer 360, contribution margin, 10M benchmark, dbt, Great Expectations |
-| Laptop memory with Kafka, Spark, MinIO, Postgres, Airflow | Crashes | Compose memory limits; run 1–2M events |
+| Laptop memory with Kafka, Spark, Postgres, Airflow | Crashes | Compose memory limits; run 1–2M events |
+| Databricks access, limits or upload time | No cloud serving | Create the workspace on 5 Oct; test one upload on 6 Oct; fall back to Postgres by 10 Oct |
 | SCD2 history and joins | Bugs in facts | Test with one product price change; keep rules in SQL checks |
 | Synthetic realism questioned | Credibility at defense | Document assumptions and distributions |
 | Delivered revenue lag | Recent days look worse | Show lag on dashboard |
