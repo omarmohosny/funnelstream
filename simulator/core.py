@@ -1,10 +1,10 @@
-import uuid
 from datetime import timedelta
 
 
-def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload):
+def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None):
+    event_id = f"evt_{rng.getrandbits(48):012x}" if rng else "evt_placeholder"
     e = {
-        "event_id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event_id": event_id,
         "event_type": event_type,
         "event_version": 1,
         "event_time": t.isoformat(),
@@ -22,7 +22,7 @@ def _event(event_type, t, session_id, customer_id, device, channel, country, cit
 
 def journey(rng, customer, catalog, campaign, start):
     """Build one session of app events. Funnel drop-off happens at each step."""
-    session_id = f"sess_{uuid.uuid4().hex[:10]}"
+    session_id = f"sess_{rng.getrandbits(40):010x}"
     customer_id = customer["customer_id"] if customer else None
     device = customer["device_primary"] if customer else rng.choice(["mobile", "desktop"])
     city = customer["city"] if customer else "Cairo"
@@ -31,10 +31,15 @@ def journey(rng, customer, catalog, campaign, start):
     t = start
     events = []
 
+    # Filter to only active products
+    active_products = [p for p in catalog if p["is_active"]]
+    if not active_products:
+        raise ValueError("No active products in catalog")
+
     def add(etype, payload, dt=5):
         nonlocal t
         t = t + timedelta(seconds=rng.randint(dt, dt * 4))
-        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload))
+        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload, rng))
 
     add("app_open", {})
     first_page = {"page": "home"}
@@ -43,7 +48,7 @@ def journey(rng, customer, catalog, campaign, start):
     add("page_view", first_page)
 
     n_views = rng.randint(1, 6)
-    viewed = rng.sample(catalog, n_views)
+    viewed = rng.sample(active_products, n_views)
     for i, product in enumerate(viewed):
         pv = {"product_id": product["product_id"], "price": product["price"], "category": product["category"]}
         if i == 0 and campaign:
@@ -55,9 +60,11 @@ def journey(rng, customer, catalog, campaign, start):
 
     if rng.random() < 0.35:
         item = rng.choice(viewed)
-        add("add_to_cart", {"product_id": item["product_id"], "quantity": 1, "cart_id": f"cart_{session_id[5:11]}"})
+        cart_id = f"cart_{session_id[5:]}"
+        add("add_to_cart", {"product_id": item["product_id"], "quantity": 1, "cart_id": cart_id})
         if rng.random() < 0.45:
-            add("checkout_started", {"cart_id": f"cart_{session_id[5:11]}"})
+            add("checkout_started", {"cart_id": cart_id})
             if rng.random() < 0.7:
-                add("purchase", {"order_id": f"ord_{uuid.uuid4().hex[:8]}", "total": item["price"]})
+                order_id = f"ord_{rng.getrandbits(32):08x}"
+                add("purchase", {"order_id": order_id, "total": item["price"]})
     return events
