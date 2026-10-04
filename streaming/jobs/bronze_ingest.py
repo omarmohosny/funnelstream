@@ -48,11 +48,9 @@ def kafka_options(bootstrap: str, topic: str) -> dict:
 def await_all(queries, spark=None):
     """Block until any query ends; raise its error. Always stop all queries."""
     try:
-        if spark is not None:
-            spark.streams.awaitAnyTermination()
-        else:
-            for q in queries:
-                q.awaitTermination()
+        if spark is None:
+            raise RuntimeError("no active SparkSession")
+        spark.streams.awaitAnyTermination()
     finally:
         for q in queries:
             try:

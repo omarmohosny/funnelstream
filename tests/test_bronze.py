@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from pyspark.sql import Row
+from pyspark.sql.types import (BinaryType, IntegerType, LongType, StringType,
+                               StructField, StructType, TimestampType)
 
 from streaming.jobs.bronze_ingest import (
     BRONZE_TABLES,
@@ -14,7 +16,8 @@ from streaming.jobs.bronze_ingest import (
     checkpoint_path,
 )
 
-VALUES = ['{"event_id":"evt_1"}', '{"name":"Zoë \u2603 \\"quoted\\" it\'s"}']
+VALUES = ['{"event_id":"evt_1"}', '{"name":"Zoë ☃ \\"quoted\\" it\'s"}',
+          '{"a":', '{"e":"\U0001F600 ok"}', None]
 
 
 def _raw(spark):
@@ -24,7 +27,12 @@ def _raw(spark):
             partition=2, offset=17 + i, timestamp=ts)
         for i, v in enumerate(VALUES)
     ]
-    return spark.createDataFrame(rows)
+    schema = StructType([
+        StructField("key", BinaryType()), StructField("value", BinaryType()),
+        StructField("topic", StringType()), StructField("partition", IntegerType()),
+        StructField("offset", LongType()), StructField("timestamp", TimestampType()),
+    ])
+    return spark.createDataFrame(rows, schema)
 
 
 @pytest.mark.spark
@@ -61,7 +69,10 @@ def test_delta_round_trip_is_append_only(spark, tmp_path):
     df.write.format("delta").partitionBy("ingest_date").mode("append").save(target)
     back = spark.read.format("delta").load(target)
     assert back.count() == len(VALUES)
-    assert sorted((r["raw_value"] or "") for r in back.collect()) == sorted(v or "" for v in VALUES)
+    got = [r["raw_value"] for r in back.collect()]
+    assert sorted(got, key=lambda v: (v is not None, v or "")) == sorted(
+        VALUES, key=lambda v: (v is not None, v or ""))
+    assert got.count(None) == 1
     df.write.format("delta").partitionBy("ingest_date").mode("append").save(target)
     assert spark.read.format("delta").load(target).count() == 2 * len(VALUES)
 
@@ -128,3 +139,10 @@ def test_await_all_raises_and_stops_others():
 def test_main_uses_await_any_termination():
     text = Path("streaming/jobs/bronze_ingest.py").read_text(encoding="utf-8")
     assert "awaitAnyTermination" in text
+
+
+def test_await_all_without_session_raises():
+    qs = [_Q()]
+    with pytest.raises(RuntimeError, match="no active SparkSession"):
+        await_all(qs, None)
+    assert qs[0].stopped
