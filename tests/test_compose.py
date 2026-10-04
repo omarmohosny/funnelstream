@@ -2,7 +2,7 @@ import yaml
 from pathlib import Path
 
 COMPOSE = Path("docker-compose.yml")
-REQUIRED = {"kafka", "postgres", "minio", "airflow"}
+REQUIRED = {"kafka", "postgres", "airflow"}
 
 
 def load():
@@ -22,3 +22,8 @@ def test_every_service_has_memory_limit():
 
 def test_postgres_is_16():
     assert load()["services"]["postgres"]["image"].startswith("postgres:16")
+
+
+def test_minio_is_not_a_service():
+    services = load()["services"]
+    assert "minio" not in services

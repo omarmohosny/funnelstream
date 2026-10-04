@@ -1,6 +1,6 @@
 # FunnelStream
 
-Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver, Gold), Postgres, Airflow and Power BI.
+Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.
 
 Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan.xlsx`.
 
@@ -8,6 +8,7 @@ Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstrea
 
 | Folder | Purpose | Plan task |
 |---|---|---|
+| `data/` | Local Delta lake (Bronze, Silver) and Spark checkpoints, git-ignored | 7, 8 |
 | `contracts/` | Event schemas, topic config, validator | 2 |
 | `simulator/` | Customer, order and delivery event generators, publisher | 3, 4, 6 |
 | `mock_apis/` | Mock Meta and Google Ads API | 5 |
