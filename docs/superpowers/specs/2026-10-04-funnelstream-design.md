@@ -90,6 +90,29 @@ Simulator → Kafka (`app.events`, `orders`, `delivery.events`) → Spark `bronz
 - Seasonality: Ramadan, Eid, Friday and Saturday peaks, evening traffic.
 - Time zone: events stored in UTC. `event_date` derived in `Africa/Cairo`.
 
+**Injected noise (seeded, rates configurable, counts written to `noise_manifest.json`):**
+
+| Noise | Rate | Handled by |
+|---|---|---|
+| Duplicate event (same `event_id` re-sent) | 1% | Silver dedup on `event_id` |
+| Malformed JSON or truncated message | 0.3% | Silver parse failure to `silver_quarantine` (`BAD_JSON`) |
+| Missing required field (`event_id`, `event_type`, `session_id` or `order_id`) | 0.3% | Validator to quarantine (`MISSING_FIELD`) |
+| Unknown event type or unknown `event_version` | 0.2% | Validator to quarantine (`UNKNOWN_EVENT_TYPE`, `BAD_VERSION`) |
+| Negative or zero price | 0.2% | Validator to quarantine (`NEGATIVE_PRICE`) |
+| Future timestamp (clock skew) | 0.1% | Validator to quarantine (`FUTURE_TIMESTAMP`) |
+| Late event (10 to 120 minutes) and very late (days) | 2% and 0.3% | `is_late` flag, excluded from live metrics, fixed by batch |
+| Timestamp with a non-UTC offset (`+02:00`) | 1% | Silver normalises to UTC |
+| Null `product_id` on a product event | 0.5% | Quarantine (`MISSING_FIELD`) |
+| `product_id` not in the catalog | 0.3% | Quarantine (`UNKNOWN_PRODUCT`) |
+| Dirty text: `city` or `device` casing, spaces, aliases (`cairo `, `ALEX`) | 3% | Silver standardises with a lookup table |
+| Number sent as a string (`"79.9"`) | 0.3% | Silver casts to decimal, quarantines if it fails |
+| Order status out of order, or cancel after shipment | 0.5% and 0.3% | Status rank in Gold; the cancel goes to quarantine |
+| Bot session (hundreds of events in seconds) | 0.1% of sessions | Silver flags `is_bot`, excluded from funnel and attribution |
+| Ad API: duplicate pull, `clicks > impressions`, negative spend, HTTP 503 | small | Latest-pull rule, SQL checks, Airflow retries |
+| Catalog and customer export: duplicate rows, null `city` | small | Dedup on key, default `unknown` |
+
+Quality proof for the defense: the SQL check compares the quarantine rate and duplicate count in Silver with `noise_manifest.json`. They must match within a small tolerance.
+
 **Limit:** synthetic data cannot be proven 100% realistic. The team documents these assumptions and checks distributions against them.
 
 **UTM linking:** Ad URLs carry `utm_source` and `utm_campaign`. The first session event carrying UTM parameters defines `click_id`. Orders carry `session_id`, `channel`, `utm_source`, `utm_campaign` and `click_id` on `order_created`.

@@ -1161,6 +1161,35 @@ git commit -m "feat: kafka topics, idempotent publisher, simulator runner"
 
 ---
 
+## Task 6b: Noise injection (added after review; spec section 4 "Injected noise")
+
+**Files:**
+- Create: `simulator/noise.py`
+- Modify: `scripts/run_simulator.py` (apply noise between `iter_batch` and publish; write `noise_manifest.json`)
+- Test: `tests/test_noise.py`
+
+**Interfaces:**
+- Consumes: `(topic_hint, event)` stream from `iter_batch` (Task 6), `make_catalog` ids (Task 3)
+- Produces:
+  - `NoiseConfig` dataclass with one rate field per row of the spec noise table (defaults as in the spec) and `NoiseConfig.off()` returning all zeros
+  - `apply_noise(stream, rng, config, catalog_ids) -> Iterator[tuple[str, str | dict]]` yields `(topic_hint, payload)` where payload is a dict, or a raw string for malformed JSON; also yields duplicate copies
+  - `NoiseCounter` with `.counts: dict[str, int]` and `.total`, written by the runner to `noise_manifest.json` as `{"total_messages": N, "injected": {"duplicate": n, ...}}`
+
+Rules: all randomness comes from the passed `rng`, so a fixed seed gives identical noise. With `NoiseConfig.off()` the output equals the input. Noise never mutates the input event dict in place. Every injected change increments exactly one counter.
+
+- [ ] **Step 1: Write failing tests** covering: off() leaves the stream identical; same seed twice gives identical output and identical manifest; duplicate rate lands within 0.5 to 1.5 percent over 20,000 events; malformed rows are strings that `json.loads` rejects; each validator-visible noise type (missing field, unknown type, negative price, future timestamp, bad version) makes `validate_event` return the expected error code; late events have `event_time` at least 10 minutes older than the publish clock; dirty text changes only `city` or `device` casing/spacing; unknown `product_id` is absent from the catalog ids; input events are not mutated.
+- [ ] **Step 2: Run tests, verify they fail.** `.venv\Scripts\python -m pytest tests/test_noise.py -q`
+- [ ] **Step 3: Implement `simulator/noise.py` and wire the runner.** Add CLI flags `--noise-off` and `--noise-scale F` (multiplies every rate, default 1.0).
+- [ ] **Step 4: Run the full suite; commit and push.**
+
+Downstream handling is part of later tasks, and their tests must use noisy input:
+- Task 8 (Silver): quarantine reasons `BAD_JSON`, `UNKNOWN_PRODUCT`; standardise `city` and `device`; normalise timestamps to UTC; cast numeric strings; flag `is_bot` (more than 100 events in 10 seconds per session); wrap `validate_event` so a bad timestamp or non-dict payload maps to `BAD_VALUE` instead of raising.
+- Task 9 (Gold): exclude `is_bot` sessions from funnel and attribution; guard `resolve_current_status` against empty or unknown statuses.
+- Task 12 (campaigns): the mock API gets optional noise (duplicate pull, `clicks > impressions`, negative spend, 503); the batch retries 503 and keeps the latest pull.
+- Task 16 (SQL checks): add a check that Silver quarantine rate and duplicate count match `noise_manifest.json` within tolerance.
+
+---
+
 ## Task 7: Spark session and Bronze ingest
 
 **Files:**
