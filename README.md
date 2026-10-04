@@ -37,6 +37,16 @@ pytest
 
 Spark tasks (7 onward) need Python 3.11 and Java 17. See the comment at the top of `requirements.txt`.
 
+## Spark in Docker
+
+Spark needs Hadoop's winutils on Windows, so Spark runs in a container. Spark tests are skipped on the Windows host unless `RUN_SPARK_TESTS=1`.
+
+```bash
+docker compose build spark
+docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/test_bronze.py -q
+docker compose run --rm spark python -m streaming.jobs.bronze_ingest   # needs Kafka up
+```
+
 ## Working together
 
 - Branch from `main`, one branch per task (`task-N-short-name`), open a pull request, get one review.

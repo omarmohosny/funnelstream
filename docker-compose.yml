@@ -46,5 +46,18 @@ services:
     command: standalone
     restart: unless-stopped
 
+  spark:
+    build: infrastructure/docker/spark
+    profiles: ["spark"]
+    mem_limit: 3g
+    working_dir: /app
+    environment:
+      KAFKA_BOOTSTRAP: kafka:19092
+      SPARK_LOCAL_IP: 127.0.0.1
+    volumes:
+      - ./:/app
+      - ivycache:/root/.ivy2
+
 volumes:
   pgdata:
+  ivycache:

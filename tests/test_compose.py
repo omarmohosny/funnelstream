@@ -113,3 +113,12 @@ def test_env_example_no_real_tokens():
         if line.startswith("DATABRICKS_TOKEN="):
             value = line.split("=", 1)[1].strip()
             assert value == "" or value.startswith("change"), f"DATABRICKS_TOKEN has a value: {value}"
+
+
+def test_spark_service():
+    svc = load()["services"]["spark"]
+    assert svc["build"] == "infrastructure/docker/spark"
+    assert svc["profiles"] == ["spark"]
+    assert svc["mem_limit"]
+    assert "./:/app" in svc["volumes"]
+    assert "ivycache" in load()["volumes"]
