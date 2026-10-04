@@ -1,0 +1,9 @@
+# pyspark and delta-spark need Python 3.11 and Java 17
+pyspark==3.5.1
+delta-spark==3.2.0
+confluent-kafka==2.4.0
+psycopg[binary]==3.1.19
+pyyaml==6.0.1
+jsonschema==4.22.0
+requests==2.32.3
+pytest==8.2.2
