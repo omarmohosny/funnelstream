@@ -1,0 +1,32 @@
+topics:
+  app.events:      {partitions: 6, key: session_id, retention_hours: 72}
+  orders:          {partitions: 3, key: order_id,   retention_hours: 168}
+  delivery.events: {partitions: 3, key: order_id,   retention_hours: 168}
+  app.events.dlq:      {partitions: 1, key: session_id, retention_hours: 336}
+  orders.dlq:          {partitions: 1, key: order_id,   retention_hours: 336}
+  delivery.events.dlq: {partitions: 1, key: order_id,   retention_hours: 336}
+
+app_event_types:
+  - app_open
+  - page_view
+  - product_view
+  - product_click
+  - product_view_end
+  - product_search
+  - add_to_cart
+  - remove_from_cart
+  - checkout_started
+  - purchase
+
+order_event_types:
+  - order_created
+  - payment_authorised
+  - order_packed
+  - order_shipped
+  - order_cancelled
+  - order_completed
+
+delivery_event_types:
+  - out_for_delivery
+  - delivered
+  - delivery_failed

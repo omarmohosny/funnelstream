@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Order Event",
+  "type": "object",
+  "required": ["event_id", "event_type", "event_version", "event_time", "order_id", "payload"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Unique identifier for the event"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["order_created", "payment_authorised", "order_packed", "order_shipped", "order_cancelled", "order_completed"],
+      "description": "Type of order event"
+    },
+    "event_version": {
+      "type": "integer",
+      "description": "Version of the event schema"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the event occurred"
+    },
+    "order_id": {
+      "type": "string",
+      "description": "Order identifier (required for order events)"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Order event payload"
+    }
+  }
+}
