@@ -15,7 +15,7 @@
 - Currency is EGP. Column names end in `_egp` or are documented as EGP in the spec.
 - All timestamps are stored in UTC. `event_date` is derived in `Africa/Cairo`.
 - Processing is at-least-once with idempotent writes. Silver uses Delta `MERGE` on `event_id` (events) or the natural key. Gold upserts on its primary key. No task may claim exactly-once.
-- Each Gold table has exactly one writer: Spark owns `fact_orders`, `fact_order_lines`, `fact_funnel_daily`, `live_metrics_minute`. Airflow owns all other Gold tables.
+- Each Gold table has exactly one writer: the Databricks Gold build (spec section 16). The local Spark stream writes only Bronze, Silver and `live_metrics_minute` (local serving, not Gold).
 - Current order status is the highest `status_rank`, never the latest arrival. `order_cancelled` is valid only before `order_shipped`.
 - Gold holds no names or phone numbers. Power BI sees `customer_id` only.
 - Kafka keys: `app.events` by `session_id`; `orders` and `delivery.events` by `order_id`.
@@ -1208,6 +1208,28 @@ Binding changes to the tasks below. Where an older task text says MinIO, `s3a://
 
 ---
 
+## Amendment B: compatibility rulings (supersede older task text)
+
+The authoritative list is spec section 16 ("Compatibility rulings"). Task-level consequences:
+
+- **Task 1:** built, superseded by Task 1c. **Task 2:** built; `contracts/validate.py` as built (with `validate_raw`, `BAD_VALUE`, `known_products`) is the authority, not the code in this plan.
+- **Task 1d (new, small, do before Task 7):** `docker-compose.yml` Kafka listeners (`EXTERNAL://localhost:9092` for the host, `INTERNAL://kafka:19092` inside Docker); Airflow service gets `_PIP_ADDITIONAL_REQUIREMENTS` (databricks-sql-connector requests pyarrow), mounts for `warehouse`, `contracts`, `data`, and env `AD_API_URL=http://host.docker.internal:8000`; `requirements.txt` adds `databricks-sql-connector`, `databricks-sdk`, `pyarrow`; `.env.example` adds `PG_DSN`, `AD_API_URL`, `SIM_SEED=42`, `DATABRICKS_CATALOG=funnelstream`, `DATABRICKS_VOLUME=silver_upload`. Tests: compose listeners, mounts, env names present.
+- **Task 7:** three Bronze tables, one streaming query per topic, local paths `data/lake/bronze/<table>`, checkpoints `data/checkpoints/<job>`. README notes `winutils.exe` and `HADOOP_HOME` for Windows. Replace the `s3a://` text in the interface block.
+- **Task 8 (rewrite):** use `validate_raw(raw, known_products=...)`, `contracts.normalize`, and flatten the payload into the Silver columns of spec section 7; produce `silver_events` (with `is_late`, `is_bot` placeholder false until the Gold build recomputes it), `silver_orders`, `silver_order_status`, `silver_order_items`, `silver_quarantine` (all codes in spec section 16.3). `silver_products` is loaded first and passed as `known_products`. Cancel after shipment goes to quarantine here. No Map<string,string> payload.
+- **Task 9:** remove the `is_late` filter from the funnel builder (keep it only in `build_live_metrics_minute`); exclude `is_bot`; Cairo dates; `live_metrics_minute` is local serving at `data/lake/live/live_metrics_minute`, not Gold, with `scripts/show_live.py` printing the latest minutes. Builders stay as Spark reference implementations; production Gold is the SQL in Task 10c.
+- **Task 10:** keep `warehouse/ddl.sql` as the Postgres fallback; add `warehouse/databricks_ddl.sql` with the Delta types of spec 16.8; drop `live_metrics_minute` from both.
+- **Task 10b:** `GoldStore` has `upsert` and `query`; `publish_silver` uses a column allow-list.
+- **Task 10c (new, after 10b):** `warehouse/gold_build.py` and `warehouse/gold/*.sql` (MERGE ... SELECT) in the order of spec 16.2, plus loads of `silver_campaign_snapshots`, `silver_customers`, `silver_products`, `dim_campaign`, `dim_date` (with `is_ramadan`, `is_eid`, `is_friday_saturday`); `dim_campaign` rows come from `simulator/campaigns.CAMPAIGNS`; seed from `SIM_SEED`. Tests with a fake store check statement order and idempotence; a parity test runs the Python references (Tasks 12 to 14) and the SQL on a tiny dataset using Postgres-compatible SQL where possible, otherwise compares the Python reference to hand-computed expected rows.
+- **Task 11:** `INFINITY = datetime(9999, 12, 31, tzinfo=utc)`; `load_dimensions(store, ...)` uses `store.query`/`store.upsert` and MERGE on `(customer_id, valid_from)`.
+- **Task 12:** `pull` retries HTTP 503 with backoff (3 tries); `campaign_daily` treats placed as all attributed orders; campaign Silver quarantines `NEGATIVE_SPEND` and `CLICKS_GT_IMPRESSIONS`.
+- **Task 14:** `city_product` counts distinct sessions.
+- **Task 15:** `run_batch(report_date, as_of, api_url, store=None)`; no `pg_dsn`, no psycopg, DAG reads `AD_API_URL`; it calls publish status check then the Gold build.
+- **Task 16:** `run_checks(store, checks)` uses `store.query`; add the manifest check type and the reported negative-lead-time check; remove `checks.sql` or generate it from `CHECKS`.
+- **Task 17:** `export_samples` and the failure demo use the store and local Silver Delta as in spec 16.11.
+- **Task 18:** Databricks connector steps: server hostname and HTTP path from the SQL warehouse, read-only token, relationship on `customer_key`/`product_key`.
+
+---
+
 ## Task 7: Spark session and Bronze ingest
 
 **Files:**
@@ -1523,7 +1545,7 @@ git commit -m "feat: silver clean with dedup, late flag and quarantine"
 
 ---
 
-## Task 9: Gold stream tables (Spark owns them)
+## Task 9: Gold builders as Spark reference implementations (production Gold is Task 10c SQL)
 
 **Files:**
 - Create: `streaming/jobs/gold_orders.py` (builds `fact_orders` and `fact_order_lines`)

@@ -39,7 +39,7 @@ Business questions:
 **Out of scope:**
 - Grafana, Prometheus, live operational alerts.
 - Schema Registry, Avro, Protobuf.
-- Cloud deployment.
+- Cloud hosting of Kafka, Spark or Airflow (only the Databricks Gold layer is cloud).
 - ALS collaborative filtering and real-time recommendations inside the web app.
 - Incrementality tests, view-through attribution, CAC payback.
 - Real Meta or Google accounts.
@@ -60,7 +60,7 @@ Simulator → Kafka (`app.events`, `orders`, `delivery.events`) → Spark `bronz
 - Fallback: if Airflow is not stable by 11 Oct, the same steps run as a Python script (`scripts/run_batch.py`). The tables and rules do not change.
 - Fallback: if Databricks is not usable by 10 Oct, the same Gold tables load into local Postgres through the same loader interface and Power BI reads Postgres.
 
-**Surrogate keys** are resolved at load time. Spark and Airflow look up `customer_key`, `product_key` and `campaign_key` from the dimension version valid at event time, and store them. Rows with no match go to `silver_quarantine`.
+**Surrogate keys** are resolved at load time. The Databricks Gold build looks up `customer_key`, `product_key` and `campaign_key` from the dimension version valid at event time, and store them. Rows with no match go to `silver_quarantine`.
 
 **Single writer per table.** Every Gold table is written only by the Databricks Gold build (the job that runs after Silver is published). The local Spark stream writes only Bronze, Silver and `live_metrics_minute`. This is simpler than the earlier Spark/Airflow split and keeps one writer per table.
 
@@ -202,19 +202,19 @@ Silver rules:
 
 | Table | Owner | Grain | Key | Columns |
 |---|---|---|---|---|
-| `dim_customer` | Airflow | Customer version (SCD2) | `customer_key` | `customer_id`, `country`, `city` (tracked), `signup_date`, `primary_device` (tracked), `marketing_consent`, `valid_from`, `valid_to`, `is_current` |
-| `dim_product` | Airflow | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active`, `valid_from`, `valid_to`, `is_current` |
-| `dim_campaign` | Airflow | Campaign | `campaign_key` | `campaign_id`, `utm_campaign`, `platform`, `name`, `start_date`, `end_date` |
-| `dim_date` | Airflow | Day | `date_key` (yyyymmdd) | `date`, `week`, `month`, `is_weekend`, `is_friday_saturday`, `is_ramadan`, `is_eid`, `is_holiday` |
-| `fact_orders` | Spark | Order, current state | `order_id` | `customer_key`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `delivery_lead_hours`, `delivery_failed_count`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `order_seq`, `is_first_order`, `date_key` |
-| `fact_order_lines` | Spark | Order line | `order_id`, `line_no` | `customer_key`, `product_key`, `date_key`, `city`, `quantity`, `line_total` (EGP) |
-| `live_metrics_minute` | Spark | One minute, country | `minute_start`, `country` | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed`. Computed on 1-minute tumbling windows from non-late Silver events |
-| `fact_funnel_daily` | Spark | Day, country, channel, payment method | `event_date`, `country`, `channel`, `payment_method` | `sessions`, `product_views`, `cart_sessions`, `checkout_sessions`, `orders`, `cart_abandon_rate`, `checkout_abandon_rate` |
-| `fact_attribution` | Airflow | Order and attribution model | `order_id`, `model` | `campaign_id` (NULL for direct), `click_id` (NULL for direct), `order_total` (EGP), `model` (`last_touch` or `first_touch`) |
-| `fact_campaign_daily` | Airflow | Campaign per report date | `campaign_id`, `report_date` | `platform`, `impressions`, `clicks`, `spend` (EGP), `orders_placed`, `orders_delivered`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `orders_cancelled`, `orders_failed_delivery`, `cancel_rate`, `failed_delivery_rate`, `new_customer_orders`, `aov` (EGP), `ctr`, `conversion_rate`, `cpa` (EGP, placed), `roas_placed`, `roas_delivered`, `direct_share` |
-| `fact_product_recs` | Airflow | Recommendation | `segment_level`, `segment_value`, `anchor_product_id`, `rank` | `rec_product_id`, `co_view_count`, `window_end` |
-| `fact_city_product_daily` | Airflow | City, product, day | `city`, `product_id`, `date_key` | `sessions_viewed`, `add_to_cart`, `units`, `revenue` (EGP) |
-| `fact_customer_360` (stretch) | Airflow | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
+| `dim_customer` | Databricks Gold build | Customer version (SCD2) | `customer_key` | `customer_id`, `country`, `city` (tracked), `signup_date`, `primary_device` (tracked), `marketing_consent`, `valid_from`, `valid_to`, `is_current` |
+| `dim_product` | Databricks Gold build | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active`, `valid_from`, `valid_to`, `is_current` |
+| `dim_campaign` | Databricks Gold build | Campaign | `campaign_key` | `campaign_id`, `utm_campaign`, `platform`, `name`, `start_date`, `end_date` |
+| `dim_date` | Databricks Gold build | Day | `date_key` (yyyymmdd) | `date`, `week`, `month`, `is_weekend`, `is_friday_saturday`, `is_ramadan`, `is_eid`, `is_holiday` |
+| `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `delivery_lead_hours`, `delivery_failed_count`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `order_seq`, `is_first_order`, `date_key` |
+| `fact_order_lines` | Databricks Gold build | Order line | `order_id`, `line_no` | `customer_key`, `product_key`, `date_key`, `city`, `quantity`, `line_total` (EGP) |
+| `live_metrics_minute` (local serving, not Gold) | Local Spark stream | One minute, country | `minute_start`, `country` | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed`. Computed on 1-minute tumbling windows from non-late Silver events |
+| `fact_funnel_daily` | Databricks Gold build | Day, country, channel, payment method | `event_date`, `country`, `channel`, `payment_method` | `sessions`, `product_views`, `cart_sessions`, `checkout_sessions`, `orders`, `cart_abandon_rate`, `checkout_abandon_rate` |
+| `fact_attribution` | Databricks Gold build | Order and attribution model | `order_id`, `model` | `campaign_id` (NULL for direct), `click_id` (NULL for direct), `order_total` (EGP), `model` (`last_touch` or `first_touch`) |
+| `fact_campaign_daily` | Databricks Gold build | Campaign per report date | `campaign_id`, `report_date` | `platform`, `impressions`, `clicks`, `spend` (EGP), `orders_placed`, `orders_delivered`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `orders_cancelled`, `orders_failed_delivery`, `cancel_rate`, `failed_delivery_rate`, `new_customer_orders`, `aov` (EGP), `ctr`, `conversion_rate`, `cpa` (EGP, placed), `roas_placed`, `roas_delivered`, `direct_share` |
+| `fact_product_recs` | Databricks Gold build | Recommendation | `segment_level`, `segment_value`, `anchor_product_id`, `rank` | `rec_product_id`, `co_view_count`, `window_end` |
+| `fact_city_product_daily` | Databricks Gold build | City, product, day | `city`, `product_id`, `date_key` | `sessions_viewed`, `add_to_cart`, `units`, `revenue` (EGP) |
+| `fact_customer_360` (stretch) | Databricks Gold build | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
 
 **Stretch: contribution margin.** `cfg_cost_assumptions` (Airflow, one row per product category): `margin_pct`, `carrier_fee_egp`, `failed_attempt_cost_egp`, `cod_fee_egp`. Adds `contribution_egp` to `fact_orders` and `fact_campaign_daily`. Labelled as assumption-based on the dashboard.
 
@@ -306,7 +306,7 @@ Run after every DAG load. Failed checks stop the Gold load.
 - One 10 million event benchmark run, recorded with timings.
 - Campaign DAG run shows numbers up to the trigger time.
 - Power BI shows the five business questions, with delivered ROAS as the headline.
-- Failure demo: Spark job killed and restarted, with no duplicate rows in Gold.
+- Failure demo: the local Silver job is killed and restarted with no duplicate `event_id` in Silver; Gold is unchanged after a republish and rebuild.
 - Metric dictionary and SQL checks committed.
 - Sample CSVs committed for every Silver and Gold table.
 - Defense delivered on 2026-10-13.
@@ -325,3 +325,26 @@ Run after every DAG load. Failed checks stop the Gold load.
 ## 15. Open Items
 
 None. Decisions so far: SCD2 kept; Customer 360 stretch; 1–2M required with a 10M benchmark. Metric dictionary written to `docs/metrics.md`.
+
+
+## 16. Compatibility rulings (v4, after the Databricks and noise reviews)
+
+These rules win over any older wording above or in the plan.
+
+1. **Late rows.** `is_late` excludes a row only from `live_metrics_minute`. Funnel, attribution and every other Gold table include late rows. `is_late` is meaningful in `--live` runs only (history mode publishes old events, so all rows are late by the rule); the manifest "late" counts are verified only on live runs.
+2. **Gold build.** One job, `warehouse/gold_build.py`, runs after `publish_silver` in fixed order: dimensions, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_funnel_daily`, `fact_attribution`, `fact_campaign_daily`, `fact_city_product_daily`, `fact_product_recs`, SQL checks. Row-scale tables are `MERGE ... SELECT` SQL files under `warehouse/gold/*.sql` run through `store.query`. Only small tables (for example `fact_campaign_daily`) go through `upsert(rows)`. The Python builders in Tasks 12 to 14 stay as reference implementations with a parity test.
+3. **Silver owns quarantine.** `silver_quarantine.error_code` values: `BAD_JSON, MISSING_FIELD, UNKNOWN_EVENT_TYPE, BAD_VERSION, NEGATIVE_PRICE, FUTURE_TIMESTAMP, BAD_VALUE, UNKNOWN_PRODUCT, CANCEL_AFTER_SHIPMENT, NEGATIVE_SPEND, CLICKS_GT_IMPRESSIONS`. `null_product_id` maps to `MISSING_FIELD`. The campaign Silver step quarantines negative spend and clicks above impressions. `silver_products` is loaded before the stream starts and passed to the validator as `known_products`.
+4. **Silver shape.** Silver flattens the payload into the columns listed in section 7 (`product_id`, `utm_source`, `utm_campaign`, `click_id`, `order_id`, and so on) and adds `is_bot`. A new table `silver_orders` (one row per `order_created`) carries `order_id, customer_id, session_id, channel, utm_source, utm_campaign, click_id, payment_method, city, country, items (array), order_total, order_created_at`. `fact_orders` joins `silver_orders` to `silver_order_status`.
+5. **Bots.** `is_bot` is recomputed over the whole Silver events table in the Gold build (not per micro-batch) and excludes bot sessions from the funnel, attribution and live metrics.
+6. **Dates.** `event_date` and `date_key` come from `from_utc_timestamp(ts, 'Africa/Cairo')`. The ad API `report_date` is a UTC day; the campaign daily table keeps `report_date` as given and the report notes the offset.
+7. **Placed orders.** Placed means every attributed order regardless of status, matching `docs/metrics.md`. Cancel and failed-delivery rates therefore never exceed 100%.
+8. **Databricks types.** Delta DDL uses `STRING`, `TIMESTAMP`, `DECIMAL`, `BIGINT GENERATED ALWAYS AS IDENTITY` for surrogate keys, informational `PRIMARY KEY` only, no `UNIQUE`. SCD2 `valid_to` for the current row is `9999-12-31 00:00:00 UTC`. `MERGE INTO` replaces `ON CONFLICT`. The Postgres fallback keeps its own DDL.
+9. **Loader.** `GoldStore` has `upsert(table, rows, key_cols)` and `query(sql)`. No batch, check or export code imports psycopg or reads `PG_DSN` directly; they take a `store` argument defaulting to `get_store()`. Tests use a fake store.
+10. **Checks.** Add a Python check type that reads `noise_manifest.json`: the expected Silver quarantine count is the sum of `malformed_json, missing_field, unknown_type, bad_version, negative_price, future_timestamp, null_product_id, unknown_product_id, cancel_after_ship`; duplicates must match `duplicate`; tolerance 2% of the manifest count. Add reported (non-failing) check: negative `delivery_lead_hours`, caused by the out-of-order status noise.
+11. **Failure demo.** It reads local Silver Delta with Spark and asserts zero duplicate `event_id` after a kill and restart.
+12. **Host networking.** Kafka advertises `localhost:9092` for host clients (simulator, Spark) and `kafka:19092` internally. The Airflow container installs the Databricks connector and requests, mounts `warehouse`, `contracts` and `data`, and reaches the mock ad API at `http://host.docker.internal:8000`. `publish_silver` runs on the host before the DAG.
+13. **Publish allow-list.** `publish_silver` uploads only an explicit column allow-list. Names, phones and raw Bronze rows never leave the machine. Free Edition may lack service principals, so Power BI uses a read-only user token.
+14. **City labels.** `Other` is a real value (smaller cities). `unknown` means missing or unrecognised. Power BI shows both.
+15. **Campaign sessions.** `fact_city_product_daily.sessions_viewed` counts distinct sessions, not customers.
+16. **Windows.** Local Delta writes need `winutils.exe` and `HADOOP_HOME` set; Bronze has three tables (`bronze_app_events`, `bronze_orders`, `bronze_delivery_events`), one streaming query per topic.
+17. **Risks.** Databricks Free Edition limits and upload time for 1 to 2 million rows: test one upload early, fall back to Postgres by 10 Oct.

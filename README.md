@@ -41,4 +41,4 @@ Spark tasks (7 onward) need Python 3.11 and Java 17. See the comment at the top 
 
 - Branch from `main`, one branch per task (`task-N-short-name`), open a pull request, get one review.
 - Do not commit `.env`, `.venv/`, or data under `data/`.
-- Each Gold table has one writer. Spark owns the order and funnel tables. Airflow owns the rest. See the spec, section 3.
+- Every Gold table is written only by the Databricks Gold build. The local Spark stream writes only Bronze, Silver and live metrics. See the spec, sections 3 and 16.

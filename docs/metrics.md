@@ -49,3 +49,11 @@ Recommendations are labelled "co-view", not "purchase".
 ## Status precedence
 
 Current order status is the status with the highest `status_rank` (see spec section 6). `order_cancelled` is terminal and valid only before `order_shipped`.
+
+
+## Filters that apply to every metric above
+
+- Bot sessions (`is_bot`) and quarantined rows are excluded from funnel, attribution and spend.
+- `silver_campaign_snapshots` is used after quarantine (negative spend and clicks above impressions removed).
+- "Placed" means every attributed order regardless of status.
+- Dates are Cairo-local for orders and events; the ad platform's `report_date` is a UTC day.
