@@ -299,3 +299,43 @@ def test_noisy_export():
     cat = make_catalog(1, 50)
     out3, c3 = noisy_export(cat, random.Random(1), dup_rate=0.5)
     assert c3["null_city"] == 0 and all("city" not in r for r in out3)
+
+
+def test_cancel_after_ship_clamped_to_now():
+    from datetime import timedelta
+    now = datetime(2026, 10, 4, 12, tzinfo=timezone.utc)
+    stream = [e for e in base_stream(2000) if e[1]["event_type"] == "order_shipped"]
+    assert stream
+    stream = [(h, dict(e, event_time=(now - timedelta(minutes=10)).isoformat())) for h, e in stream]
+    c = NoiseCounter()
+    out = list(apply_noise(iter(stream), random.Random(1), only("cancel_after_ship"), CATALOG_IDS, c, now=now))
+    extras = [e for _, e in out if e["event_type"] == "order_cancelled"]
+    assert len(extras) == c.counts["cancel_after_ship"] == len(stream)
+    for e in extras:
+        assert (now - timedelta(minutes=10)) < datetime.fromisoformat(e["event_time"]) <= now
+        assert validate_raw(e, now=now)[0]
+    # shipped at/after now: no extra, no count
+    late = [(h, dict(e, event_time=now.isoformat())) for h, e in stream]
+    c2 = NoiseCounter()
+    out2 = list(apply_noise(iter(late), random.Random(1), only("cancel_after_ship"), CATALOG_IDS, c2, now=now))
+    assert len(out2) == len(late) and c2.counts["cancel_after_ship"] == 0
+
+
+def test_numeric_string_every_field_passes_validator():
+    from simulator.noise import _numeric_slots
+    stream = base_stream(3000)
+    seen = set()
+    for i in range(30):
+        out, c = run(stream, only("numeric_string"), seed=i)
+        for (_, o), (_, s) in zip(out, stream):
+            if o != s:
+                assert code(o) == ""
+                p = o["payload"]
+                for k in ("price", "total", "order_total"):
+                    if isinstance(p.get(k), str):
+                        seen.add(k)
+                for it in p.get("items", []):
+                    for k in ("unit_price", "line_total"):
+                        if isinstance(it.get(k), str):
+                            seen.add("items." + k)
+    assert seen == {"price", "total", "order_total", "items.unit_price", "items.line_total"}

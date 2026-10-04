@@ -80,3 +80,37 @@ def test_previous_codes():
     assert validate_event(ev(event_version=2), now=NOW) == (False, "BAD_VERSION")
     assert validate_event(ev(event_time="2026-10-05T10:00:00+00:00"), now=NOW) == (False, "FUTURE_TIMESTAMP")
     assert validate_event(ev(event_type="order_created", session_id=None, order_id=None), now=NOW) == (False, "MISSING_FIELD")
+
+
+def _order(payload):
+    return ev(event_type="order_created", session_id=None, order_id="ord_1", payload=payload)
+
+
+def test_items_and_totals_checks():
+    good = {"total": "10.5", "order_total": 20, "items": [{"product_id": "p", "quantity": 2, "unit_price": "5", "line_total": 10}]}
+    assert validate_event(_order(good), now=NOW) == (True, "")
+    for bad in ("abc", True, [1], {"a": 1}):
+        for k in ("price", "total", "order_total"):
+            assert validate_event(_order({k: bad}), now=NOW) == (False, "BAD_VALUE")
+        for k in ("unit_price", "line_total", "quantity"):
+            assert validate_event(_order({"items": [{k: bad}]}), now=NOW) == (False, "BAD_VALUE")
+    for k in ("price", "total", "order_total"):
+        assert validate_event(_order({k: -1}), now=NOW) == (False, "NEGATIVE_PRICE")
+        assert validate_event(_order({k: "-1"}), now=NOW) == (False, "NEGATIVE_PRICE")
+    for k in ("unit_price", "line_total"):
+        assert validate_event(_order({"items": [{k: -1}]}), now=NOW) == (False, "NEGATIVE_PRICE")
+    assert validate_event(_order({"items": [{"quantity": 0}]}), now=NOW) == (False, "BAD_VALUE")
+    assert validate_event(_order({"items": "x"}), now=NOW) == (False, "BAD_VALUE")
+    assert validate_event(_order({"items": {"a": 1}}), now=NOW) == (False, "BAD_VALUE")
+    assert validate_event(_order({"items": ["x"]}), now=NOW) == (False, "BAD_VALUE")
+    assert validate_event(_order({"items": [{"unit_price": "abc"}]}), now=NOW) == (False, "BAD_VALUE")
+
+
+def test_make_order_events_valid():
+    import random
+    from simulator.catalog import make_catalog, make_customers
+    from simulator.orders import make_order
+    cust, cat = make_customers(1, 10), make_catalog(1)
+    for i in range(20):
+        for _, e in make_order(random.Random(i), cust[0], cat, None, datetime(2026, 10, 1, tzinfo=timezone.utc), "ord_%d" % i):
+            assert validate_event(e, now=NOW) == (True, "")

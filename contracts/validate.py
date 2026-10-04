@@ -45,6 +45,40 @@ def _to_number(value):
     return num if math.isfinite(num) else None
 
 
+def _check_numbers(payload):
+    """'' if all numeric payload fields are fine, else BAD_VALUE or NEGATIVE_PRICE."""
+    def check(container, key):
+        v = container.get(key)
+        if v is None:
+            return ""
+        num = _to_number(v)
+        if num is None:
+            return "BAD_VALUE"
+        return "NEGATIVE_PRICE" if num < 0 else ""
+
+    for key in ("price", "total", "order_total"):
+        code = check(payload, key)
+        if code:
+            return code
+    items = payload.get("items")
+    if items is None:
+        return ""
+    if not isinstance(items, list):
+        return "BAD_VALUE"
+    for item in items:
+        if not isinstance(item, dict):
+            return "BAD_VALUE"
+        for key in ("unit_price", "line_total"):
+            code = check(item, key)
+            if code:
+                return code
+        if item.get("quantity") is not None:
+            q = _to_number(item["quantity"])
+            if q is None or q < 1:
+                return "BAD_VALUE"
+    return ""
+
+
 def validate_event(event: dict, now: datetime | None = None,
                    known_products: set | None = None) -> tuple[bool, str]:
     """Never raises. Returns (ok, code); code is '' when ok."""
@@ -88,13 +122,9 @@ def _validate(event, now, known_products):
     if ts > now + CLOCK_SKEW:
         return False, "FUTURE_TIMESTAMP"
 
-    price = payload.get("price")
-    if price is not None:
-        num = _to_number(price)
-        if num is None:
-            return False, "BAD_VALUE"
-        if num < 0:
-            return False, "NEGATIVE_PRICE"
+    code = _check_numbers(payload)
+    if code:
+        return False, code
 
     if event_type in PRODUCT_EVENT_TYPES:
         pid = payload.get("product_id")

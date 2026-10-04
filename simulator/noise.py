@@ -3,7 +3,8 @@
 apply_noise() sits between iter_batch and the publisher. All randomness comes from the passed
 rng. At most one noise kind hits a message. For every message each kind (in KINDS order) is
 tried: if the message is eligible for it and rng.random() < rate, the kind is applied and the
-rest are skipped, so a rate is the share of *eligible* messages it hits.
+rest are skipped, so a rate is the share of *eligible* messages it hits. Because kinds are tried in
+order, a later kind fires at about rate x (1 - earlier rates).
 """
 import copy
 import json
@@ -91,8 +92,8 @@ def _numeric_slots(event):
     if isinstance(p, dict):
         slots += [(p, k) for k in _NUM_FIELDS if _is_num(p.get(k))]
         for item in p.get("items") or []:
-            if isinstance(item, dict) and _is_num(item.get("unit_price")):
-                slots.append((item, "unit_price"))
+            if isinstance(item, dict):
+                slots += [(item, k) for k in ("unit_price", "line_total") if _is_num(item.get(k))]
     return slots
 
 
@@ -235,14 +236,18 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
             counter.counts[chosen] += 1
             yield out(hint, _malform(e, rng), pace)
         elif chosen == "cancel_after_ship":
-            counter.counts[chosen] += 1
             yield out(hint, e, pace)
-            c = copy.deepcopy(e)
-            c["event_id"] = _new_id(rng)
-            c["event_type"] = "order_cancelled"
-            c["event_time"] = (_t(e) + timedelta(seconds=rng.randint(60, 1800))).isoformat()
-            c["payload"] = {"reason": "customer_request"}
-            yield out(hint, c, pace)
+            ct = _t(e) + timedelta(seconds=rng.randint(60, 1800))
+            if now is not None and ct > now:
+                ct = now  # never put the extra in the future of the wall clock
+            if now is None or _t(e) < now:  # shipped at/after now: no extra, not counted
+                counter.counts[chosen] += 1
+                c = copy.deepcopy(e)
+                c["event_id"] = _new_id(rng)
+                c["event_type"] = "order_cancelled"
+                c["event_time"] = ct.isoformat()
+                c["payload"] = {"reason": "customer_request"}
+                yield out(hint, c, pace)
         elif chosen == "out_of_order_status":
             pending = (hint, e, pace)  # counted when the successor arrives
         else:
