@@ -35,7 +35,9 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame) 
     counts only if the order has no order_shipped row (same rule as resolve_current_status); a rank tie
     (out_for_delivery vs delivery_failed) goes to the latest status_time. Delivery fields come from the
     delivered / delivery_failed / out_for_delivery rows; delivery_lead_hours keeps negative values (they
-    come from out_of_order noise, see report_negative_lead_time).
+    come from out_of_order noise, see report_negative_lead_time). delivery_lead_hours is Decimal(8,2)
+    (the DDL type): exact hours from microsecond times, rounded HALF UP to 2 decimals before the cast;
+    NULL when not delivered.
 
     Surrogate keys (customer_key) and the attribution campaign_id are added by Task 10c; campaign_id is
     NULL here and natural customer_id is used.
@@ -61,8 +63,9 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame) 
                      F.coalesce(F.col("is_delivered") & (F.col("delivery_failed_count") == 0)
                                 & (F.col("first_ofd_at") < F.col("delivered_at")), F.lit(False)))
          .withColumn("delivery_lead_hours",
-                     F.round((F.col("delivered_at").cast("double") - F.col("order_created_at").cast("double"))
-                             / 3600.0, 2))
+                     F.round((F.unix_micros("delivered_at") - F.unix_micros("order_created_at"))
+                             .cast("decimal(24,0)") / F.lit(3_600_000_000).cast("decimal(24,0)"), 2)
+                     .cast("decimal(8,2)"))
          .withColumn("campaign_id", F.lit(None).cast("string")))
     seq = Window.partitionBy("customer_id").orderBy("order_created_at", "order_id")
     o = (o.withColumn("order_seq", F.row_number().over(seq).cast("int"))

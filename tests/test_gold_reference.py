@@ -164,7 +164,7 @@ def test_fact_orders_failed_attempt_then_delivered_and_lead_hours(spark):
     r = fo(spark, [order_row("o1", created=created)], rows)["o1"]
     assert r["delivery_failed_count"] == 1 and r["first_attempt_delivered"] is False
     assert r["is_delivered"] is True and r["current_status"] == "delivered"
-    assert r["delivery_lead_hours"] == pytest.approx(49.5, abs=0.001)  # 1 Oct 10:00 -> 3 Oct 11:30
+    assert r["delivery_lead_hours"] == Decimal("49.50")  # 1 Oct 10:00 -> 3 Oct 11:30
 
 
 def test_fact_orders_first_attempt_delivered_true(spark):
@@ -172,7 +172,7 @@ def test_fact_orders_first_attempt_delivered_true(spark):
             status_row("o1", "out_for_delivery", t(2, 9)), status_row("o1", "delivered", t(2, 12))]
     r = fo(spark, [order_row("o1")], rows)["o1"]
     assert r["first_attempt_delivered"] is True and r["delivery_failed_count"] == 0
-    assert r["delivery_lead_hours"] == pytest.approx(26.0, abs=0.001)
+    assert r["delivery_lead_hours"] == Decimal("26.00")
 
 
 def test_fact_orders_tie_between_out_for_delivery_and_failed_takes_latest(spark):
@@ -224,7 +224,7 @@ def test_negative_lead_time_is_kept_and_counted(spark):
     rows = [status_row("o1", "order_created", t(1, 10)), status_row("o1", "delivered", t(1, 8))]
     df = build_fact_orders(mk(spark, "silver_orders", [order_row("o1", created=t(1, 10))]),
                            mk(spark, "silver_order_status", rows))
-    assert df.collect()[0]["delivery_lead_hours"] == pytest.approx(-2.0)
+    assert df.collect()[0]["delivery_lead_hours"] == Decimal("-2.00")
     assert report_negative_lead_time(df) == 1
 
 
@@ -284,6 +284,7 @@ def test_gold_invariants_on_end_to_end_dataset(spark, e2e):
                     "delivery_failed_count", "first_attempt_delivered", "is_cancelled", "is_delivered",
                     "order_seq", "is_first_order", "date_key"]
     assert str(fact_df.schema["order_total"].dataType) == "DecimalType(12,2)"
+    assert str(fact_df.schema["delivery_lead_hours"].dataType) == "DecimalType(8,2)"
 
 
 # ---------------------------------------------------------------- group 4: mark_bot_sessions
@@ -456,3 +457,85 @@ def test_build_all_writes_three_tables_and_reads_back(spark, e2e, tmp_path):
         assert counts[name][0] == counts[name][1] > 0, name
     print("\nG7 events=%d (built, read_back)=%s" % (e2e["events"], counts))
     assert build_all(spark, lake_root=e2e["lake"]).keys() == res.keys()  # out_root=None writes nothing
+
+
+# ---------------------------------------------------------------- review fixes
+def test_lead_hours_rounds_half_up_to_two_decimals(spark):
+    created = t(1, 10)
+    # 3618 s = 1.005 h -> 1.01 (half up); 3636 s = 1.01 h exactly
+    rows = [status_row("o1", "delivered", created + timedelta(seconds=3618)),
+            status_row("o2", "delivered", created + timedelta(seconds=3636), customer="c2")]
+    orders = [order_row("o1", created=created), order_row("o2", customer="c2", created=created)]
+    res = fo(spark, orders, rows)
+    assert res["o1"]["delivery_lead_hours"] == Decimal("1.01") and res["o2"]["delivery_lead_hours"] == Decimal("1.01")
+
+
+def _edge(n, span, sid="x"):
+    return [ev(i, sid, t(4, 12) + timedelta(microseconds=int(span * 1_000_000 * i / (n - 1)))) for i in range(n)]
+
+
+def _both(spark, rows):
+    df = mk(spark, "silver_events", rows)
+    spark_flag = bool(mark_bot_sessions(df).where("is_bot").count())
+    py_flag = bool(find_bot_sessions([{"session_id": r["session_id"], "event_time": r["event_time"].isoformat()}
+                                      for r in df.collect()]))
+    return spark_flag, py_flag
+
+
+def test_bot_window_edge_101_events_in_exactly_10s_flagged_by_both(spark):
+    assert _both(spark, _edge(101, 10.0)) == (True, True)
+
+
+def test_bot_window_edge_101_events_over_10_001s_flagged_by_neither(spark):
+    assert _both(spark, _edge(101, 10.001)) == (False, False)
+
+
+def test_bot_window_edge_100_events_in_10s_not_flagged(spark):
+    assert _both(spark, _edge(100, 10.0)) == (False, False)
+
+
+def _refresh(spark, tmp_path, rows, now, **kw):
+    lake = str(tmp_path / "lake")
+    merge_insert(spark, silver_path(lake, "silver_events"), mk(spark, "silver_events", rows), ["event_id"],
+                 "event_date")
+    path = refresh_live_metrics(spark, lake_root=lake, minutes=60, now=now, **kw)
+    return spark.read.format("delta").load(path).collect()
+
+
+def test_live_refresh_burst_before_window_excludes_that_session_and_keeps_normal(spark, tmp_path):
+    now = t(4, 12, 0, 0)
+    rows = [ev(i, "bot", now - timedelta(minutes=90) + timedelta(seconds=5 * i / 150)) for i in range(150)]
+    rows += [ev(1000 + i, "bot", now - timedelta(minutes=30 - i)) for i in range(5)]
+    rows += [ev(i, "ok", now - timedelta(minutes=20 - i)) for i in range(3)]
+    res = _refresh(spark, tmp_path, rows, now)
+    assert sum(r["events"] for r in res) == 3 and sum(r["active_sessions"] for r in res) == 3
+
+
+def test_live_refresh_burst_straddling_cutoff_is_caught(spark, tmp_path):
+    now = t(4, 12, 0, 0)
+    cutoff = now - timedelta(minutes=60)
+    # 101 events within 10 s, 60 before the cutoff and 41 after; neither side alone exceeds 100
+    rows = [ev(i, "bot", cutoff - timedelta(seconds=6) + timedelta(milliseconds=100 * i)) for i in range(101)]
+    rows += [ev(500 + i, "ok", now - timedelta(minutes=10 - i)) for i in range(2)]
+    res = _refresh(spark, tmp_path, rows, now)
+    assert sum(r["events"] for r in res) == 2
+
+
+def test_live_refresh_burst_older_than_lookback_is_not_detected(spark, tmp_path):
+    now = t(4, 12, 0, 0)
+    rows = [ev(i, "bot", now - timedelta(hours=8) + timedelta(seconds=5 * i / 150)) for i in range(150)]
+    rows += [ev(900 + i, "bot", now - timedelta(minutes=10 - i)) for i in range(2)]
+    assert sum(r["events"] for r in _refresh(spark, tmp_path / "a", rows, now)) == 2  # documented limitation
+    assert sum(r["events"] for r in _refresh(spark, tmp_path / "b", rows, now, bot_lookback_hours=12)) == 0
+
+
+def test_show_live_missing_table_prints_message_and_returns_1(spark, tmp_path, capsys):
+    from scripts.show_live import MISSING, show_live
+
+    assert show_live(str(tmp_path / "nothing" / "live_metrics_minute"), 10, spark=spark) == 1
+    assert MISSING in capsys.readouterr().out
+    lake = str(tmp_path / "lake")
+    merge_insert(spark, silver_path(lake, "silver_events"),
+                 mk(spark, "silver_events", [ev(0, "a", t(4, 12), "product_view")]), ["event_id"], "event_date")
+    path = refresh_live_metrics(spark, lake_root=lake, minutes=100000, now=t(4, 13))
+    assert show_live(path, 5, spark=spark) == 0

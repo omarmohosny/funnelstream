@@ -28,6 +28,8 @@ Source of truth for every KPI shown in Power BI. Each formula names its table, n
 | Checkout abandon rate | 1 − `orders` / `checkout_sessions` | Sessions with `checkout_started` |
 | Conversion rate by channel | `orders` / `sessions` | Per channel |
 
+A session that spans midnight counts once on each Cairo `event_date`, so daily sessions do not sum across dates. Funnel `orders` counts sessions with a purchase event and can differ from the count of `silver_orders` rows when a purchase event is missing or a session placed two orders.
+
 ## Delivery metrics (`fact_orders`)
 
 | Metric | Formula | Filter |
