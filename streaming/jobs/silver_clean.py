@@ -1,0 +1,215 @@
+"""Silver job: Bronze Delta tables to validated, typed, de-duplicated Silver Delta tables.
+
+One streaming query reads the union of the three Bronze tables and calls process_batch per
+micro-batch. A single query (not one per Bronze table) keeps every Silver table down to one MERGE
+writer at a time. Every write is a MERGE that inserts unmatched keys only, so replays (a restart, a
+deleted checkpoint) never change the Silver row counts.
+
+Rules per Bronze row: transform_message (pure Python, runs in the executors) returns rows for the Silver
+tables or one quarantine row. Quarantine ids are a hash of topic and payload, so a replayed bad message
+produces the same quarantine row.
+
+Cancel after shipment: for the batch's order_cancelled rows, the order's order_shipped rows already in
+Silver are read and combined with the batch rows, then split_cancel_after_ship runs on the driver
+(chunked by order_id if more than 200,000 rows would be combined). Quarantined cancels go to
+silver_quarantine instead of silver_order_status. Only cancels of the current batch are routed, rows
+already in Silver are never touched. LIMITATION: a cancel that arrives (is written to Silver) BEFORE its
+shipped event stays in silver_order_status; the Gold status rank resolves it.
+
+Timestamps: Python values given to Spark are naive UTC datetimes, so Python workers must run with
+TZ=UTC (the Spark container does).
+
+process_batch returns, per Silver table, the number of rows in this batch after de-duplication on the
+table key (rows offered to the MERGE, not rows newly inserted).
+"""
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from functools import partial
+
+from delta.tables import DeltaTable
+from pyspark import StorageLevel
+from pyspark.sql import DataFrame, SparkSession, functions as F
+
+from streaming.common.spark import get_spark
+from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path
+from streaming.silver.orders import split_cancel_after_ship
+from streaming.silver.schemas import TABLE_COLUMNS
+from streaming.silver.spark_schemas import SCHEMAS, coerce_row
+from streaming.silver.transform import transform_message
+from streaming.silver.writer import SILVER_KEYS, merge_insert, silver_path
+
+log = logging.getLogger("silver_clean")
+
+CANCEL_CHUNK_CAP = 200_000
+SILVER_TABLES = list(TABLE_COLUMNS)
+_warned_no_products = False
+
+
+def _utc(value):
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _transform_partition(rows, known_bc, now):
+    """Executor side: Bronze rows to (table, tuple-in-schema-order) pairs."""
+    known = known_bc.value if known_bc is not None else None
+    for r in rows:
+        received = _utc(r["ingest_time"])
+        kafka_ts = _utc(r["kafka_timestamp"]) or received
+        for table, row in transform_message(r["raw_value"], r["kafka_topic"], kafka_ts, received, known, now):
+            yield table, tuple(coerce_row(table, row).values())
+
+
+def _is_table(table, pair):
+    return pair[0] == table
+
+
+def _values(pair):
+    return pair[1]
+
+
+def load_known_products(lake_root, spark=None):
+    """Set of product_ids from silver_products, or None (check skipped, warned once) if it is missing."""
+    global _warned_no_products
+    spark = spark or SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
+    path = silver_path(lake_root, "silver_products")
+    if not DeltaTable.isDeltaTable(spark, path):
+        if not _warned_no_products:
+            log.warning("silver_products not found at %s: product id check is skipped", path)
+            _warned_no_products = True
+        return None
+    return {r["product_id"] for r in spark.read.format("delta").load(path).select("product_id").collect()}
+
+
+def _iso(value):
+    if isinstance(value, datetime):
+        return _utc(value).isoformat()
+    return value
+
+
+def _status_dicts(df):
+    out = []
+    for r in df.collect():
+        d = r.asDict()
+        d["status_time"] = _iso(d["status_time"])
+        out.append(d)
+    return out
+
+
+def _split_chunked(rows, now):
+    """split_cancel_after_ship, in chunks of whole orders when rows exceed CANCEL_CHUNK_CAP."""
+    if len(rows) <= CANCEL_CHUNK_CAP:
+        return split_cancel_after_ship(rows, now=now)
+    log.warning("%d combined status rows exceed %d: processing by order_id chunks", len(rows), CANCEL_CHUNK_CAP)
+    by_order = {}
+    for r in rows:
+        by_order.setdefault(r["order_id"], []).append(r)
+    kept, quarantined, chunk = [], [], []
+    for group in by_order.values():
+        chunk.extend(group)
+        if len(chunk) >= CANCEL_CHUNK_CAP:
+            k, q = split_cancel_after_ship(chunk, now=now)
+            kept += k
+            quarantined += q
+            chunk = []
+    if chunk:
+        k, q = split_cancel_after_ship(chunk, now=now)
+        kept += k
+        quarantined += q
+    return kept, quarantined
+
+
+def _cancel_after_ship(spark, status_df, lake_root, now):
+    """Return (status_df without quarantined cancels, list of quarantine row dicts)."""
+    rows = _status_dicts(status_df)
+    cancel_orders = {r["order_id"] for r in rows if r["status"] == "order_cancelled"}
+    if not cancel_orders:
+        return status_df, []
+    batch_ids = {r["event_id"] for r in rows}
+    relevant = [r for r in rows if r["order_id"] in cancel_orders]
+    path = silver_path(lake_root, "silver_order_status")
+    if DeltaTable.isDeltaTable(spark, path):
+        ids_df = spark.createDataFrame([(o,) for o in cancel_orders], "order_id string")
+        existing = (spark.read.format("delta").load(path).where(F.col("status") == "order_shipped")
+                    .join(F.broadcast(ids_df), "order_id", "left_semi"))
+        relevant += [r for r in _status_dicts(existing) if r["event_id"] not in batch_ids]
+    _, quarantined = _split_chunked(relevant, now)
+    quarantined = [q for q in quarantined if json.loads(q["raw_payload"])["event_id"] in batch_ids]
+    if not quarantined:
+        return status_df, []
+    bad_ids = {json.loads(q["raw_payload"])["event_id"] for q in quarantined}
+    kept_rows = [r for r in rows if r["event_id"] not in bad_ids]
+    kept_df = spark.createDataFrame([tuple(coerce_row("silver_order_status", r).values()) for r in kept_rows],
+                                    SCHEMAS["silver_order_status"])
+    return kept_df, quarantined
+
+
+def process_batch(spark, bronze_df, lake_root, known_products, now=None):
+    """Bronze rows to the Silver tables (MERGE insert). Returns {table: rows in batch after key dedupe}."""
+    now = now or datetime.now(timezone.utc)
+    cols = ["raw_value", "kafka_topic", "kafka_timestamp", "ingest_time"]
+    known_bc = spark.sparkContext.broadcast(set(known_products)) if known_products is not None else None
+    pairs = (bronze_df.select(*cols).rdd
+             .mapPartitions(partial(_transform_partition, known_bc=known_bc, now=now))
+             .persist(StorageLevel.MEMORY_AND_DISK))
+    counts = {t: 0 for t in SILVER_TABLES}
+    try:
+        frames = {}
+        for table in SILVER_TABLES:
+            rdd = pairs.filter(partial(_is_table, table)).map(_values)
+            frames[table] = (spark.createDataFrame(rdd, SCHEMAS[table])
+                             .dropDuplicates(SILVER_KEYS[table]))
+        frames["silver_order_status"], cancelled = _cancel_after_ship(
+            spark, frames["silver_order_status"], lake_root, now)
+        if cancelled:
+            extra = spark.createDataFrame(
+                [tuple(coerce_row("silver_quarantine", q).values()) for q in cancelled],
+                SCHEMAS["silver_quarantine"])
+            frames["silver_quarantine"] = frames["silver_quarantine"].unionByName(extra)
+        for table in SILVER_TABLES:
+            df = frames[table].dropDuplicates(SILVER_KEYS[table])
+            n = df.count()
+            counts[table] = n
+            if n:
+                merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table])
+    finally:
+        pairs.unpersist()
+        if known_bc is not None:
+            known_bc.unpersist()
+    return counts
+
+
+def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False):
+    spark = get_spark("silver_clean")
+    frames = [spark.readStream.format("delta").option("maxBytesPerTrigger", "64m")
+              .load(bronze_path(lake_root, topic)) for topic in BRONZE_TABLES]
+    union = frames[0]
+    for f in frames[1:]:
+        union = union.unionByName(f)
+
+    def handle(df: DataFrame, batch_id):
+        sess = df.sparkSession
+        counts = process_batch(sess, df, lake_root, load_known_products(lake_root, sess))
+        log.info("batch %s: %s", batch_id, counts)
+
+    writer = (union.writeStream.foreachBatch(handle)
+              .option("checkpointLocation", os.path.join(checkpoint_root, "silver_clean"))
+              .queryName("silver_clean"))
+    writer = writer.trigger(availableNow=True) if once else writer.trigger(processingTime="10 seconds")
+    return writer.start()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--lake", default="data/lake")
+    ap.add_argument("--checkpoints", default="data/checkpoints")
+    args = ap.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    q = run(args.lake, args.checkpoints, once=args.once)
+    await_all([q], SparkSession.getActiveSession())

@@ -354,3 +354,26 @@ def test_column_sets_on_mixed_stream():
             assert list(row) == TABLE_COLUMNS[table]
             tables.add(table)
     assert tables == set(TABLE_COLUMNS)
+
+
+# ---- empty-items ruling ----
+def _created_event():
+    for hint, e in stream(800):
+        if e["event_type"] == "order_created":
+            return e
+    raise AssertionError("no order_created in stream")
+
+
+@pytest.mark.parametrize("mode", ["missing", "none", "empty"])
+def test_order_created_without_items_is_quarantined_as_bad_value(mode):
+    e = copy.deepcopy(_created_event())
+    if mode == "missing":
+        del e["payload"]["items"]
+    elif mode == "none":
+        e["payload"]["items"] = None
+    else:
+        e["payload"]["items"] = []
+    rows = tm(e)
+    assert [t for t, _ in rows] == ["silver_quarantine"]
+    assert rows[0][1]["error_code"] == "BAD_VALUE"
+    assert rows[0][1]["error_detail"] == "order has no items"

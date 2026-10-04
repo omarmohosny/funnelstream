@@ -117,7 +117,9 @@ def _order_event(e, p):
     if e["event_type"] != "order_created":
         return [("silver_order_status", status)]
     order_id = _text(e["order_id"])
-    items = p.get("items") or []
+    items = p.get("items")
+    if not items:
+        raise _Bad("order has no items")
     item_rows = []
     for n, item in enumerate(items, start=1):
         qty = _int(item.get("quantity"), "quantity")
