@@ -8,3 +8,4 @@ checkpoints/
 .superpowers/
 ~$*
 .claude/
+noise_manifest.json

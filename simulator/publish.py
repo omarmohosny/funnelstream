@@ -3,13 +3,23 @@ import json
 DELIVERY_TYPES = ("out_for_delivery", "delivered", "delivery_failed")
 
 
-def route(source: str, event: dict) -> tuple[str, str]:
-    """source is 'app' for app/web events, 'order' for order and delivery events."""
+UNPARSABLE_KEY = "unparsable"
+
+
+def route(source: str, event) -> tuple[str, str]:
+    """source is 'app' for app/web events, 'order' for order and delivery events.
+
+    Noised messages are routed by their hint: a str (malformed JSON) or an event missing its
+    key field gets the key "unparsable"; an event with a missing/unknown event_type on an
+    order hint goes to "orders".
+    """
+    if isinstance(event, str):
+        return ("app.events" if source == "app" else "orders"), UNPARSABLE_KEY
     if source == "app":
-        return "app.events", event["session_id"]
-    if event["event_type"] in DELIVERY_TYPES:
-        return "delivery.events", event["order_id"]
-    return "orders", event["order_id"]
+        return "app.events", event.get("session_id") or UNPARSABLE_KEY
+    if event.get("event_type") in DELIVERY_TYPES:
+        return "delivery.events", event.get("order_id") or UNPARSABLE_KEY
+    return "orders", event.get("order_id") or UNPARSABLE_KEY
 
 
 def build_producer_config(bootstrap: str) -> dict:
@@ -31,8 +41,9 @@ class Publisher:
         self._p = producer
         self._max_retries = max_retries
 
-    def send(self, topic: str, key: str, event: dict) -> None:
-        value = json.dumps(event).encode()
+    def send(self, topic: str, key: str, event) -> None:
+        """event is a dict (json.dumps'd) or a str (published unchanged, utf-8)."""
+        value = event.encode("utf-8") if isinstance(event, str) else json.dumps(event).encode()
         for _ in range(self._max_retries):
             try:
                 self._p.produce(topic, key=key.encode(), value=value)

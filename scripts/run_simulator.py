@@ -1,4 +1,5 @@
 import argparse
+import json
 import random
 import time
 from collections import Counter
@@ -7,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from simulator.campaigns import CAMPAIGNS
 from simulator.catalog import make_catalog, make_customers
 from simulator.core import journey
+from simulator.noise import NoiseConfig, NoiseCounter, apply_noise, apply_noise_timed
 from simulator.orders import make_order
 from simulator.publish import Publisher, route
 
@@ -102,7 +104,16 @@ def compress_orders(batch, time_scale):
     return batch
 
 
-def main():
+def pace_stream(timed, emit, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
+    """Like pace_live for a (hint, payload, pace_time) stream: never emit before pace_time."""
+    for hint, payload, t in timed:
+        wait = (t - now_fn()).total_seconds()
+        if wait > 0:
+            sleep_fn(wait)
+        emit(hint, payload)
+
+
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--events", type=int, default=100_000, help="approximate event count")
     ap.add_argument("--seed", type=int, default=42)
@@ -111,29 +122,57 @@ def main():
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--rate", type=float, default=200.0, help="live: events per second")
     ap.add_argument("--time-scale", type=float, default=3600.0, help="live: order lifecycle compression")
-    args = ap.parse_args()
+    ap.add_argument("--noise-off", action="store_true", help="publish clean events only")
+    ap.add_argument("--noise-scale", type=float, default=1.0, help="multiply every noise rate")
+    ap.add_argument("--manifest", default="noise_manifest.json", help="where to write the noise manifest")
+    return ap
 
-    now = datetime.now(timezone.utc)
-    start = resolve_start(args.start, args.live, now)
-    rng = random.Random(args.seed)
-    customers, catalog = make_customers(args.seed, 5_000), make_catalog(args.seed)
-    pub = Publisher(args.bootstrap)
+
+def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, rate=200.0,
+                 time_scale=3600.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
+    """iter_batch -> (history guard) -> apply_noise -> publish; writes the noise manifest.
+
+    The history guard runs BEFORE noise, so future_timestamp noise events (intentionally in
+    the future) never trip it. Noise uses its own rng (derived from the seed) so the clean
+    stream is identical with noise on or off. Returns the per-topic message counts.
+    """
+    rng = random.Random(seed)
+    noise_rng = random.Random(seed * 1_000_003 + 7)
+    customers, catalog = make_customers(seed, 5_000), make_catalog(seed)
+    catalog_ids = {p["product_id"] for p in catalog}
+    counter = NoiseCounter()
     counts = Counter()
 
-    def emit(hint, e):
-        topic, key = route(hint, e)
-        pub.send(topic, key, e)
+    def emit(hint, payload):
+        topic, key = route(hint, payload)
+        pub.send(topic, key, payload)
         counts[topic] += 1
 
-    if args.live:
-        mean_gap = AVG_EVENTS_PER_SESSION / args.rate
-        batch = list(iter_batch(rng, customers, catalog, start, max_events=args.events, mean_gap=mean_gap))
-        compress_orders(batch, args.time_scale)
-        pace_live(batch, emit)
+    if live:
+        mean_gap = AVG_EVENTS_PER_SESSION / rate
+        batch = list(iter_batch(rng, customers, catalog, start, max_events=events, mean_gap=mean_gap))
+        compress_orders(batch, time_scale)
+        batch.sort(key=lambda he: datetime.fromisoformat(he[1]["event_time"]))
+        timed = apply_noise_timed(iter(batch), noise_rng, config, catalog_ids, counter, now=now)
+        pace_stream(timed, emit, now_fn, sleep_fn)
     else:
-        for hint, e in guard_past(iter_batch(rng, customers, catalog, start, max_events=args.events), now):
-            emit(hint, e)
+        stream = guard_past(iter_batch(rng, customers, catalog, start, max_events=events), now)
+        for hint, payload in apply_noise(stream, noise_rng, config, catalog_ids, counter, now=now):
+            emit(hint, payload)
     pub.flush()
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(counter.to_manifest(), f, indent=2)
+    return counts
+
+
+def main():
+    args = build_parser().parse_args()
+    now = datetime.now(timezone.utc)
+    start = resolve_start(args.start, args.live, now)
+    config = NoiseConfig.off() if args.noise_off else NoiseConfig().scaled(args.noise_scale)
+    pub = Publisher(args.bootstrap)
+    counts = run_pipeline(seed=args.seed, events=args.events, start=start, now=now, live=args.live, pub=pub,
+                          config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale)
     print(dict(counts), "total", sum(counts.values()))
 
 
