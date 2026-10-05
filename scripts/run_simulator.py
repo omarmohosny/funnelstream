@@ -61,6 +61,7 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
             if oe["event_type"] == "order_created":
                 oe["payload"]["session_id"] = purchase["session_id"]
                 oe["payload"]["click_id"] = click_id
+                oe["payload"]["platform"] = purchase.get("platform")
             n_events += 1
             yield "order", oe
 

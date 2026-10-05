@@ -81,12 +81,9 @@ The `--list` command prints nothing until Kafka is up and then returns without a
 created app.events
 created orders
 created delivery.events
-created app.events.dlq
-created orders.dlq
-created delivery.events.dlq
 ```
 
-Partitions: `app.events` 6, `orders` 3, `delivery.events` 3, each DLQ topic 1. Check with:
+Partitions: `app.events` 6, `orders` 3, `delivery.events` 3. Check with:
 
 ```powershell
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe

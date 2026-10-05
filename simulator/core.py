@@ -2,7 +2,7 @@ import random
 from datetime import timedelta
 
 
-def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None):
+def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None, platform=None):
     if rng is None:
         rng = random.Random()
     event_id = f"evt_{rng.getrandbits(64):016x}"
@@ -18,6 +18,8 @@ def _event(event_type, t, session_id, customer_id, device, channel, country, cit
         "city": city,
         "payload": payload,
     }
+    if platform is not None:
+        e["platform"] = platform
     if customer_id is not None:
         e["customer_id"] = customer_id
     return e
@@ -28,6 +30,7 @@ def journey(rng, customer, catalog, campaign, start):
     session_id = f"sess_{rng.getrandbits(64):016x}"
     customer_id = customer["customer_id"] if customer else None
     device = customer["device_primary"] if customer else rng.choice(["mobile", "desktop"])
+    platform = ("app" if rng.random() < 0.7 else "web") if device == "mobile" else "web"
     city = customer["city"] if customer else "Cairo"
     country = "EG"
     channel = campaign["channel"] if campaign else rng.choice(["organic", "direct", "email"])
@@ -42,7 +45,7 @@ def journey(rng, customer, catalog, campaign, start):
     def add(etype, payload, dt=5):
         nonlocal t
         t = t + timedelta(seconds=rng.randint(dt, dt * 4))
-        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload, rng))
+        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload, rng, platform))
 
     add("app_open", {})
     first_page = {"page": "home"}

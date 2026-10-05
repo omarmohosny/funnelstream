@@ -122,6 +122,9 @@ def _validate(event, now, known_products):
     if ts > now + CLOCK_SKEW:
         return False, "FUTURE_TIMESTAMP"
 
+    if event.get("platform") is not None and event["platform"] not in ("app", "web"):
+        return False, "BAD_VALUE"
+
     code = _check_numbers(payload)
     if code:
         return False, code

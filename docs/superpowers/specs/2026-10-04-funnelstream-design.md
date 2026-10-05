@@ -129,21 +129,24 @@ Quality proof for the defense: the SQL check compares the quarantine rate and du
 | Topic | Events | Key | Partitions | Retention |
 |---|---|---|---|---|
 | `app.events` | `app_open`, `page_view`, `product_view`, `product_click`, `product_view_end`, `product_search`, `add_to_cart`, `remove_from_cart`, `checkout_started`, `purchase` | `session_id` | 6 | 3 days |
-| `orders` | `order_created`, `payment_authorised`, `order_packed`, `order_shipped`, `order_cancelled`, `order_completed` | `order_id` | 3 | 7 days |
+| `orders` | `order_created`, `payment_authorised`, `order_packed`, `order_shipped`, `order_cancelled`, `order_completed`, `order_returned` | `order_id` | 3 | 7 days |
 | `delivery.events` | `out_for_delivery`, `delivered`, `delivery_failed` | `order_id` | 3 | 7 days |
 
 Producers use `acks=all` and idempotence. Per-session order is kept for app events. Per-order order is kept for order and delivery events.
 
-**Order payload (`order_created`):** `order_id`, `customer_id`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `payment_method`, `city`, `country`, `items` (product_id, quantity, unit_price, line_total), `order_total`.
+**Order payload (`order_created`):** `order_id`, `customer_id`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `platform` (`app` or `web`), `payment_method`, `city`, `country`, `items` (product_id, quantity, unit_price, line_total), `order_total`.
 
 ## 6. Order Lifecycle and Status Rank
 
 Main path:
 `order_created` → `payment_authorised` → `order_packed` → `order_shipped` → `out_for_delivery` → `delivered` → `order_completed`
 
+Cash-on-delivery orders skip `payment_authorised` (section 17, rule 7); only prepaid methods emit it.
+
 Branches:
 - `delivery_failed` returns to `out_for_delivery` on retry. Each failure increments `delivery_failed_count`.
-- `order_cancelled` is valid only before `order_shipped`. A cancel after shipment is rejected to quarantine.
+- `order_cancelled` is valid only before `order_shipped`, judged by event time (section 17, rule 6). A cancel after shipment is rejected to quarantine.
+- After the last failed delivery attempt with no success, `order_returned` ends the order (section 17, rule 5).
 
 **Status rank** (used to resolve `current_status`, not arrival order):
 
@@ -157,9 +160,10 @@ Branches:
 | `delivery_failed` | 5 |
 | `delivered` | 6 |
 | `order_completed` | 7 |
+| `order_returned` | 7 (tie with `order_completed` resolved by latest `status_time`) |
 | `order_cancelled` | 2 (valid only before rank 4; terminal) |
 
-`current_status` is the status with the highest rank. A cancelled order keeps `order_cancelled` as terminal.
+`current_status` is the status with the highest rank. A cancel that counts keeps `order_cancelled` as terminal.
 
 `payment_method` is set on `order_created`. `carrier` is set on `order_shipped`.
 

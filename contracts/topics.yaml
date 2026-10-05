@@ -2,9 +2,6 @@ topics:
   app.events:      {partitions: 6, key: session_id, retention_hours: 72}
   orders:          {partitions: 3, key: order_id,   retention_hours: 168}
   delivery.events: {partitions: 3, key: order_id,   retention_hours: 168}
-  app.events.dlq:      {partitions: 1, key: session_id, retention_hours: 336}
-  orders.dlq:          {partitions: 1, key: order_id,   retention_hours: 336}
-  delivery.events.dlq: {partitions: 1, key: order_id,   retention_hours: 336}
 
 app_event_types:
   - app_open
@@ -25,6 +22,7 @@ order_event_types:
   - order_shipped
   - order_cancelled
   - order_completed
+  - order_returned
 
 delivery_event_types:
   - out_for_delivery

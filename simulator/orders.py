@@ -44,7 +44,8 @@ def make_order(rng, customer, catalog, campaign, t, order_id):
         out.append((topic, _ev(rng, etype, t, order_id, customer, payload)))
 
     t += timedelta(minutes=rng.randint(10, 60))
-    add("orders", "payment_authorised", {"payment_method": payment})
+    if payment != "cod":  # cash on delivery skips payment_authorised (spec 17.7)
+        add("orders", "payment_authorised", {"payment_method": payment})
     t += timedelta(hours=rng.randint(2, 12))
     add("orders", "order_packed", {})
     t += timedelta(hours=rng.randint(2, 10))
@@ -66,4 +67,6 @@ def make_order(rng, customer, catalog, campaign, t, order_id):
         else:
             t += timedelta(hours=1)
             add("delivery.events", "delivery_failed", {"reason": "refused", "attempt": a})
+            t += timedelta(hours=rng.randint(2, 6))
+            add("orders", "order_returned", {"reason": "all_attempts_failed", "attempts": attempts})
     return out

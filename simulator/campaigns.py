@@ -16,6 +16,7 @@ def campaign_numbers(campaign_id: str, report_date: date, as_of: datetime, seed:
     cpm = rng.uniform(18, 35)
     ctr = rng.uniform(0.01, 0.04)
     full_spend = camp["daily_budget"] * rng.uniform(0.85, 1.05)
+    conv_rate = rng.uniform(0.02, 0.06)  # drawn last so earlier values keep their seeds
     impressions = int(full_spend / cpm * 1000 * frac)
     clicks = int(impressions * ctr)
     return {
@@ -25,5 +26,6 @@ def campaign_numbers(campaign_id: str, report_date: date, as_of: datetime, seed:
         "impressions": impressions,
         "clicks": clicks,
         "spend": round(full_spend * frac, 4),
+        "platform_conversions": int(clicks * conv_rate),
         "currency": "EGP",
     }

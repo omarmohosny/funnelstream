@@ -42,12 +42,16 @@ def test_every_delivered_order_was_shipped():
             assert "order_shipped" in types
 
 
-def test_failed_attempts_are_followed_by_retry_or_end():
+def test_failed_attempts_are_followed_by_retry_or_return():
     for events in _orders():
-        seq = [e["event_type"] for _, e in events if e["event_type"] in ("delivered", "delivery_failed", "out_for_delivery")]
+        seq = [e["event_type"] for _, e in events
+               if e["event_type"] in ("delivered", "delivery_failed", "out_for_delivery", "order_returned")]
         for i, s in enumerate(seq):
             if s == "delivery_failed":
-                assert i + 1 == len(seq) or seq[i + 1] == "out_for_delivery"
+                assert i + 1 < len(seq)
+                assert seq[i + 1] in ("out_for_delivery", "order_returned")
+        if "order_returned" in seq:
+            assert seq[-1] == "order_returned" and seq[-2] == "delivery_failed"
 
 
 def test_topics_are_routed_correctly():
