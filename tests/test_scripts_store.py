@@ -253,3 +253,56 @@ def test_publish_silver_upload_only_wires_store_and_uploader(monkeypatch, tmp_pa
     assert "silver_events" in capsys.readouterr().out
     assert publish_silver.main(["--tables", "nope"]) == 2
     assert publish_silver.main(["--export-only", "--upload-only"]) == 2
+
+
+# C2: apply_ddl --recreate
+def test_apply_ddl_recreate_without_yes_drops_nothing(monkeypatch, capsys):
+    fake = FakeStore()
+    monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
+    rc = apply_ddl.main(["--backend", "databricks", "--catalog", "workspace",
+                         "--recreate", "silver_events,silver_orders"])
+    out = capsys.readouterr().out
+    assert rc == 2 and fake.executed == [] and not fake.closed
+    assert "WARNING" in out
+    assert "DROP TABLE IF EXISTS workspace.silver.silver_events;" in out
+    assert "DROP TABLE IF EXISTS workspace.silver.silver_orders;" in out
+
+
+def test_apply_ddl_recreate_with_yes_drops_before_matching_create(monkeypatch):
+    fake = FakeStore()
+    monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
+    rc = apply_ddl.main(["--backend", "databricks", "--catalog", "workspace", "--yes",
+                         "--recreate", "silver_events,silver_campaign_snapshots"])
+    ex = fake.executed
+    assert rc == 0
+    for t in ("silver_events", "silver_campaign_snapshots"):
+        drop = "DROP TABLE IF EXISTS workspace.silver.%s;" % t
+        assert ex.count(drop) == 1
+        assert ex[ex.index(drop) + 1].startswith("CREATE TABLE IF NOT EXISTS workspace.silver.%s (" % t)
+    assert sum(s.startswith("DROP") for s in ex) == 2
+    plain = split_statements(render_databricks(all_tables(), catalog="workspace", volume="silver_upload"))
+    assert [s for s in ex if not s.startswith("DROP")] == plain
+
+
+def test_apply_ddl_recreate_unknown_table_rejected(monkeypatch, capsys):
+    fake = FakeStore()
+    monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
+    rc = apply_ddl.main(["--backend", "databricks", "--yes", "--recreate", "silver_events,not_a_table"])
+    assert rc == 2 and fake.executed == []
+    assert "unknown table" in capsys.readouterr().err
+
+
+def test_apply_ddl_recreate_rejected_on_postgres(monkeypatch, capsys):
+    fake = FakeStore()
+    monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
+    rc = apply_ddl.main(["--backend", "postgres", "--yes", "--recreate", "silver_events"])
+    assert rc == 2 and fake.executed == []
+    assert "databricks backend only" in capsys.readouterr().err
+
+
+def test_apply_ddl_recreate_dry_run_exits_zero_and_executes_nothing(monkeypatch, capsys):
+    fake = FakeStore()
+    monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
+    rc = apply_ddl.main(["--backend", "databricks", "--dry-run", "--yes", "--recreate", "silver_orders"])
+    assert rc == 0 and fake.executed == []
+    assert "DROP TABLE IF EXISTS funnelstream.silver.silver_orders;" in capsys.readouterr().out

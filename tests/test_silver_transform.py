@@ -276,7 +276,7 @@ def test_other_statuses_one_row_with_rank_carrier_reason():
                 assert r["carrier"] == e["payload"]["carrier"]
             else:
                 assert r["carrier"] is None
-            if et in ("order_cancelled", "delivery_failed"):
+            if et in ("order_cancelled", "delivery_failed", "order_returned"):
                 assert r["reason"] == e["payload"]["reason"]
             else:
                 assert r["reason"] is None

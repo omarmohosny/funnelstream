@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_events (
     customer_id STRING,
     device STRING,
     channel STRING,
+    platform STRING,
     country STRING,
     city STRING,
     campaign_id STRING,
@@ -244,6 +245,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_orders (
     customer_id STRING,
     session_id STRING,
     channel STRING,
+    platform STRING,
     utm_source STRING,
     utm_campaign STRING,
     click_id STRING,
@@ -329,6 +331,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_campaign_snapshots (
     platform STRING,
     impressions BIGINT,
     clicks BIGINT,
+    platform_conversions BIGINT,
     spend DECIMAL(12,4),
     currency STRING
 )

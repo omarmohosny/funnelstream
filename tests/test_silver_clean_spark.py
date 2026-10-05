@@ -387,3 +387,61 @@ def test_driver_timezone_does_not_change_results(spark, tmp_path):
     assert len(rows) == 2
     assert all(str(r["event_date"]) == "2026-10-05" for r in rows.values())  # 23:xx UTC is 02:xx Cairo next day
     assert rows["evt_tz_0"]["is_late"] is False and rows["evt_tz_1"]["is_late"] is True
+
+
+# C2: order_returned, COD rule and platform on a simulated noisy dataset
+def test_c2_returned_cod_and_platform_on_noisy_dataset(spark, tmp_path):
+    msgs, _ = simulated(30_000)
+    assert 20_000 <= len(msgs) <= 40_000
+    lake = tmp_path / "lake"
+    process_batch(spark, bronze_df(spark, msgs), str(lake), None, now=NOW)
+    ev, orders, st = (silver(spark, lake, t) for t in ("silver_events", "silver_orders", "silver_order_status"))
+
+    # order_returned flows as a normal status row
+    returned = st.filter("status = 'order_returned'")
+    n_returned = returned.count()
+    assert n_returned > 0
+    assert returned.filter("status_rank != 7 OR reason IS NULL").count() == 0
+    ret_ids = returned.select("order_id").distinct()
+    with_failed = ret_ids.join(st.filter("status = 'delivery_failed'").select("order_id").distinct(), "order_id")
+    no_failed = ret_ids.count() - with_failed.count()
+    bad_final = ret_ids.join(st.filter("status IN ('delivered', 'order_completed')"), "order_id").count()
+    assert no_failed == 0 and bad_final == 0
+
+    # COD orders have no payment_authorised row
+    cod = orders.filter("payment_method = 'cod'").select("order_id")
+    n_cod = cod.count()
+    cod_authorised = cod.join(st.filter("status = 'payment_authorised'"), "order_id").count()
+    prepaid_authorised = orders.filter("payment_method != 'cod'").select("order_id").join(
+        st.filter("status = 'payment_authorised'"), "order_id").count()
+    assert n_cod > 0 and prepaid_authorised > 0
+    assert cod_authorised == 0
+
+    # platform values and the app share among mobile sessions
+    vals = {r["platform"] for r in ev.select("platform").distinct().collect()}
+    assert vals <= {"app", "web", None}
+    sess = ev.filter("session_id IS NOT NULL AND platform IS NOT NULL").groupBy("session_id").agg(
+        F.countDistinct("platform").alias("n_platform"), F.first("platform").alias("platform"),
+        F.max(F.when(F.col("device") == "mobile", 1).otherwise(0)).alias("is_mobile"))
+    mobile = sess.filter("is_mobile = 1")
+    n_mobile = mobile.count()
+    n_app = mobile.filter("platform = 'app'").count()
+    share = n_app / n_mobile
+    assert 0.55 <= share <= 0.85, (n_app, n_mobile)
+    n_null_events = ev.filter("platform IS NULL").count()
+
+    # silver_orders.platform equals the platform of the order's session
+    o = orders.filter("platform IS NOT NULL").select("order_id", "session_id", F.col("platform").alias("op"))
+    j = o.join(sess.select("session_id", F.col("platform").alias("sp")), "session_id", "left")
+    unmatched = j.filter("sp IS NULL").count()
+    mismatch = j.filter("sp IS NOT NULL AND sp != op").count()
+    n_orders = orders.count()
+    print("\nC2 events=%d returned_rows=%d returned_orders=%d returned_without_failed=%d returned_with_delivered=%d "
+          "cod_orders=%d cod_with_payment_authorised=%d prepaid_with_payment_authorised=%d platform_values=%s "
+          "events_platform_null=%d mobile_sessions=%d app_mobile_sessions=%d app_share=%.4f orders=%d "
+          "orders_platform_null=%d orders_session_not_found=%d orders_platform_mismatch=%d" % (
+              len(msgs), n_returned, ret_ids.count(), no_failed, bad_final, n_cod, cod_authorised,
+              prepaid_authorised, sorted(str(v) for v in vals), n_null_events, n_mobile, n_app, share,
+              n_orders, orders.filter("platform IS NULL").count(), unmatched, mismatch))
+    assert sess.filter("n_platform > 1").count() == 0
+    assert mismatch == 0

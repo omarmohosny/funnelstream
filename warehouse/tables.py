@@ -164,7 +164,8 @@ def _silver_mirror():
                             partition="event_date" if name in _PARTITIONED else None,
                             comment="Databricks mirror of local Silver"))
     snap = _parse("campaign_id:string? report_date:date? pulled_at:timestamp? utm_campaign:string? "
-                  "platform:string? impressions:bigint? clicks:bigint? spend:decimal(12,4)? currency:string?",
+                  "platform:string? impressions:bigint? clicks:bigint? platform_conversions:bigint? "
+                  "spend:decimal(12,4)? currency:string?",
                   keys=())
     tables.append(Table("silver_campaign_snapshots", "silver", snap, ("campaign_id", "report_date", "pulled_at"),
                         comment="Databricks mirror of local Silver"))

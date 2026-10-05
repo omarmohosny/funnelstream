@@ -119,7 +119,7 @@ def test_silver_mirror_matches_spark_schemas():
         assert t.column_names() == [f.name for f in schema.fields], name
     snap = next(x for x in SILVER_MIRROR_TABLES if x.name == "silver_campaign_snapshots")
     assert snap.column_names() == ["campaign_id", "report_date", "pulled_at", "utm_campaign", "platform",
-                                   "impressions", "clicks", "spend", "currency"]
+                                   "impressions", "clicks", "platform_conversions", "spend", "currency"]
     assert snap.column("spend").type == "decimal(12,4)"
     ev = next(x for x in SILVER_MIRROR_TABLES if x.name == "silver_events")
     assert ev.column("event_time").type == "timestamp" and ev.column("event_date").type == "date"

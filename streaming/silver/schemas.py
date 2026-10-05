@@ -2,12 +2,12 @@
 
 SILVER_EVENTS_COLUMNS = [
     "event_id", "event_type", "event_time", "kafka_timestamp", "is_late", "is_bot", "event_version",
-    "session_id", "customer_id", "device", "channel", "country", "city", "campaign_id", "utm_source",
-    "utm_campaign", "click_id", "product_id", "element", "dwell_seconds", "cart_id", "order_id",
+    "session_id", "customer_id", "device", "channel", "platform", "country", "city", "campaign_id",
+    "utm_source", "utm_campaign", "click_id", "product_id", "element", "dwell_seconds", "cart_id", "order_id",
     "search_term", "event_date",
 ]
 SILVER_ORDERS_COLUMNS = [
-    "order_id", "customer_id", "session_id", "channel", "utm_source", "utm_campaign", "click_id",
+    "order_id", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "click_id",
     "payment_method", "city", "country", "order_total", "order_created_at", "event_date",
 ]
 SILVER_ORDER_STATUS_COLUMNS = [

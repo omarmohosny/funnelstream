@@ -72,6 +72,11 @@ def _int(v, name):
     return int(d)
 
 
+def _platform(v):
+    """app or web; anything else (missing, old-format events) is NULL."""
+    return v if v in ("app", "web") else None
+
+
 def _row(columns, **values):
     return {c: values.get(c) for c in columns}
 
@@ -91,7 +96,7 @@ def _app_event(e, p, kafka_timestamp):
         is_bot=False, event_version=e["event_version"],
         session_id=_text(e.get("session_id")), customer_id=_text(e.get("customer_id")),
         device=normalize_device(e.get("device")), channel=_text(e.get("channel")),
-        country=_text(e.get("country")) or "EG", city=normalize_city(e.get("city")),
+        platform=_platform(e.get("platform")), country=_text(e.get("country")) or "EG", city=normalize_city(e.get("city")),
         campaign_id=None, utm_source=_text(p.get("utm_source")), utm_campaign=_text(p.get("utm_campaign")),
         click_id=_text(p.get("click_id")), product_id=_text(p.get("product_id")),
         element=_text(p.get("element")), dwell_seconds=_int(p.get("dwell_seconds"), "dwell_seconds"),
@@ -107,7 +112,7 @@ def _status_row(e, p, et):
         status=status, status_rank=STATUS_RANK[status], status_time=et,
         payment_method=_text(p.get("payment_method")),
         carrier=_text(p.get("carrier")) if status in ("order_shipped", "out_for_delivery", "delivered") else None,
-        reason=_text(p.get("reason")) if status in ("order_cancelled", "delivery_failed") else None,
+        reason=_text(p.get("reason")) if status in ("order_cancelled", "delivery_failed", "order_returned") else None,
         event_date=_cairo_date(et))
 
 
@@ -134,7 +139,7 @@ def _order_event(e, p):
     order = _row(
         SILVER_ORDERS_COLUMNS, order_id=order_id, customer_id=_text(e.get("customer_id")),
         session_id=_text(p.get("session_id")), channel=_text(p.get("channel")),
-        utm_source=_text(p.get("utm_source")), utm_campaign=_text(p.get("utm_campaign")),
+        platform=_platform(p.get("platform")), utm_source=_text(p.get("utm_source")), utm_campaign=_text(p.get("utm_campaign")),
         click_id=_text(p.get("click_id")), payment_method=_text(p.get("payment_method")),
         city=normalize_city(e.get("city")), country=_text(e.get("country")) or "EG",
         order_total=_money(p.get("order_total")), order_created_at=et, event_date=_cairo_date(et))

@@ -169,6 +169,8 @@ The quarantine count equals the sum of the manifest counts for the defects the v
 
 Running Silver again changes nothing (checked: same counts, and also the same after deleting `data/checkpoints/silver_clean` and replaying).
 
+After Amendment C (step C2) `silver_events` and `silver_orders` have a nullable `platform` column (`app` or `web`) right after `channel`, and `silver_order_status` can hold `order_returned` rows (rank 7). The counts and quarantine numbers above were observed before Amendment C and were not re-measured: the simulator now also emits `order_returned` and no `payment_authorised` for cash on delivery, so a new run gives different counts. `silver_campaign_snapshots` (Databricks mirror, no local Silver job yet) gains `platform_conversions` right after `clicks`.
+
 ### 6. Gold reference build
 
 ```powershell
@@ -255,6 +257,9 @@ docker compose run --rm spark python scripts/check_databricks.py
 # 2. Create schemas gold and silver, the upload volume and all tables (run: --dry-run only)
 docker compose run --rm spark python scripts/apply_ddl.py --backend databricks --dry-run
 docker compose run --rm spark python scripts/apply_ddl.py --backend databricks
+# 2b. Schema change on existing tables (Amendment C added columns; CREATE IF NOT EXISTS does not alter them).
+#     Drops the tables AND their data, then recreates them; prints the plan and exits 2 without --yes. Not yet run for real.
+#     docker compose run --rm spark python scripts/apply_ddl.py --backend databricks --recreate silver_events,silver_orders,silver_campaign_snapshots [--yes]
 # 3. Connectivity including a tiny upload to the volume (verified against a real workspace)
 docker compose run --rm spark python scripts/check_databricks.py --upload-test
 # 4. Publish (verified for real): dry run first (exports locally, prints the MERGE it would run, uploads nothing)
