@@ -210,25 +210,27 @@ Silver rules:
 | `dim_product` | Databricks Gold build | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active`, `valid_from`, `valid_to`, `is_current` |
 | `dim_campaign` | Databricks Gold build | Campaign | `campaign_key` | `campaign_id`, `utm_campaign`, `platform`, `name`, `start_date`, `end_date` |
 | `dim_date` | Databricks Gold build | Day | `date_key` (yyyymmdd) | `date`, `week`, `month`, `is_weekend`, `is_friday_saturday`, `is_ramadan`, `is_eid`, `is_holiday` |
-| `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `delivery_lead_hours`, `delivery_failed_count`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `order_seq`, `is_first_order`, `date_key` |
-| `fact_order_lines` | Databricks Gold build | Order line | `order_id`, `line_no` | `customer_key`, `product_key`, `date_key`, `city`, `quantity`, `line_total` (EGP) |
+| `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key` (-1 for an unknown member), `customer_id`, `session_id`, `channel`, `platform`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `returned_at`, `delivery_lead_hours`, `delivery_failed_count`, `has_failed_attempt`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `is_returned`, `order_seq`, `is_first_order`, `date_key` |
+| `fact_order_lines` | Databricks Gold build | Order line | `order_id`, `line_no` | `customer_key`, `customer_id`, `product_key`, `product_id`, `date_key`, `city`, `quantity`, `line_total` (EGP) |
 | `live_metrics_minute` (local serving, not Gold) | Local Spark stream | One minute, country | `minute_start`, `country` | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed`. Computed on 1-minute tumbling windows from non-late Silver events |
-| `fact_funnel_daily` | Databricks Gold build | Day, country, channel, payment method | `event_date`, `country`, `channel`, `payment_method` | `sessions`, `product_views`, `cart_sessions`, `checkout_sessions`, `orders`, `cart_abandon_rate`, `checkout_abandon_rate` |
 | `fact_attribution` | Databricks Gold build | Order and attribution model | `order_id`, `model` | `campaign_id` (NULL for direct), `click_id` (NULL for direct), `order_total` (EGP), `model` (`last_touch` or `first_touch`) |
-| `fact_campaign_daily` | Databricks Gold build | Campaign per report date | `campaign_id`, `report_date` | `platform`, `impressions`, `clicks`, `spend` (EGP), `orders_placed`, `orders_delivered`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `orders_cancelled`, `orders_failed_delivery`, `cancel_rate`, `failed_delivery_rate`, `new_customer_orders`, `aov` (EGP), `ctr`, `conversion_rate`, `cpa` (EGP, placed), `roas_placed`, `roas_delivered`, `direct_share` |
-| `fact_product_recs` | Databricks Gold build | Recommendation | `segment_level`, `segment_value`, `anchor_product_id`, `rank` | `rec_product_id`, `co_view_count`, `window_end` |
-| `fact_city_product_daily` | Databricks Gold build | City, product, day | `city`, `product_id`, `date_key` | `sessions_viewed`, `add_to_cart`, `units`, `revenue` (EGP) |
-| `fact_customer_360` (stretch) | Databricks Gold build | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
+| `agg_orders_daily` | Databricks Gold build | Day, channel, payment method, platform | `date_key`, `channel`, `payment_method`, `platform` | `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `new_customer_orders` |
+| `agg_funnel_daily` | Databricks Gold build | Day, country, channel, platform | `event_date`, `country`, `channel`, `platform` | `sessions`, `product_views`, `cart_sessions`, `checkout_sessions`, `orders`, `cart_abandon_rate`, `checkout_abandon_rate` |
+| `agg_campaign_daily` | Databricks Gold build | Campaign per report date and attribution model | `campaign_id`, `report_date`, `attribution_model` | `ad_platform` (`meta` or `google`), `impressions`, `clicks`, `platform_conversions`, `spend` (EGP), `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `cancel_rate`, `failed_attempt_rate`, `return_rate`, `open_rate`, `new_customer_orders`, `aov` (EGP), `ctr`, `conversion_rate`, `cpa` (EGP, placed), `cost_per_delivered_order` (EGP), `roas_placed`, `roas_delivered` |
+| `agg_city_product_daily` | Databricks Gold build | City, product, day | `city`, `product_id`, `date_key` | `sessions_viewed`, `add_to_cart`, `units`, `revenue` (EGP) |
+| `rec_product` | Databricks Gold build | Recommendation | `segment_level`, `segment_value`, `anchor_product_id`, `rank` | `rec_product_id`, `co_view_sessions`, `window_end` |
+| `customer_360` (stretch) | Databricks Gold build | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
 
-**Stretch: contribution margin.** `cfg_cost_assumptions` (Airflow, one row per product category): `margin_pct`, `carrier_fee_egp`, `failed_attempt_cost_egp`, `cod_fee_egp`. Adds `contribution_egp` to `fact_orders` and `fact_campaign_daily`. Labelled as assumption-based on the dashboard.
+**Stretch: contribution margin.** `cfg_cost_assumptions` (Airflow, one row per product category): `margin_pct`, `carrier_fee_egp`, `failed_attempt_cost_egp`, `cod_fee_egp`. Adds `contribution_egp` to `fact_orders` and `agg_campaign_daily`. Labelled as assumption-based on the dashboard.
 
 **Rules:**
 - SCD2 applies only to `dim_customer` and `dim_product`. `valid_from` comes from `updated_at` in Silver. Facts join to the version valid at event time (`valid_from` ≤ event time < `valid_to`).
 - `dim_campaign` and `dim_date` have no history columns.
 - Campaign metrics use the latest `pulled_at` per campaign per `report_date`. Earlier pulls are kept in Silver and not summed.
-- Attribution: last click within 7 days before the order (`last_touch`), and first click within 7 days (`first_touch`). Orders with no click are one row with NULL campaign and click (direct).
+- Attribution: `last_touch` (the order's own session click first, then the customer's last click in the previous 7 days; spec section 17, rule 11) and `first_touch` for `fact_attribution`. Orders with no click are one row with NULL campaign and click (direct). `agg_campaign_daily` uses `last_touch` and says so in `attribution_model`.
 - `delivery_lead_hours` = `delivered_at` − `order_created_at`.
-- `fact_product_recs`: co-view over a 30-day window, computed from `fact_city_product_daily` and `silver_events` clicks. Top 5 per segment. Segment is city, then country, then global when a city has fewer than 20 co-viewing customers for a product. Only `is_active` products are recommended. Labelled as co-view.
+- Delivered revenue is dated on the ORDER date (cohort view). `current_status` follows the timed cancel rule (spec section 17, rule 6).
+- `rec_product`: co-view over a 30-day window, computed from `agg_city_product_daily` and `silver_events` clicks. Top 5 per segment. Segment is city, then country, then global when a city has fewer than 20 distinct co-viewing sessions for a product. Only `is_active` products are recommended. Labelled as co-view.
 
 ## 8. Metric Dictionary
 
@@ -243,11 +245,14 @@ Stored in `docs/metrics.md`. Summary:
 | Cart abandon rate | 1 − `orders_placed` / `cart_sessions` | Sessions with add to cart |
 | Checkout abandon rate | 1 − `orders_placed` / `checkout_sessions` | Sessions with checkout started |
 | Cancel rate | `orders_cancelled` / `orders_placed` | Placed orders |
-| Failed-delivery rate | `orders_failed_delivery` / `orders_placed` | Orders with ≥1 failed attempt |
+| Failed-attempt rate | `orders_with_failed_attempt` / `orders_placed` | Orders with at least one failed attempt |
+| Return rate | `orders_returned` / `orders_placed` | Final status `order_returned` |
+| Open rate | open after 14 days / `orders_placed` | Not delivered, cancelled or returned after 14 days |
+| Cost per delivered order | `spend` / `orders_delivered` | Delivered orders |
 | First-attempt delivery rate | `first_attempt_delivered` / shipped orders | Shipped orders |
 | AOV | `revenue_placed` / `orders_placed` | Placed orders |
 | Delivery lead time | Average `delivery_lead_hours` | Delivered orders |
-| Direct share | Direct orders / all orders | Last-touch |
+| Direct share | Direct orders / all orders | `agg_orders_daily`, channel `direct` |
 
 Delivered revenue lags spend by about 2–4 days. The dashboard shows this lag next to the campaign page.
 
@@ -336,7 +341,7 @@ None. Decisions so far: SCD2 kept; Customer 360 stretch; 1–2M required with a 
 These rules win over any older wording above or in the plan.
 
 1. **Late rows.** `is_late` excludes a row only from `live_metrics_minute`. Funnel, attribution and every other Gold table include late rows. `is_late` is meaningful in `--live` runs only (history mode publishes old events, so all rows are late by the rule); the manifest "late" counts are verified only on live runs.
-2. **Gold build.** One job, `warehouse/gold_build.py`, runs after `publish_silver` in fixed order: dimensions, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_funnel_daily`, `fact_attribution`, `fact_campaign_daily`, `fact_city_product_daily`, `fact_product_recs`, SQL checks. Row-scale tables are `MERGE ... SELECT` SQL files under `warehouse/gold/*.sql` run through `store.query`. Only small tables (for example `fact_campaign_daily`) go through `upsert(rows)`. The Python builders in Tasks 12 to 14 stay as reference implementations with a parity test.
+2. **Gold build.** One job, `warehouse/gold_build.py`, runs after `publish_silver` in fixed order: dimensions, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, SQL checks. Row-scale tables are `MERGE ... SELECT` SQL files under `warehouse/gold/*.sql` run through `store.query`. Only small tables (for example `agg_campaign_daily`) go through `upsert(rows)`. The Python builders in Tasks 12 to 14 stay as reference implementations with a parity test.
 3. **Silver owns quarantine.** `silver_quarantine.error_code` values: `BAD_JSON, MISSING_FIELD, UNKNOWN_EVENT_TYPE, BAD_VERSION, NEGATIVE_PRICE, FUTURE_TIMESTAMP, BAD_VALUE, UNKNOWN_PRODUCT, CANCEL_AFTER_SHIPMENT, NEGATIVE_SPEND, CLICKS_GT_IMPRESSIONS`. `null_product_id` maps to `MISSING_FIELD`. The campaign Silver step quarantines negative spend and clicks above impressions. `silver_products` is loaded before the stream starts and passed to the validator as `known_products`.
 4. **Silver shape.** Silver flattens the payload into the columns listed in section 7 (`product_id`, `utm_source`, `utm_campaign`, `click_id`, `order_id`, and so on) and adds `is_bot`. A new table `silver_orders` (one row per `order_created`) carries `order_id, customer_id, session_id, channel, utm_source, utm_campaign, click_id, payment_method, city, country, items (array), order_total, order_created_at`. `fact_orders` joins `silver_orders` to `silver_order_status`.
 5. **Bots.** `is_bot` is recomputed over the whole Silver events table in the Gold build (not per micro-batch) and excludes bot sessions from the funnel, attribution and live metrics.
@@ -349,7 +354,7 @@ These rules win over any older wording above or in the plan.
 12. **Host networking.** Kafka advertises `localhost:9092` for host clients (simulator, Spark) and `kafka:19092` internally. The Airflow container installs the Databricks connector and requests, mounts `warehouse`, `contracts` and `data`, and reaches the mock ad API at `http://host.docker.internal:8000`. `publish_silver` runs on the host before the DAG.
 13. **Publish allow-list.** `publish_silver` uploads only an explicit column allow-list. Names, phones and raw Bronze rows never leave the machine. Free Edition may lack service principals, so Power BI uses a read-only user token.
 14. **City labels.** `Other` is a real value (smaller cities). `unknown` means missing or unrecognised. Power BI shows both.
-15. **Campaign sessions.** `fact_city_product_daily.sessions_viewed` counts distinct sessions, not customers.
+15. **Campaign sessions.** `agg_city_product_daily.sessions_viewed` counts distinct sessions, not customers.
 16. **Spark runs in Docker.** Spark does not start on Windows without Hadoop's `winutils.exe` (an unsigned community binary), so the Spark jobs and Spark tests run in a `spark` Compose service (Python 3.11, Java 17, PySpark, Delta) with the repo mounted at `/app` and Kafka at `kafka:19092`. The simulator, mock ad API and non-Spark tests stay on the host. Bronze has three tables (`bronze_app_events`, `bronze_orders`, `bronze_delivery_events`), one streaming query per topic. Container memory is limited to 3 GB; Docker has about 8 GB in total, so keep other services within their limits.
 17. **Risks.** Databricks Free Edition limits and upload time for 1 to 2 million rows: test one upload early, fall back to Postgres by 10 Oct.
 

@@ -18,13 +18,14 @@ from simulator.catalog import make_catalog, make_customers  # noqa: E402
 from simulator.noise import NoiseConfig, NoiseCounter, apply_noise  # noqa: E402
 from simulator.publish import route  # noqa: E402
 from streaming.common.bots import find_bot_sessions  # noqa: E402
-from streaming.common.status import STATUS_RANK, resolve_current_status  # noqa: E402
+from streaming.common.status import STATUS_RANK, resolve_current_status_timed  # noqa: E402
 from streaming.gold.bots import mark_bot_sessions  # noqa: E402
 from streaming.gold.build import build_all  # noqa: E402
-from streaming.gold.funnel import build_fact_funnel_daily  # noqa: E402
+from streaming.gold.agg_orders import build_agg_orders_daily  # noqa: E402
+from streaming.gold.funnel import build_agg_funnel_daily  # noqa: E402
 from streaming.gold.live import build_live_metrics_minute, refresh_live_metrics  # noqa: E402
 from streaming.gold.orders import (build_fact_order_lines, build_fact_orders,  # noqa: E402
-                                   report_negative_lead_time)
+                                   report_cancel_then_shipped, report_negative_lead_time)
 from streaming.jobs.silver_clean import process_batch  # noqa: E402
 from streaming.silver.spark_schemas import SCHEMAS, coerce_row  # noqa: E402
 from streaming.silver.writer import merge_insert, silver_path  # noqa: E402
@@ -88,9 +89,11 @@ def t(day, hh=0, mm=0, ss=0):
     return datetime(2026, 10, day, hh, mm, ss, tzinfo=timezone.utc)
 
 
-def order_row(oid, customer="c1", created=None, total="100.00", payment="cod", session="s1"):
+def order_row(oid, customer="c1", created=None, total="100.00", payment="cod", session="s1", platform="app",
+              channel="paid_search"):
     created = created or t(1, 10)
-    return {"order_id": oid, "customer_id": customer, "session_id": session, "channel": "paid_search",
+    return {"order_id": oid, "customer_id": customer, "session_id": session, "channel": channel,
+            "platform": platform,
             "utm_source": "google", "utm_campaign": "camp", "click_id": "clk", "payment_method": payment,
             "city": "Cairo", "country": "EG", "order_total": Decimal(total), "order_created_at": created,
             "event_date": created.date()}
@@ -229,18 +232,25 @@ def test_negative_lead_time_is_kept_and_counted(spark):
 
 
 # ---------------------------------------------------------------- group 2: status parity on the end-to-end dataset
-def test_fact_orders_current_status_matches_resolve_current_status(spark, e2e):
+def _naive_utc(dt):
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
+def test_fact_orders_current_status_matches_resolve_current_status_timed(spark, e2e):
+    """Item 6 parity: Spark current_status equals the timed Python rule on the 30,000-event noisy dataset."""
     f = silver_frames(spark, e2e["lake"])
     fact = {r["order_id"]: r["current_status"]
             for r in build_fact_orders(f["silver_orders"], f["silver_order_status"]).collect()}
     by_order = {}
-    # latest status_time first, so Python max() breaks the rank-5 tie the way Spark does
-    for r in f["silver_order_status"].orderBy(F.col("status_time").desc()).collect():
-        by_order.setdefault(r["order_id"], []).append(r["status"])
-    expected = {o: resolve_current_status(s) for o, s in by_order.items() if o in fact}
+    for r in f["silver_order_status"].collect():
+        by_order.setdefault(r["order_id"], []).append((r["status"], _naive_utc(r["status_time"])))
+    expected = {o: resolve_current_status_timed(rows) for o, rows in by_order.items() if o in fact}
     mismatches = [o for o in fact if fact[o] != expected[o]]
-    print("\nG2 events=%d fact_orders=%d compared=%d mismatches=%d" % (
-        e2e["events"], len(fact), len(expected), len(mismatches)))
+    kinds = {}
+    for v in fact.values():
+        kinds[v] = kinds.get(v, 0) + 1
+    print("\nG2 events=%d fact_orders=%d compared=%d mismatches=%d current_status=%s" % (
+        e2e["events"], len(fact), len(expected), len(mismatches), dict(sorted(kinds.items()))))
     assert len(fact) == len(expected) > 100
     assert mismatches == []
 
@@ -278,11 +288,13 @@ def test_gold_invariants_on_end_to_end_dataset(spark, e2e):
     assert isinstance(neg, int) and neg >= 0
     assert n_delivered > 0
     cols = fact_df.columns
-    assert cols == ["order_id", "customer_id", "session_id", "channel", "utm_source", "utm_campaign", "click_id",
-                    "campaign_id", "payment_method", "carrier", "city", "country", "order_total", "current_status",
-                    "status_rank", "order_created_at", "delivered_at", "cancelled_at", "delivery_lead_hours",
-                    "delivery_failed_count", "first_attempt_delivered", "is_cancelled", "is_delivered",
-                    "order_seq", "is_first_order", "date_key"]
+    assert cols == ["order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source",
+                    "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "country",
+                    "order_total", "current_status", "status_rank", "order_created_at", "delivered_at",
+                    "cancelled_at", "returned_at", "delivery_lead_hours", "delivery_failed_count",
+                    "has_failed_attempt", "first_attempt_delivered", "is_cancelled", "is_delivered",
+                    "is_returned", "order_seq", "is_first_order", "date_key"]
+    assert str(fact_df.schema["customer_key"].dataType) == "LongType()"
     assert str(fact_df.schema["order_total"].dataType) == "DecimalType(12,2)"
     assert str(fact_df.schema["delivery_lead_hours"].dataType) == "DecimalType(8,2)"
 
@@ -348,17 +360,21 @@ def test_mark_bot_sessions_parity_and_injected_counts_on_bot_simulation(spark, t
     assert nb == 0
 
 
-# ---------------------------------------------------------------- group 5: fact_funnel_daily
-def test_fact_funnel_daily_rules(spark):
+# ---------------------------------------------------------------- group 5: agg_funnel_daily
+def funnel(spark, rows):
+    return build_agg_funnel_daily(mk(spark, "silver_events", rows), mk(spark, "silver_orders", []))
+
+
+def test_agg_funnel_daily_rules(spark):
     d = t(4, 12)
     rows = []
-    # s1: card order, full funnel, two views of one product
+    # s1: app session, full funnel, two views of one product
     rows += [ev(0, "s1", d, "product_view", product_id="p1"), ev(1, "s1", d + timedelta(seconds=5), "product_view",
                                                                  product_id="p1"),
              ev(2, "s1", d + timedelta(seconds=10), "add_to_cart", product_id="p1"),
              ev(3, "s1", d + timedelta(seconds=20), "checkout_started"),
              ev(4, "s1", d + timedelta(seconds=30), "purchase", order_id="o1")]
-    # s6: cart, no order (EG/organic, unknown payment); s7: cart + purchase without silver_orders row
+    # s6: cart, no order (EG/organic, NULL platform); s7: cart + purchase without a silver_orders row
     rows += [ev(0, "s6", d, "add_to_cart"), ev(0, "s7", d, "add_to_cart"), ev(1, "s7", d, "purchase")]
     rows += [ev(0, "s8", d, "add_to_cart", channel="paid_search")]  # separate group below
     # s2: views only, country SA (denominators 0 -> NULL rates)
@@ -367,15 +383,19 @@ def test_fact_funnel_daily_rules(spark):
     rows += [ev(0, "s3", d, "product_view", is_bot=True, country="XX", channel="bot")]
     rows += [ev(0, "s4", d, "product_view", is_late=True, country="LATE", channel="x")]
     rows += [ev(0, None, d, "product_view", country="NOSESSION", channel="x")]
-    orders = [order_row("o1", session="s1", payment="card", created=d)]
     for r in rows:
         if r["session_id"] == "s1":
             r["channel"] = "paid_search"
-    out = {(r["country"], r["channel"], r["payment_method"]): r for r in build_fact_funnel_daily(
-        mk(spark, "silver_events", rows), mk(spark, "silver_orders", orders)).collect()}
+            r["platform"] = "app"
+    df = funnel(spark, rows)
+    assert "payment_method" not in df.columns
+    assert df.columns == ["event_date", "country", "channel", "platform", "sessions", "product_views",
+                          "cart_sessions", "checkout_sessions", "orders", "cart_abandon_rate",
+                          "checkout_abandon_rate"]
+    out = {(r["country"], r["channel"], r["platform"]): r for r in df.collect()}
     assert not any(k[0] in ("XX", "NOSESSION") for k in out)  # bot and null session excluded
     assert ("LATE", "x", "unknown") in out and out[("LATE", "x", "unknown")]["sessions"] == 1  # late included
-    g = out[("EG", "paid_search", "card")]
+    g = out[("EG", "paid_search", "app")]
     assert (g["sessions"], g["product_views"], g["cart_sessions"], g["checkout_sessions"], g["orders"]) == (1, 1, 1, 1, 1)
     assert g["cart_abandon_rate"] == 0.0 and g["checkout_abandon_rate"] == 0.0
     assert g["event_date"] == date(2026, 10, 4)
@@ -391,10 +411,48 @@ def test_fact_funnel_daily_rules(spark):
             assert r[c] is None or 0.0 <= r[c] <= 1.0
 
 
-def test_fact_funnel_daily_clamps_orders_above_cart(spark):
+def test_agg_funnel_daily_platform_split_adds_up_and_null_platform_is_unknown(spark):
+    d = t(4, 12)
+    rows = []
+    for i in range(7):
+        rows.append(ev(0, "a%d" % i, d, "product_view", platform="app"))
+    for i in range(5):
+        rows.append(ev(0, "w%d" % i, d, "product_view", platform="web"))
+    for i in range(2):
+        rows.append(ev(0, "n%d" % i, d, "product_view"))  # NULL platform
+    out = funnel(spark, rows).collect()
+    by_platform = {}
+    for r in out:
+        by_platform[r["platform"]] = by_platform.get(r["platform"], 0) + r["sessions"]
+    assert by_platform == {"app": 7, "web": 5, "unknown": 2}
+    assert sum(by_platform.values()) == 14 == len({r["session_id"] for r in rows})
+
+
+def test_agg_funnel_daily_session_attributes_come_from_earliest_event_ties_by_event_id(spark):
+    d = t(4, 12)
+    rows = [ev(1, "s", d + timedelta(seconds=9), "product_view", platform="web", channel="direct", country="SA"),
+            ev(2, "s", d, "add_to_cart", platform="app", channel="paid_search", country="EG", event_id="e_b"),
+            ev(3, "s", d, "product_view", platform="web", channel="organic", country="AE", event_id="e_a")]
+    out = funnel(spark, rows).collect()
+    assert len(out) == 1
+    r = out[0]  # earliest time ties between e_a and e_b: the smaller event_id e_a wins
+    assert (r["country"], r["channel"], r["platform"]) == ("AE", "organic", "web")
+    assert (r["sessions"], r["product_views"], r["cart_sessions"]) == (1, 1, 1)
+
+
+def test_agg_funnel_daily_orders_are_distinct_sessions_with_a_purchase(spark):
+    d = t(4, 12)
+    rows = [ev(0, "a", d, "purchase"), ev(1, "a", d + timedelta(seconds=1), "purchase"),
+            ev(0, "b", d, "add_to_cart"), ev(1, "b", d + timedelta(seconds=1), "add_to_cart"),
+            ev(2, "b", d + timedelta(seconds=2), "purchase")]
+    (r,) = funnel(spark, rows).collect()
+    assert r["sessions"] == 2 and r["orders"] == 2 and r["cart_sessions"] == 1  # a: two purchases count once
+
+
+def test_agg_funnel_daily_clamps_orders_above_cart(spark):
     d = t(4, 12)
     rows = [ev(0, "a", d, "purchase"), ev(0, "b", d, "purchase"), ev(0, "b", d, "add_to_cart")]
-    r = build_fact_funnel_daily(mk(spark, "silver_events", rows), mk(spark, "silver_orders", [])).collect()
+    r = funnel(spark, rows).collect()
     assert len(r) == 1 and r[0]["orders"] == 2 and r[0]["cart_sessions"] == 1
     assert r[0]["cart_abandon_rate"] == 0.0  # 1 - 2/1 clamped to 0
 
@@ -446,10 +504,10 @@ def test_refresh_live_metrics_keeps_last_hour_and_matches_builder(spark, tmp_pat
 
 
 # ---------------------------------------------------------------- group 7: build_all
-def test_build_all_writes_three_tables_and_reads_back(spark, e2e, tmp_path):
+def test_build_all_writes_four_tables_and_reads_back(spark, e2e, tmp_path):
     out_root = str(tmp_path / "gold_ref")
     res = build_all(spark, lake_root=e2e["lake"], out_root=out_root)
-    assert set(res) == {"fact_orders", "fact_order_lines", "fact_funnel_daily"}
+    assert set(res) == {"fact_orders", "fact_order_lines", "agg_orders_daily", "agg_funnel_daily"}
     counts = {}
     for name, df in res.items():
         back = spark.read.format("delta").load("%s/%s" % (out_root, name))
@@ -539,3 +597,197 @@ def test_show_live_missing_table_prints_message_and_returns_1(spark, tmp_path, c
                  mk(spark, "silver_events", [ev(0, "a", t(4, 12), "product_view")]), ["event_id"], "event_date")
     path = refresh_live_metrics(spark, lake_root=lake, minutes=100000, now=t(4, 13))
     assert show_live(path, 5, spark=spark) == 0
+
+
+# ---------------------------------------------------------------- C3: timed cancel, returned, keys
+def test_cancel_before_ship_with_later_shipped_row_counted_cancel_wins_and_is_reported(spark):
+    rows = [status_row("o1", "order_created", t(1, 10)), status_row("o1", "order_cancelled", t(1, 11)),
+            status_row("o1", "order_shipped", t(1, 12), carrier="Bosta"),
+            status_row("o1", "out_for_delivery", t(2, 9))]
+    r = fo(spark, [order_row("o1")], rows)["o1"]
+    assert r["current_status"] == "order_cancelled" and r["is_cancelled"] is True
+    assert r["cancelled_at"].replace(tzinfo=None) == t(1, 11).replace(tzinfo=None)
+    assert report_cancel_then_shipped(mk(spark, "silver_order_status", rows)) == 1
+    ok = [status_row("o2", "order_created", t(1, 10)), status_row("o2", "order_shipped", t(1, 12)),
+          status_row("o2", "order_cancelled", t(1, 13))]  # cancel after ship: ignored, not reported
+    assert report_cancel_then_shipped(mk(spark, "silver_order_status", ok)) == 0
+    assert resolve_current_status_timed([(x["status"], x["status_time"]) for x in rows]) == "order_cancelled"
+
+
+def test_cancel_after_ship_is_ignored_by_the_timed_rule(spark):
+    rows = [status_row("o1", "order_created", t(1, 10)), status_row("o1", "order_shipped", t(1, 12)),
+            status_row("o1", "order_cancelled", t(1, 13)), status_row("o1", "out_for_delivery", t(2, 9))]
+    r = fo(spark, [order_row("o1")], rows)["o1"]
+    assert r["current_status"] == "out_for_delivery" and r["is_cancelled"] is False and r["cancelled_at"] is None
+
+
+def test_completed_versus_returned_tie_is_broken_by_latest_time(spark):
+    base = [("order_created", t(1, 10)), ("order_shipped", t(1, 12)), ("out_for_delivery", t(2, 9))]
+    r1 = [status_row("o1", s_, w) for s_, w in base] + [status_row("o1", "order_completed", t(3, 9)),
+                                                         status_row("o1", "order_returned", t(4, 9))]
+    r2 = [status_row("o2", s_, w) for s_, w in base] + [status_row("o2", "order_returned", t(3, 9)),
+                                                         status_row("o2", "order_completed", t(4, 9))]
+    res = fo(spark, [order_row("o1"), order_row("o2", customer="c2")], r1 + r2)
+    assert res["o1"]["current_status"] == "order_returned" and res["o1"]["status_rank"] == 7
+    assert res["o2"]["current_status"] == "order_completed" and res["o2"]["status_rank"] == 7
+    assert res["o1"]["is_returned"] is True and res["o2"]["is_returned"] is True  # a returned row exists
+    assert res["o1"]["returned_at"].replace(tzinfo=None) == t(4, 9).replace(tzinfo=None)
+
+
+def test_returned_order_after_failed_attempts_flags(spark):
+    rows = [status_row("o1", "order_created", t(1, 10)), status_row("o1", "order_packed", t(1, 11)),
+            status_row("o1", "order_shipped", t(1, 12), carrier="Bosta"),
+            status_row("o1", "out_for_delivery", t(2, 9)), status_row("o1", "delivery_failed", t(2, 14)),
+            status_row("o1", "out_for_delivery", t(3, 9)), status_row("o1", "delivery_failed", t(3, 14)),
+            status_row("o1", "order_returned", t(4, 9))]
+    r = fo(spark, [order_row("o1")], rows)["o1"]
+    assert r["current_status"] == "order_returned"
+    assert r["is_returned"] is True and r["has_failed_attempt"] is True and r["delivery_failed_count"] == 2
+    assert r["is_delivered"] is False and r["is_cancelled"] is False and r["delivery_lead_hours"] is None
+    assert r["returned_at"].replace(tzinfo=None) == t(4, 9).replace(tzinfo=None)
+    assert r["platform"] == "app"
+
+
+def test_platform_comes_from_silver_orders_and_null_stays_null(spark):
+    orders = [order_row("o1", platform="web"), order_row("o2", customer="c2", platform=None)]
+    rows = [status_row("o1", "order_created", t(1, 10)), status_row("o2", "order_created", t(1, 10))]
+    res = fo(spark, orders, rows)
+    assert res["o1"]["platform"] == "web" and res["o2"]["platform"] is None
+    assert res["o1"]["has_failed_attempt"] is False and res["o1"]["is_returned"] is False
+
+
+def dim_rows(spark, table, rows):
+    return mk(spark, table, rows)
+
+
+def test_customer_key_unknown_member_and_versioned_lookup(spark):
+    schema = StructType([StructField("customer_id", StringType()), StructField("customer_key", LongType()),
+                         StructField("valid_from", TimestampType()), StructField("valid_to", TimestampType())])
+    far = datetime(9999, 12, 31)
+    dim = spark.createDataFrame([("c1", 11, datetime(1900, 1, 1), datetime(2026, 10, 2)),
+                                 ("c1", 12, datetime(2026, 10, 2), far)], schema)
+    orders = [order_row("early", customer="c1", created=t(1, 10)), order_row("late", customer="c1", created=t(3, 10)),
+              order_row("new", customer="cnew", created=t(1, 10))]
+    rows = [status_row(o["order_id"], "order_created", o["order_created_at"]) for o in orders]
+    df = build_fact_orders(mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", rows), dim)
+    res = {r["order_id"]: r for r in df.collect()}
+    assert (res["early"]["customer_key"], res["late"]["customer_key"], res["new"]["customer_key"]) == (11, 12, -1)
+    assert res["new"]["customer_id"] == "cnew"  # the natural id stays so a later build repairs the -1
+    assert df.count() == 3  # the dimension join never duplicates an order
+    nodim = {r["order_id"]: r["customer_key"] for r in build_fact_orders(
+        mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", rows)).collect()}
+    assert set(nodim.values()) == {-1}
+    pdim = spark.createDataFrame([("p1", 5, datetime(1900, 1, 1), far)], StructType([
+        StructField("product_id", StringType()), StructField("product_key", LongType()),
+        StructField("valid_from", TimestampType()), StructField("valid_to", TimestampType())]))
+    items = [{"order_id": "early", "line_no": "1", "product_id": "p1", "quantity": 1, "unit_price": Decimal("1.00"),
+              "line_total": Decimal("1.00"), "currency": "EGP", "order_time": t(1, 10)},
+             {"order_id": "early", "line_no": "2", "product_id": "pX", "quantity": 1, "unit_price": Decimal("1.00"),
+              "line_total": Decimal("1.00"), "currency": "EGP", "order_time": t(1, 10)}]
+    lines = {r["line_no"]: r for r in build_fact_order_lines(
+        mk(spark, "silver_orders", orders), mk(spark, "silver_order_items", items), dim, pdim).collect()}
+    assert (lines[1]["customer_key"], lines[1]["product_key"]) == (11, 5)
+    assert (lines[2]["customer_key"], lines[2]["product_key"], lines[2]["product_id"]) == (11, -1, "pX")
+    assert [f.name for f in build_fact_order_lines(mk(spark, "silver_orders", orders),
+                                                   mk(spark, "silver_order_items", items)).schema.fields] == [
+        "order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city",
+        "quantity", "line_total"]
+
+
+# ---------------------------------------------------------------- C3: agg_orders_daily
+def test_agg_orders_daily_hand_built_measures(spark):
+    d1, d2 = t(1, 10), t(2, 10)
+    orders = [order_row("o1", customer="a", created=d1, total="100.00", payment="cod"),
+              order_row("o2", customer="b", created=d1, total="50.00", payment="cod"),
+              order_row("o3", customer="a", created=d1, total="20.00", payment="cod"),
+              order_row("o4", customer="c", created=d1, total="10.00", payment="card", platform="web"),
+              order_row("o5", customer="d", created=d2, total="7.00", payment="cod")]
+    rows = [status_row("o1", "order_created", d1), status_row("o1", "order_shipped", t(1, 12)),
+            status_row("o1", "delivery_failed", t(2, 9)), status_row("o1", "delivered", t(3, 9)),
+            status_row("o2", "order_created", d1), status_row("o2", "order_cancelled", t(1, 11)),
+            status_row("o3", "order_created", d1), status_row("o3", "order_shipped", t(1, 12)),
+            status_row("o3", "delivery_failed", t(2, 9)), status_row("o3", "order_returned", t(3, 9)),
+            status_row("o4", "order_created", d1), status_row("o4", "payment_authorised", t(1, 11)),
+            status_row("o5", "order_created", d2)]
+    fact = build_fact_orders(mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", rows))
+    out = {(r["date_key"], r["channel"], r["payment_method"], r["platform"]): r
+           for r in build_agg_orders_daily(fact).collect()}
+    assert set(out) == {(20261001, "paid_search", "cod", "app"), (20261001, "paid_search", "card", "web"),
+                        (20261002, "paid_search", "cod", "app")}
+    g = out[(20261001, "paid_search", "cod", "app")]
+    assert (g["orders_placed"], g["orders_delivered"], g["orders_cancelled"], g["orders_returned"],
+            g["orders_with_failed_attempt"], g["new_customer_orders"]) == (3, 1, 1, 1, 2, 2)
+    assert g["revenue_placed"] == Decimal("170.00") and g["revenue_delivered"] == Decimal("100.00")
+    c = out[(20261001, "paid_search", "card", "web")]
+    assert (c["orders_placed"], c["orders_delivered"], c["revenue_delivered"]) == (1, 0, Decimal("0.00"))
+    assert str(build_agg_orders_daily(fact).schema["revenue_placed"].dataType) == "DecimalType(12,2)"
+    assert build_agg_orders_daily(fact).columns == [
+        "date_key", "channel", "payment_method", "platform", "orders_placed", "orders_delivered",
+        "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed",
+        "revenue_delivered", "new_customer_orders"]
+
+
+def test_agg_orders_daily_invariants_on_end_to_end_dataset(spark, e2e):
+    f = silver_frames(spark, e2e["lake"])
+    fact = build_fact_orders(f["silver_orders"], f["silver_order_status"]).cache()
+    agg = build_agg_orders_daily(fact).cache()
+    tot = agg.agg(F.sum("orders_placed").alias("placed"), F.sum("orders_delivered").alias("deliv"),
+                  F.sum("orders_cancelled").alias("canc"), F.sum("orders_returned").alias("ret"),
+                  F.sum("orders_with_failed_attempt").alias("failed"), F.sum("revenue_placed").alias("rev"),
+                  F.sum("revenue_delivered").alias("rev_d"), F.sum("new_customer_orders").alias("new")).first()
+    n_fact = fact.count()
+    fact_total = fact.agg(F.sum("order_total")).first()[0]
+    opened = tot["placed"] - tot["deliv"] - tot["canc"] - tot["ret"]
+    overlap = fact.where("(is_delivered AND is_returned) OR (is_delivered AND is_cancelled) "
+                         "OR (is_returned AND is_cancelled)").count()
+    cod_auth = (f["silver_order_status"].where("status = 'payment_authorised'")
+                .join(f["silver_orders"].where("payment_method = 'cod'").select("order_id"), "order_id", "left_semi")
+                .count())
+    methods = {r["payment_method"] for r in agg.select("payment_method").distinct().collect()}
+    platforms = {r["platform"] for r in agg.select("platform").distinct().collect()}
+    print("\nC3 agg_orders_daily rows=%d placed=%d fact_orders=%d revenue_placed=%s order_total=%s "
+          "delivered=%d cancelled=%d returned=%d open=%d with_failed_attempt=%d new_customer=%d overlap=%d "
+          "cod_payment_authorised=%d methods=%s platforms=%s" % (
+              agg.count(), tot["placed"], n_fact, tot["rev"], fact_total, tot["deliv"], tot["canc"], tot["ret"],
+              opened, tot["failed"], tot["new"], overlap, cod_auth, sorted(methods), sorted(platforms)))
+    assert tot["placed"] == n_fact > 100
+    assert tot["rev"] == fact_total
+    assert tot["rev_d"] == fact.where("is_delivered").agg(F.sum("order_total")).first()[0]
+    assert tot["deliv"] == fact.where("is_delivered").count() > 0
+    assert tot["ret"] == fact.where("is_returned").count()
+    assert tot["failed"] == fact.where("delivery_failed_count > 0").count()
+    assert opened >= 0
+    assert cod_auth == 0
+    assert methods <= {"cod", "fawry", "vodafone_cash", "instapay", "card"} and "cod" in methods
+    assert platforms <= {"app", "web", "unknown"}
+    keys = agg.groupBy("date_key", "channel", "payment_method", "platform").count().where("count > 1").count()
+    assert keys == 0
+
+
+def test_returned_orders_and_failed_attempts_on_end_to_end_dataset(spark, e2e):
+    f = silver_frames(spark, e2e["lake"])
+    fact = build_fact_orders(f["silver_orders"], f["silver_order_status"]).cache()
+    returned = fact.where("is_returned")
+    n_ret, n_failed = returned.count(), fact.where("has_failed_attempt").count()
+    bad = returned.where("NOT has_failed_attempt OR is_delivered OR current_status <> 'order_returned'").count()
+    cancel_then_ship = report_cancel_then_shipped(f["silver_order_status"])
+    print("\nC3 orders=%d returned=%d has_failed_attempt=%d returned_inconsistent=%d cancel_then_shipped=%d" % (
+        fact.count(), n_ret, n_failed, bad, cancel_then_ship))
+    assert n_ret > 0 and n_failed >= n_ret
+    assert bad == 0
+
+
+def test_funnel_platform_shares_on_end_to_end_dataset(spark, e2e):
+    f = silver_frames(spark, e2e["lake"])
+    events = mark_bot_sessions(f["silver_events"])
+    agg = build_agg_funnel_daily(events, f["silver_orders"]).cache()
+    by_platform = {r["platform"]: r["n"] for r in agg.groupBy("platform").agg(F.sum("sessions").alias("n")).collect()}
+    total = sum(by_platform.values())
+    expected = (events.where(F.col("session_id").isNotNull() & ~F.col("is_bot"))
+                .select("event_date", "session_id").distinct().count())
+    print("\nC3 funnel rows=%d sessions=%d platform_sessions=%s shares=%s" % (
+        agg.count(), total, dict(sorted(by_platform.items())),
+        {k: round(v / total, 3) for k, v in sorted(by_platform.items())}))
+    assert total == expected > 0
+    assert set(by_platform) <= {"app", "web", "unknown"} and {"app", "web"} <= set(by_platform)
+    assert "payment_method" not in agg.columns

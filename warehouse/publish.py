@@ -54,10 +54,14 @@ PUBLISH_ALLOWLIST = {
         "customer_id", "updated_at", "country", "city", "signup_date", "primary_device", "marketing_consent",
     ],
     "silver_campaign_snapshots": [
-        "campaign_id", "report_date", "pulled_at", "utm_campaign", "platform", "impressions", "clicks",
+        "campaign_id", "report_date", "pulled_at", "utm_campaign", "ad_platform", "impressions", "clicks",
         "platform_conversions", "spend", "currency",
     ],
 }
+
+# Mirror column -> local Silver column, where the names differ. The mirror calls the ad network ad_platform
+# (meta or google) so it is never confused with the app/web platform; local Silver keeps `platform`.
+PUBLISH_SOURCE_COLUMNS = {"silver_campaign_snapshots": {"ad_platform": "platform"}}
 
 PUBLISH_KEYS = {
     "silver_events": ["event_id"],
@@ -123,8 +127,12 @@ def export_table(spark, lake_root, table, export_dir):
     if not os.path.isdir(src):
         log.warning("skipping %s: no local Delta table at %s", table, src)
         return "", 0
+    from pyspark.sql import functions as F  # local import: the host tests run without Spark
+
     out = os.path.join(os.path.abspath(export_dir), table)
-    df = spark.read.format("delta").load(src).select(*PUBLISH_ALLOWLIST[table])  # a missing column fails here
+    df = spark.read.format("delta").load(src).select(
+        *[F.col(PUBLISH_SOURCE_COLUMNS.get(table, {}).get(c, c)).alias(c)
+          for c in PUBLISH_ALLOWLIST[table]])  # a missing column fails here
     rows = df.count()
     files = max(1, min(MAX_FILES, math.ceil(_folder_bytes(src) / TARGET_FILE_BYTES)))
     df.coalesce(files).write.mode("overwrite").parquet(out)

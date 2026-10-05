@@ -1,19 +1,20 @@
-"""Gold reference build: Silver Delta tables to fact_orders, fact_order_lines, fact_funnel_daily.
+"""Gold reference build: Silver Delta tables to fact_orders, fact_order_lines, agg_orders_daily, agg_funnel_daily.
 
 python -m streaming.gold.build [--lake data/lake] [--out data/lake/gold_ref]
-Task 10c adds the surrogate keys and the attribution campaign_id; this build uses natural ids.
+Surrogate keys are -1 (unknown member) here: the reference build reads no dimensions.
 """
 import argparse
 import os
 
 from streaming.gold.bots import mark_bot_sessions
-from streaming.gold.funnel import build_fact_funnel_daily
+from streaming.gold.agg_orders import build_agg_orders_daily
+from streaming.gold.funnel import build_agg_funnel_daily
 from streaming.gold.orders import build_fact_order_lines, build_fact_orders
 from streaming.silver.writer import silver_path
 
 
 def build_all(spark, lake_root: str = "data/lake", out_root=None) -> dict:
-    """Read Silver, recompute is_bot over the whole events table, build the three facts.
+    """Read Silver, recompute is_bot over the whole events table, build the facts and summaries.
 
     Returns {table_name: DataFrame}; with out_root also writes each as Delta under <out_root>/<table>
     (overwrite) and returns DataFrames reading the written tables back.
@@ -26,10 +27,12 @@ def build_all(spark, lake_root: str = "data/lake", out_root=None) -> dict:
 
     events = mark_bot_sessions(read("silver_events"))
     orders, status, items = read("silver_orders"), read("silver_order_status"), read("silver_order_items")
+    fact_orders = build_fact_orders(orders, status)
     result = {
-        "fact_orders": build_fact_orders(orders, status),
+        "fact_orders": fact_orders,
         "fact_order_lines": build_fact_order_lines(orders, items),
-        "fact_funnel_daily": build_fact_funnel_daily(events, orders),
+        "agg_orders_daily": build_agg_orders_daily(fact_orders),
+        "agg_funnel_daily": build_agg_funnel_daily(events, orders),
     }
     if out_root:
         for name, df in list(result.items()):

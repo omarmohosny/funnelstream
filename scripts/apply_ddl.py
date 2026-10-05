@@ -3,6 +3,8 @@
 Databricks: rendered at run time from warehouse/tables.py for the catalog in DATABRICKS_CATALOG (or
 --catalog), plus the upload volume DATABRICKS_VOLUME; run statement by statement.
 Postgres: warehouse/ddl.sql run as one script (it holds DO $$ blocks).
+After the CREATE statements, both backends run the idempotent unknown-member seeds (key -1 in dim_customer,
+dim_product, dim_campaign; spec section 17, rule 2).
 """
 import argparse
 import os
@@ -16,6 +18,7 @@ if _ROOT not in sys.path:
 from warehouse.ddl_render import render_databricks, split_statements
 from warehouse.store import StoreConfigError, _ident, env_catalog, env_volume, get_store
 from warehouse.tables import all_tables
+from warehouse.unknown_members import seed_statements
 
 POSTGRES_FILE = os.path.join("warehouse", "ddl.sql")
 
@@ -85,9 +88,10 @@ def main(argv=None):
             catalog = _ident(args.catalog) if args.catalog else env_catalog()
             volume = env_volume()
             sql_text = databricks_sql(catalog, volume)
+            seeds = seed_statements("databricks", catalog)
             label = "catalog %s, volume %s" % (catalog, volume)
             if recreate:
-                statements = with_drops(split_statements(sql_text), recreate)
+                statements = with_drops(split_statements(sql_text), recreate) + seeds
                 drops = [x for x in statements if x.startswith("DROP TABLE")]
                 print("WARNING: --recreate DROPS these tables and ALL their data before creating them again: %s"
                       % ", ".join(recreate))
@@ -99,14 +103,18 @@ def main(argv=None):
                     return 0 if args.dry_run else 2
         else:
             sql_text, label = postgres_sql(), POSTGRES_FILE
+            seeds = seed_statements("postgres", None)
     except ValueError as e:
         print("error: %s" % e, file=sys.stderr)
         return 2
     if args.dry_run:
         if backend == "postgres":
-            print("postgres: 1 script (%d lines) from %s, run as a whole" % (sql_text.count("\n"), label))
+            print("postgres: 1 script (%d lines) from %s, run as a whole, then %d seed statements"
+                  % (sql_text.count("\n"), label, len(seeds)))
+            for stmt in seeds:
+                print("      seed: %s" % " ".join(stmt.split()[:6]))
         else:
-            statements = split_statements(sql_text)
+            statements = split_statements(sql_text) + seeds
             print("databricks: %d statements (%s)" % (len(statements), label))
             for i, stmt in enumerate(statements, 1):
                 print("  %2d. %s" % (i, " ".join(stmt.split()[:6])))
@@ -116,13 +124,14 @@ def main(argv=None):
                        else None) as store:
             if backend == "postgres":
                 store.execute(sql_text)
+                for stmt in seeds:
+                    store.execute(stmt)
                 n = 1
-            elif recreate:
+            else:
+                statements = statements if recreate else split_statements(sql_text) + seeds
                 for stmt in statements:
                     store.execute(stmt)
                 n = len(statements)
-            else:
-                n = store.run_script(sql_text)
     except StoreConfigError as e:
         print("error: %s" % e, file=sys.stderr)
         return 2

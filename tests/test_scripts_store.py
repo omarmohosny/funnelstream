@@ -9,6 +9,7 @@ import scripts.publish_silver as publish_silver
 from warehouse.ddl_render import render_databricks, split_statements
 from warehouse.store import GoldStore, env_catalog, get_store
 from warehouse.tables import all_tables
+from warehouse.unknown_members import seed_statements
 
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN = "dapi-SECRET-TOKEN-0123456789"
@@ -63,9 +64,10 @@ def test_apply_ddl_databricks_runs_every_statement_through_store(monkeypatch):
     monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
     rc = apply_ddl.main(["--backend", "databricks"])
     expected = split_statements(render_databricks(all_tables(), catalog="funnelstream", volume="silver_upload"))
+    expected += seed_statements("databricks", "funnelstream")  # C3: unknown members run after the CREATEs
     assert rc == 0 and fake.executed == expected and fake.closed
-    assert len(expected) == 23  # 22 from the committed file + CREATE VOLUME
-    assert len(split_statements((ROOT / "warehouse" / "databricks_ddl.sql").read_text(encoding="utf-8"))) == 22
+    assert len(expected) == 27  # 23 from the committed file + CREATE VOLUME + 3 seed MERGEs
+    assert len(split_statements((ROOT / "warehouse" / "databricks_ddl.sql").read_text(encoding="utf-8"))) == 23
 
 
 def test_apply_ddl_order_is_schemas_volume_tables(monkeypatch):
@@ -77,7 +79,8 @@ def test_apply_ddl_order_is_schemas_volume_tables(monkeypatch):
     assert ex[0] == "CREATE SCHEMA IF NOT EXISTS workspace.gold;"
     assert ex[1] == "CREATE SCHEMA IF NOT EXISTS workspace.silver;"
     assert ex[2] == "CREATE VOLUME IF NOT EXISTS workspace.silver.myvol;"
-    assert all(s.startswith("CREATE TABLE IF NOT EXISTS workspace.") for s in ex[3:])
+    assert all(s.startswith("CREATE TABLE IF NOT EXISTS workspace.") for s in ex[3:-3])
+    assert all(s.startswith("MERGE INTO workspace.gold.dim_") for s in ex[-3:])  # seeds last (C3)
     assert not any("funnelstream." in s for s in ex)
 
 
@@ -96,7 +99,7 @@ def test_apply_ddl_postgres_runs_whole_file_once(monkeypatch):
     fake = FakeStore()
     monkeypatch.setattr(apply_ddl, "get_store", lambda backend, env=None: fake)
     assert apply_ddl.main(["--backend", "postgres"]) == 0
-    assert fake.executed == [(ROOT / "warehouse" / "ddl.sql").read_text(encoding="utf-8")]
+    assert fake.executed == [(ROOT / "warehouse" / "ddl.sql").read_text(encoding="utf-8")]         + seed_statements("postgres", None)
 
 
 def test_apply_ddl_dry_run_does_not_connect(monkeypatch, capsys):
@@ -106,7 +109,7 @@ def test_apply_ddl_dry_run_does_not_connect(monkeypatch, capsys):
     monkeypatch.setattr(apply_ddl, "get_store", boom)
     assert apply_ddl.main(["--backend", "databricks", "--dry-run"]) == 0
     out = capsys.readouterr().out
-    assert "databricks: 23 statements" in out and "CREATE VOLUME IF NOT EXISTS" in out
+    assert "databricks: 27 statements" in out and "CREATE VOLUME IF NOT EXISTS" in out
     assert apply_ddl.main(["--backend", "postgres", "--dry-run"]) == 0
     assert "postgres: 1 script" in capsys.readouterr().out
 
@@ -281,7 +284,7 @@ def test_apply_ddl_recreate_with_yes_drops_before_matching_create(monkeypatch):
         assert ex[ex.index(drop) + 1].startswith("CREATE TABLE IF NOT EXISTS workspace.silver.%s (" % t)
     assert sum(s.startswith("DROP") for s in ex) == 2
     plain = split_statements(render_databricks(all_tables(), catalog="workspace", volume="silver_upload"))
-    assert [s for s in ex if not s.startswith("DROP")] == plain
+    assert [s for s in ex if not s.startswith("DROP")] == plain + seed_statements("databricks", "workspace")
 
 
 def test_apply_ddl_recreate_unknown_table_rejected(monkeypatch, capsys):

@@ -18,7 +18,7 @@ from streaming.silver.writer import silver_path  # noqa: E402
 from test_silver_clean_spark import bronze_df, simulated  # noqa: E402
 
 UPDATED = datetime(2026, 1, 1, tzinfo=timezone.utc)
-GOLD = ["fact_orders", "fact_order_lines", "fact_funnel_daily"]
+GOLD = ["fact_orders", "fact_order_lines", "agg_orders_daily", "agg_funnel_daily"]
 
 
 def _count(spark, path):
