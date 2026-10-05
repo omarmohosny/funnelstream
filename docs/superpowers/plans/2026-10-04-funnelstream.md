@@ -1230,6 +1230,17 @@ The authoritative list is spec section 16 ("Compatibility rulings"). Task-level 
 
 ---
 
+## Amendment C: model fixes and live monitoring (supersedes older task text; spec section 17)
+
+Task order from here: **C1** simulator and contracts, **C2** Silver, **C3** Gold model (renames, unknown members, new columns, builders, DDL), **10c** Gold build SQL, **G1** live and health tables in Postgres, **G2** Grafana (provisioning, alerts, Compose changes), **G3** failure demo, then Tasks 11 to 19 (recommendations use distinct sessions; attribution per spec 17.11; the DAG is optional).
+
+- **C1:** `order_returned` event type and rank 7 (contracts/topics.yaml, validator, STATUS_RANK, simulator); COD orders skip `payment_authorised`; add `platform` (`app` or `web`) to app events and to `order_created` payload; mock ad API returns `platform_conversions`; remove the `*.dlq` topics (topics.yaml, create_topics, tests, docs); noise code keeps working (manifest, validator-visible kinds) with the new event types.
+- **C2:** Silver: `platform` in silver_events and silver_orders; `order_returned` rows in silver_order_status; `platform_conversions` in silver_campaign_snapshots (Spark schema, column lists, publish allow-list, DDL mirror); Silver quarantine unchanged.
+- **C3:** Gold model: rename tables per spec 17.13 (tables.py, generated DDL for both dialects, Spark builders, tests, docs); dimension keys `BY DEFAULT` identity and `-1` unknown rows seeded by apply_ddl; funnel grain per 17.9; `fact_orders` gets `platform`, `is_returned`, `returned_at`, `has_failed_attempt` and the cancel-by-time rule 17.6; `agg_orders_daily` builder; `agg_campaign_daily` columns per 17.10, 17.12, 17.15 (no `direct_share`, add `attribution_model`, `cost_per_delivered_order`, `platform_conversions`, `failed_attempt_rate`, `return_rate`, `open_rate`); recreate affected empty Databricks tables.
+- **G1, G2, G3:** spec 17.17 to 17.21.
+
+---
+
 ## Task 7: Spark session and Bronze ingest
 
 **Files:**
