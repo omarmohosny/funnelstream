@@ -75,7 +75,8 @@ def test_order_created_platform_from_payload_and_missing_is_null():
             assert dict(tm(e2))["silver_orders"]["platform"] is None
             e3 = json.loads(json.dumps(e))
             e3["payload"]["platform"] = "tv"
-            assert dict(tm(e3))["silver_orders"]["platform"] is None
+            out3 = tm(e3)  # C4: the validator now rejects an invalid order_created payload platform
+            assert [t for t, _ in out3] == ["silver_quarantine"] and out3[0][1]["error_code"] == "BAD_VALUE"
     assert n > 5
 
 

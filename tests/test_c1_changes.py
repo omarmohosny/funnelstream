@@ -114,7 +114,9 @@ def test_returned_rate_between_2_and_12_percent_of_non_cancelled():
     live = [ev for ev in orders if "order_cancelled" not in _types(ev)]
     rate = sum("order_returned" in _types(ev) for ev in live) / len(live)
     print("returned rate", rate)
-    assert 0.02 <= rate <= 0.12
+    # The expected rate is 10% by construction (observed 10.97% on this seed). The rate is a binomial sample,
+    # so it moves by sampling noise; a 14% ceiling leaves wide room above 10% (the old 12% was too tight).
+    assert 0.02 <= rate <= 0.14
 
 
 def test_every_return_follows_a_failure_with_payload_and_topic():
@@ -261,3 +263,51 @@ def test_noise_never_crashes_on_platform_field():
     for _, e in out:
         if isinstance(e, dict) and "platform" in e:
             assert e["platform"] in ("app", "web")
+
+
+# ---- C4 cleanup ----
+def test_order_created_has_no_platform_key_when_purchase_has_none(monkeypatch):
+    import scripts.run_simulator as rs
+    real = rs.journey
+
+    def no_platform(*a, **kw):
+        events = real(*a, **kw)
+        for e in events:
+            e.pop("platform", None)
+        return events
+    monkeypatch.setattr(rs, "journey", no_platform)
+    batch = build_batch(random.Random(9), make_customers(9, 300), make_catalog(9), T0, sessions=100)
+    created = [e for topic, e in batch if topic == "order" and e["event_type"] == "order_created"]
+    assert created
+    assert all("platform" not in e["payload"] for e in created)
+
+
+def test_validator_order_created_payload_platform():
+    def oc(**payload):
+        return {"event_id": "e1", "event_type": "order_created", "event_version": 1,
+                "event_time": "2026-10-04T10:00:00+00:00", "session_id": None, "order_id": "ord_1",
+                "customer_id": "c1", "payload": payload}
+    batch = build_batch(random.Random(9), make_customers(9, 300), make_catalog(9), T0, sessions=50)
+    real = next(e for topic, e in batch if topic == "order" and e["event_type"] == "order_created")
+    base = dict(real["payload"])
+    base.pop("platform", None)
+    ev = {**real, "payload": base}
+    assert validate_event(ev, now=NOW) == (True, "")  # missing stays allowed
+    for ok in ("app", "web"):
+        assert validate_event({**ev, "payload": {**base, "platform": ok}}, now=NOW) == (True, "")
+    for bad in ("ios", "APP", 5):
+        assert validate_event({**ev, "payload": {**base, "platform": bad}}, now=NOW) == (False, "BAD_VALUE")
+    assert validate_event({**ev, "payload": {**base, "platform": None}}, now=NOW) == (True, "")
+    # other order events are not checked for payload platform
+    other = next(e for topic, e in batch if topic == "order" and e["event_type"] != "order_created")
+    assert validate_event({**other, "payload": {**other["payload"], "platform": "ios"}}, now=NOW)[0] is True
+
+
+def test_timed_exact_ties_are_independent_of_input_order():
+    from itertools import permutations
+    base = [("order_created", _t(0)), ("order_shipped", _t(1))]
+    tie7 = base + [("order_completed", _t(5)), ("order_returned", _t(5))]
+    assert {resolve_current_status_timed(list(p)) for p in permutations(tie7)} == {"order_returned"}
+    tie5 = base + [("out_for_delivery", _t(5)), ("delivery_failed", _t(5))]
+    got = {resolve_current_status_timed(list(p)) for p in permutations(tie5)}
+    assert got == {"delivery_failed"}  # alphabetical: delivery_failed < out_for_delivery

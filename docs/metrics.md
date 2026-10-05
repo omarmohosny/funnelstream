@@ -31,7 +31,7 @@ Source of truth for every KPI shown in Power BI. Each formula names its table, n
 | Direct share | Orders with `channel = direct` / all orders | `agg_orders_daily` | Group by `date_key` | Computed here, not in `agg_campaign_daily` |
 | Contribution (stretch) | Sum of `contribution_egp` | `agg_campaign_daily` | Delivered orders | Uses `cfg_cost_assumptions`. Assumption-based |
 
-`agg_orders_daily` (keys `date_key`, `channel`, `payment_method`, `platform`) holds the order counts and revenue behind these ratios for every order, attributed or not: `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed`, `revenue_delivered`, `new_customer_orders`. COD versus prepaid lives here, not in the funnel. Delivered, cancelled, returned and still-open orders add up to placed.
+`agg_orders_daily` (keys `date_key`, `channel`, `payment_method`, `platform`) holds the order counts and revenue behind these ratios for every order, attributed or not: `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed`, `revenue_delivered`, `new_customer_orders`. COD versus prepaid lives here, not in the funnel. Delivered, cancelled, returned and still-open orders add up to placed. The identity delivered + cancelled + returned + open = placed holds for the boolean flags; `current_status` can differ in the rare inconsistent case where a counted cancel and a delivered row both exist (the order is then `order_cancelled` with `is_delivered` true), and `report_cancel_then_shipped(...).delivered_after_cancel` counts those orders.
 
 ## Funnel metrics (`agg_funnel_daily`)
 

@@ -43,8 +43,13 @@ def _version_key(df, dim, natural, key, at_col):
         return df.withColumn(key, F.lit(UNKNOWN_KEY).cast("long"))
     d = dim.select(F.col(natural).alias("_nat"), F.col(key).alias("_key"), "valid_from", "valid_to")
     cond = (df[natural] == d["_nat"]) & (df[at_col] >= d["valid_from"]) & (df[at_col] < d["valid_to"])
-    return (df.join(d, cond, "left").withColumn(key, F.coalesce(F.col("_key"), F.lit(UNKNOWN_KEY)).cast("long"))
-            .drop("_nat", "_key", "valid_from", "valid_to"))
+    # defensive de-duplication: overlapping versions or several current rows must never duplicate a row;
+    # keep the version with the latest valid_from per input row
+    df = df.withColumn("_rid", F.monotonically_increasing_id())
+    w = Window.partitionBy("_rid").orderBy(F.col("valid_from").desc_nulls_last(), F.col("_key").desc_nulls_last())
+    j = (df.join(d, cond, "left").withColumn("_rn", F.row_number().over(w)).where("_rn = 1")
+         .withColumn(key, F.coalesce(F.col("_key"), F.lit(UNKNOWN_KEY)).cast("long")))
+    return j.drop("_nat", "_key", "valid_from", "valid_to", "_rid", "_rn")
 
 
 def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, dim_customer=None) -> DataFrame:
@@ -63,6 +68,9 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, 
     customer_key (surrogate key): the dim_customer version valid at order_created_at, else -1; the natural
     customer_id stays so a later build repairs a -1.
     """
+    # an order without order_created_at has no date_key and no order_seq position: it is left out and counted
+    # by report_orders_without_created_at
+    silver_orders = silver_orders.where(F.col("order_created_at").isNotNull())
     s = silver_order_status.select("order_id", "status", "status_time", "carrier").withColumn("rank", _rank_expr())
     first_ship = F.min(F.when(F.col("status") == "order_shipped", F.col("status_time"))).over(
         Window.partitionBy("order_id"))
@@ -124,15 +132,38 @@ def report_negative_lead_time(fact_orders: DataFrame) -> int:
     return int(fact_orders.where(F.col("delivery_lead_hours") < 0).count())
 
 
+class CancelCounts(int):
+    """int (orders with a counted cancel and a later shipment) with the extra attribute
+    delivered_after_cancel (orders with a counted cancel and a later delivered row)."""
+
+    delivered_after_cancel: int = 0
+
+
+def report_orders_without_created_at(silver_orders: DataFrame, silver_order_status: DataFrame) -> int:
+    """Orders with status rows but a NULL order_created_at; build_fact_orders leaves them out."""
+    ids = silver_order_status.select("order_id").distinct()
+    return int(silver_orders.where(F.col("order_created_at").isNull()).select("order_id").distinct()
+               .join(ids, "order_id", "inner").count())
+
+
 def report_cancel_then_shipped(silver_order_status: DataFrame) -> int:
     """Orders with a counted cancel (no earlier shipment) AND a later order_shipped row (spec 17.6 check).
 
     Such an order resolves to order_cancelled (a counted cancel is terminal); the count is reported so the
-    cancel-then-ship pattern is visible instead of silently absorbed.
+    cancel-then-ship pattern is visible instead of silently absorbed. The result is an int (the
+    cancel-then-shipped count); its attribute delivered_after_cancel counts the orders with a counted cancel
+    and a later delivered row (current_status order_cancelled but is_delivered True).
     """
     s = silver_order_status.select("order_id", "status", "status_time")
     ships = s.where("status = 'order_shipped'").groupBy("order_id").agg(
         F.min("status_time").alias("first_ship"), F.max("status_time").alias("last_ship"))
     bad = (s.where("status = 'order_cancelled'").join(ships, "order_id", "inner")
            .where((F.col("status_time") <= F.col("first_ship")) & (F.col("last_ship") > F.col("status_time"))))
-    return int(bad.select("order_id").distinct().count())
+    out = CancelCounts(bad.select("order_id").distinct().count())
+    first_ship = ships.select("order_id", "first_ship")
+    counted = (s.where("status = 'order_cancelled'").join(first_ship, "order_id", "left")
+               .where(F.col("first_ship").isNull() | (F.col("first_ship") >= F.col("status_time"))))
+    deliv = s.where("status = 'delivered'").select("order_id", F.col("status_time").alias("dt"))
+    out.delivered_after_cancel = int(counted.join(deliv, "order_id", "inner")
+                                     .where(F.col("dt") > F.col("status_time")).select("order_id").distinct().count())
+    return out

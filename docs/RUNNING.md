@@ -186,7 +186,7 @@ agg_orders_daily: <n> rows
 agg_funnel_daily: <n> rows
 ```
 
-The row counts depend on the simulated run (after Amendment C, step C3, they were not re-measured on a full local run; the test dataset of 30,000 events gives 239 orders, 499 order lines, 29 `agg_orders_daily` rows and 48 `agg_funnel_daily` rows). `fact_orders` carries `platform`, `returned_at`, `has_failed_attempt` and `is_returned`; its `customer_key` is -1 here because the reference build reads no dimensions.
+The row counts `<n>` depend on the simulated run and were not measured on a full local run. The Gold test dataset of 30,000 events (a test-dataset number, not a full-run number) gives 239 orders, 29 `agg_orders_daily` rows and 48 `agg_funnel_daily` rows. `fact_orders` carries `platform`, `returned_at`, `has_failed_attempt` and `is_returned`; its `customer_key` is -1 here because the reference build reads no dimensions.
 
 This is a local reference build under `data/lake/gold_ref`, not the real Gold store (see "What is not built yet").
 

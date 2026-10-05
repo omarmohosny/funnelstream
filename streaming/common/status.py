@@ -37,4 +37,10 @@ def resolve_current_status_timed(rows):
     rest = [(s, t) for s, t in rows if s != "order_cancelled"]
     if not rest:  # only cancels after shipment cannot happen (shipment row would be in rest)
         raise ValueError("no usable status rows")
-    return max(rest, key=lambda r: (STATUS_RANK[r[0]], r[1]))[0]
+    # exact ties on rank and time: prefer order_returned over order_completed, then alphabetical name
+    return max(rest, key=lambda r: (STATUS_RANK[r[0]], r[1], r[0] == "order_returned", _neg_name(r[0])))[0]
+
+
+def _neg_name(name: str) -> tuple:
+    """Sort key that makes max() pick the alphabetically first name."""
+    return tuple(-ord(c) for c in name)

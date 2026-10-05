@@ -443,5 +443,7 @@ def test_c2_returned_cod_and_platform_on_noisy_dataset(spark, tmp_path):
               len(msgs), n_returned, ret_ids.count(), no_failed, bad_final, n_cod, cod_authorised,
               prepaid_authorised, sorted(str(v) for v in vals), n_null_events, n_mobile, n_app, share,
               n_orders, orders.filter("platform IS NULL").count(), unmatched, mismatch))
+    null_platform_orders = orders.filter("platform IS NULL").count()
+    assert n_orders > 0 and unmatched == 0 and null_platform_orders == 0  # mismatch == 0 is not vacuous
     assert sess.filter("n_platform > 1").count() == 0
     assert mismatch == 0

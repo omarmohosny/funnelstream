@@ -25,7 +25,8 @@ from streaming.gold.agg_orders import build_agg_orders_daily  # noqa: E402
 from streaming.gold.funnel import build_agg_funnel_daily  # noqa: E402
 from streaming.gold.live import build_live_metrics_minute, refresh_live_metrics  # noqa: E402
 from streaming.gold.orders import (build_fact_order_lines, build_fact_orders,  # noqa: E402
-                                   report_cancel_then_shipped, report_negative_lead_time)
+                                   report_cancel_then_shipped, report_negative_lead_time,
+                                   report_orders_without_created_at)
 from streaming.jobs.silver_clean import process_batch  # noqa: E402
 from streaming.silver.spark_schemas import SCHEMAS, coerce_row  # noqa: E402
 from streaming.silver.writer import merge_insert, silver_path  # noqa: E402
@@ -791,3 +792,75 @@ def test_funnel_platform_shares_on_end_to_end_dataset(spark, e2e):
     assert total == expected > 0
     assert set(by_platform) <= {"app", "web", "unknown"} and {"app", "web"} <= set(by_platform)
     assert "payment_method" not in agg.columns
+
+
+# ---------------------------------------------------------------- C4 cleanup
+def test_counted_cancel_and_later_delivered_row_overlap_is_pinned_and_reported(spark):
+    rows = [status_row("o1", "order_created", t(1, 10)), status_row("o1", "order_cancelled", t(1, 11)),
+            status_row("o1", "order_shipped", t(1, 12), carrier="Bosta"),
+            status_row("o1", "delivered", t(2, 9))]
+    r = fo(spark, [order_row("o1")], rows)["o1"]
+    assert r["current_status"] == "order_cancelled"
+    assert r["is_cancelled"] is False and r["is_delivered"] is True
+    rep = report_cancel_then_shipped(mk(spark, "silver_order_status", rows))
+    assert rep == 1 and rep.delivered_after_cancel == 1
+    # a delivered row BEFORE the cancel is not counted; a plain cancel-then-ship has no delivered row
+    plain = [status_row("o2", "order_created", t(1, 10)), status_row("o2", "order_cancelled", t(1, 11)),
+             status_row("o2", "order_shipped", t(1, 12))]
+    rep2 = report_cancel_then_shipped(mk(spark, "silver_order_status", plain))
+    assert rep2 == 1 and rep2.delivered_after_cancel == 0
+    clean = [status_row("o3", "order_created", t(1, 10)), status_row("o3", "order_shipped", t(1, 12)),
+             status_row("o3", "delivered", t(2, 9)), status_row("o3", "order_cancelled", t(3, 9))]
+    rep3 = report_cancel_then_shipped(mk(spark, "silver_order_status", clean))
+    assert rep3 == 0 and rep3.delivered_after_cancel == 0
+
+
+def _cust_dim(spark, rows):
+    schema = StructType([StructField("customer_id", StringType()), StructField("customer_key", LongType()),
+                         StructField("valid_from", TimestampType()), StructField("valid_to", TimestampType())])
+    return spark.createDataFrame(rows, schema)
+
+
+def _keys(spark, dim, orders):
+    st = [status_row(o["order_id"], "order_created", o["order_created_at"]) for o in orders]
+    df = build_fact_orders(mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", st), dim)
+    return df.count(), {r["order_id"]: r["customer_key"] for r in df.collect()}
+
+
+def test_versioned_lookup_boundary_instants_valid_from_inclusive_valid_to_exclusive(spark):
+    cut = datetime(2026, 10, 2, 10)  # naive UTC, as the session timezone is UTC
+    dim = _cust_dim(spark, [("c1", 11, datetime(1900, 1, 1), cut), ("c1", 12, cut, datetime(9999, 12, 31))])
+    orders = [order_row("at_cut", created=t(2, 10)), order_row("just_before", customer="c1", created=t(2, 9, 59, 59))]
+    n, keys = _keys(spark, dim, orders)
+    assert n == 2
+    assert keys["at_cut"] == 12  # exactly the previous valid_to: the NEW version (exclusive upper bound)
+    assert keys["just_before"] == 11
+    only_new = _cust_dim(spark, [("c1", 12, cut, datetime(9999, 12, 31))])
+    assert _keys(spark, only_new, [order_row("at_from", created=t(2, 10))])[1]["at_from"] == 12  # inclusive
+
+
+def test_versioned_lookup_overlapping_versions_never_duplicate_orders(spark):
+    far = datetime(9999, 12, 31)
+    dim = _cust_dim(spark, [("c1", 11, datetime(1900, 1, 1), far), ("c1", 12, datetime(2026, 10, 1), far),
+                            ("c1", 13, datetime(2026, 10, 1), far)])
+    orders = [order_row("a", created=t(2, 10)), order_row("b", customer="c2", created=t(2, 10))]
+    n, keys = _keys(spark, dim, orders)
+    assert n == 2
+    assert keys["a"] == 13 and keys["b"] == -1  # latest valid_from, then the higher key; no dim row stays unknown
+    items = [{"order_id": "a", "line_no": str(i), "product_id": "p1", "quantity": 1, "unit_price": Decimal("1.00"),
+              "line_total": Decimal("1.00"), "currency": "EGP", "order_time": t(2, 10)} for i in (1, 2)]
+    lines = build_fact_order_lines(mk(spark, "silver_orders", orders), mk(spark, "silver_order_items", items), dim)
+    assert lines.count() == 2
+
+
+def test_orders_without_created_at_are_left_out_of_fact_and_reported(spark):
+    orders = [order_row("ok", created=t(1, 10)), order_row("nodate", customer="c2", created=t(1, 10))]
+    orders[1]["order_created_at"] = None
+    st = [status_row("ok", "order_created", t(1, 10)), status_row("nodate", "order_created", t(1, 10))]
+    so, ss = mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", st)
+    fact = build_fact_orders(so, ss)
+    assert [r["order_id"] for r in fact.collect()] == ["ok"]
+    assert report_orders_without_created_at(so, ss) == 1
+    agg = build_agg_orders_daily(fact).collect()
+    assert [r["date_key"] for r in agg] == [20261001] and agg[0]["orders_placed"] == 1
+    assert report_orders_without_created_at(mk(spark, "silver_orders", orders[:1]), ss) == 0

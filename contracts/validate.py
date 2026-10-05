@@ -125,6 +125,9 @@ def _validate(event, now, known_products):
     if event.get("platform") is not None and event["platform"] not in ("app", "web"):
         return False, "BAD_VALUE"
 
+    if event_type == "order_created" and payload.get("platform") is not None             and payload["platform"] not in ("app", "web"):
+        return False, "BAD_VALUE"
+
     code = _check_numbers(payload)
     if code:
         return False, code
