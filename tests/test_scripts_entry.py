@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS = ["run_simulator.py", "seed_silver_reference.py", "show_live.py", "gen_ddl.py"]
+SCRIPTS = ["run_simulator.py", "seed_silver_reference.py", "show_live.py", "gen_ddl.py", "apply_ddl.py",
+           "publish_silver.py", "check_databricks.py"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)

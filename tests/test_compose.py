@@ -122,3 +122,11 @@ def test_spark_service():
     assert svc["mem_limit"]
     assert "./:/app" in svc["volumes"]
     assert "ivycache" in load()["volumes"]
+
+
+def test_spark_env_file_is_optional_dotenv():
+    """DATABRICKS_* and GOLD_BACKEND reach the spark container when .env exists; compose works without it."""
+    env_file = load()["services"]["spark"]["env_file"]
+    assert isinstance(env_file, list)
+    entries = [e if isinstance(e, dict) else {"path": e, "required": True} for e in env_file]
+    assert {"path": ".env", "required": False} in entries

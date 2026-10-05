@@ -51,6 +51,9 @@ services:
     profiles: ["spark"]
     mem_limit: 3g
     working_dir: /app
+    env_file:
+      - path: .env
+        required: false
     environment:
       KAFKA_BOOTSTRAP: kafka:19092
       SPARK_LOCAL_IP: 127.0.0.1

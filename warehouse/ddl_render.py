@@ -112,7 +112,13 @@ def split_statements(sql: str) -> list:
     return out
 
 
-def _dbx_table(t):
+def _check_ident(name):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name or ""):
+        raise ValueError("invalid SQL identifier: %r" % (name,))
+    return name
+
+
+def _dbx_table(t, catalog=CATALOG):
     lines = []
     for c in t.columns:
         if c.identity:
@@ -127,15 +133,20 @@ def _dbx_table(t):
         tail += "\nPARTITIONED BY (%s)" % t.partition
     tail += "\nCOMMENT '%s'" % _sq(comment)
     return "CREATE TABLE IF NOT EXISTS %s.%s.%s (\n%s\n)\n%s;" % (
-        CATALOG, t.schema_group, t.name, ",\n".join(lines), tail)
+        catalog, t.schema_group, t.name, ",\n".join(lines), tail)
 
 
-def render_databricks(tables) -> str:
+def render_databricks(tables, catalog=CATALOG, volume=None) -> str:
+    """catalog: target catalog (default funnelstream). volume: if given, add
+    CREATE VOLUME IF NOT EXISTS <catalog>.silver.<volume> after the schemas and before the tables."""
+    catalog = _check_ident(catalog)
     blocks = [HEADER + "\n-- Databricks (Delta, Unity Catalog). Keys are documented in COMMENT, not enforced.\n"
-              "-- The catalog funnelstream must exist before running (CREATE CATALOG is deliberately not issued).\n"
+              "-- The catalog %s must exist before running (CREATE CATALOG is deliberately not issued).\n"
               "-- CREATE TABLE IF NOT EXISTS does not change an existing table: schema changes need an explicit "
-              "ALTER or a drop.",
-              "CREATE SCHEMA IF NOT EXISTS %s.gold;" % CATALOG,
-              "CREATE SCHEMA IF NOT EXISTS %s.silver;" % CATALOG]
-    blocks.extend(_dbx_table(t) for t in tables)
+              "ALTER or a drop." % catalog,
+              "CREATE SCHEMA IF NOT EXISTS %s.gold;" % catalog,
+              "CREATE SCHEMA IF NOT EXISTS %s.silver;" % catalog]
+    if volume is not None:
+        blocks.append("CREATE VOLUME IF NOT EXISTS %s.silver.%s;" % (catalog, _check_ident(volume)))
+    blocks.extend(_dbx_table(t, catalog) for t in tables)
     return "\n\n".join(blocks) + "\n"

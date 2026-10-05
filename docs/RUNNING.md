@@ -239,6 +239,34 @@ Observed after a history run plus the live run above (then `timeout 60` Bronze a
 2026-10-04 20:22:00  EG  1151  111  349  45  12
 ```
 
+## Publish to Databricks
+
+Pushes the allow-listed Silver columns to a Databricks Silver mirror. There is no Databricks workspace behind this project's tests: everything below that talks to a workspace is covered only by fake connections. Commands marked (run) were actually executed without a workspace; the others are untested against a real workspace.
+
+Prerequisites:
+
+- A Databricks workspace (Free Edition is enough), a running SQL warehouse, and a personal access token (Settings, Developer, Access tokens).
+- A catalog. Free Edition may not let you create one, so set `DATABRICKS_CATALOG=workspace` (an existing catalog) in `.env`. The default is `funnelstream`, which must then exist.
+- `.env` (copied from `.env.example`) with `DATABRICKS_HOST` (workspace URL), `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID` (or `DATABRICKS_HTTP_PATH`), `DATABRICKS_CATALOG`, `DATABRICKS_VOLUME` (default `silver_upload`). The `spark` container reads `.env` when it exists; the one variable `DATABRICKS_CATALOG` drives `apply_ddl`, `publish_silver` and `check_databricks`.
+- Rebuild the image once (`docker compose build spark`): it now contains the Databricks SDK, SQL connector and pyarrow.
+
+Commands (PowerShell, repo root):
+
+```powershell
+# 1. Settings and connection (run: prints the missing-settings message without a workspace)
+docker compose run --rm spark python scripts/check_databricks.py
+# 2. Create schemas gold and silver, the upload volume and all tables (run: --dry-run only)
+docker compose run --rm spark python scripts/apply_ddl.py --backend databricks --dry-run
+docker compose run --rm spark python scripts/apply_ddl.py --backend databricks
+# 3. Connectivity including a tiny upload to the volume (not run)
+docker compose run --rm spark python scripts/check_databricks.py --upload-test
+# 4. Publish: dry run first (run: exports locally, prints the MERGE it would run, uploads nothing)
+docker compose run --rm spark python scripts/publish_silver.py --dry-run
+docker compose run --rm spark python scripts/publish_silver.py
+```
+
+`--help` on all three scripts was run. `apply_ddl.py --catalog NAME` overrides the catalog; `publish_silver.py` also takes `--tables`, `--export-only`, `--upload-only`, `--lake`, `--export-dir`. Publishing is insert-only and idempotent (a second run changes nothing). `silver_quarantine.raw_payload` and `silver_products.name` are never published (the mirror columns stay NULL). `silver_campaign_snapshots` has no local Delta table yet and is skipped with a warning. If `check_databricks` says the catalog is not found, create it in Catalog Explorer or point `DATABRICKS_CATALOG` at an existing one such as `workspace`.
+
 ## What is not built yet
 
 - Databricks and the Gold store: Gold build, surrogate keys and the Gold tables in Databricks or Postgres (plan tasks 10b, 10c). The local `streaming.gold.build` output is a reference only.
