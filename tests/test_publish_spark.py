@@ -26,6 +26,10 @@ class FakeUploader:
     def upload(self, remote_path, data):
         self.files[remote_path] = data
 
+    def clear(self, remote_dir):
+        for k in [k for k in self.files if k.startswith(remote_dir.rstrip("/") + "/")]:
+            del self.files[k]
+
 
 def _build_lake(spark, tmp_path, events=6_000):
     msgs, _ = simulated(events)

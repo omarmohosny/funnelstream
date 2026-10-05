@@ -13,9 +13,13 @@ MIRROR = {t.name: t for t in SILVER_MIRROR_TABLES}
 class FakeUploader:
     def __init__(self):
         self.calls = []
+        self.cleared = []
 
     def upload(self, remote_path, data):
         self.calls.append((remote_path, data))
+
+    def clear(self, remote_dir):
+        self.cleared.append(remote_dir)
 
 
 class FakeStore:
@@ -108,6 +112,7 @@ def test_upload_directory_only_parquet_and_paths(tmp_path):
     assert [p for p, _ in up.calls] == ["/Volumes/c/silver/v/silver_events/part-0000.parquet",
                                         "/Volumes/c/silver/v/silver_events/part-0001.parquet"]
     assert up.calls[0][1] == b"PAR1-silver_events"
+    assert up.cleared == ["/Volumes/c/silver/v/silver_events/"]  # stale parts of earlier exports go first
     assert upload_directory(up, str(tmp_path / "missing"), "/r") == 0
 
 
@@ -214,3 +219,33 @@ def test_export_table_missing_local_folder_is_skipped(tmp_path, caplog):
     assert not os.path.exists(tmp_path / "x")
     with pytest.raises(ValueError):
         export_table(NoSpark(), str(tmp_path), "bronze_orders", str(tmp_path))
+
+
+def test_sdk_uploader_clear_deletes_only_stale_parquet_files():
+    class E:
+        def __init__(self, name, is_directory=False):
+            self.name, self.is_directory = name, is_directory
+
+    class NotFound(Exception):
+        pass
+
+    class Files:
+        deleted = []
+
+        def list_directory_contents(self, d):
+            if d.endswith("gone"):
+                raise NotFound("x")
+            return [E("part-1.parquet"), E("part-2.parquet"), E("_SUCCESS"), E("sub.parquet", True)]
+
+        def delete(self, path):
+            self.deleted.append(path)
+
+    class Client:
+        files = Files()
+
+    from warehouse.publish import _SdkUploader
+    u = _SdkUploader(Client())
+    u.clear("/Volumes/c/silver/v/t/")
+    assert Client.files.deleted == ["/Volumes/c/silver/v/t/part-1.parquet", "/Volumes/c/silver/v/t/part-2.parquet"]
+    u.clear("/Volumes/c/silver/v/gone")  # missing folder is fine
+    assert len(Client.files.deleted) == 2

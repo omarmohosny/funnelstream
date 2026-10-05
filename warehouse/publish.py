@@ -118,6 +118,10 @@ class Uploader:
     def upload(self, remote_path, data):  # pragma: no cover - interface
         raise NotImplementedError
 
+    def clear(self, remote_dir):  # pragma: no cover - interface
+        """Delete the *.parquet files already in remote_dir (a missing folder is fine)."""
+        raise NotImplementedError
+
 
 class _SdkUploader(Uploader):
     def __init__(self, client):
@@ -125,6 +129,19 @@ class _SdkUploader(Uploader):
 
     def upload(self, remote_path, data):
         self._client.files.upload(remote_path, io.BytesIO(data), overwrite=True)
+
+    def clear(self, remote_dir):
+        # Spark names part files with a fresh UUID on every export; without this the volume folder keeps the
+        # parts of earlier exports and the MERGE source would hold the same rows several times.
+        try:
+            entries = list(self._client.files.list_directory_contents(remote_dir))
+        except Exception as e:
+            if type(e).__name__ == "NotFound":
+                return
+            raise
+        for entry in entries:
+            if not entry.is_directory and entry.name.endswith(".parquet"):
+                self._client.files.delete(remote_dir.rstrip("/") + "/" + entry.name)
 
     def __repr__(self):
         return "_SdkUploader()"
@@ -140,6 +157,8 @@ def make_uploader(host, token) -> Uploader:
 
 def upload_directory(client, local_dir, remote_dir) -> int:
     names = _parquet_files(local_dir)
+    if names and hasattr(client, "clear"):
+        client.clear(remote_dir)
     for name in names:
         with open(os.path.join(local_dir, name), "rb") as fh:
             client.upload(remote_dir.rstrip("/") + "/" + name, fh.read())

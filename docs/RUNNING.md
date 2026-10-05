@@ -241,7 +241,7 @@ Observed after a history run plus the live run above (then `timeout 60` Bronze a
 
 ## Publish to Databricks
 
-Pushes the allow-listed Silver columns to a Databricks Silver mirror. There is no Databricks workspace behind this project's tests: everything below that talks to a workspace is covered only by fake connections. Commands marked (run) were actually executed without a workspace; the others are untested against a real workspace.
+Pushes the allow-listed Silver columns to a Databricks Silver mirror. Verified against a real Databricks workspace (Free Edition, catalog `funnelstream`, SQL warehouse, volume `silver_upload`) with a 5000-event run: `check_databricks.py --upload-test`, `apply_ddl.py --backend databricks`, `publish_silver.py` (dry run, full run twice, `--upload-only`) all ran for real.
 
 Prerequisites:
 
@@ -258,12 +258,15 @@ docker compose run --rm spark python scripts/check_databricks.py
 # 2. Create schemas gold and silver, the upload volume and all tables (run: --dry-run only)
 docker compose run --rm spark python scripts/apply_ddl.py --backend databricks --dry-run
 docker compose run --rm spark python scripts/apply_ddl.py --backend databricks
-# 3. Connectivity including a tiny upload to the volume (not run)
+# 3. Connectivity including a tiny upload to the volume (verified against a real workspace)
 docker compose run --rm spark python scripts/check_databricks.py --upload-test
-# 4. Publish: dry run first (run: exports locally, prints the MERGE it would run, uploads nothing)
+# 4. Publish (verified for real): dry run first (exports locally, prints the MERGE it would run, uploads nothing)
 docker compose run --rm spark python scripts/publish_silver.py --dry-run
 docker compose run --rm spark python scripts/publish_silver.py
+docker compose run --rm spark python scripts/publish_silver.py --upload-only   # verified: re-uploads data/export and merges
 ```
+
+Observed on a real workspace after `--events 5000 --seed 7` (local Silver count equals Databricks mirror count for every table): silver_events 4649, silver_orders 39, silver_order_status 291, silver_order_items 72, silver_quarantine 79, silver_products 200, silver_customers 5000, silver_campaign_snapshots 0 (skipped). `sum(line_total)` 51763.44 on both sides, `silver_quarantine.raw_payload` NULL everywhere, `silver_customers` has no name/phone columns. A second full publish and an `--upload-only` run left every count unchanged. `MERGE ... USING (SELECT ... FROM parquet.`/Volumes/...`)` works as written on the SQL warehouse. Gotcha fixed during this run: Spark names Parquet parts with a new UUID per export, so earlier exports piled up in the volume folder and the MERGE source held duplicate rows; the upload now deletes old `*.parquet` files in the table's volume folder first.
 
 `--help` on all three scripts was run. `apply_ddl.py --catalog NAME` overrides the catalog; `publish_silver.py` also takes `--tables`, `--export-only`, `--upload-only`, `--lake`, `--export-dir`. Publishing is insert-only and idempotent (a second run changes nothing). `silver_quarantine.raw_payload` and `silver_products.name` are never published (the mirror columns stay NULL). `silver_campaign_snapshots` has no local Delta table yet and is skipped with a warning. If `check_databricks` says the catalog is not found, create it in Catalog Explorer or point `DATABRICKS_CATALOG` at an existing one such as `workspace`.
 
