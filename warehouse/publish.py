@@ -5,9 +5,8 @@ files to a Unity Catalog volume -> MERGE them into funnelstream.silver.<table> (
 Names, phones and raw payloads never leave the machine: silver_quarantine.raw_payload and every
 free-form personal column are simply not in PUBLISH_ALLOWLIST (the mirror column stays NULL).
 
-LIMITATION: silver_products.name (a product title, not a person) is NOT published because the allow-list
-rule bans any column called name; the mirror column stays NULL, so a Gold dim_product built from the
-mirror has a NULL name.
+Product titles (silver_products.name) are published: the only exception to the ban on columns called
+name, phone, email or address is NAME_EXCEPTIONS (a product title is not a person's name).
 
 This module imports no Spark at module level (the host tests run without it).
 """
@@ -21,6 +20,14 @@ from warehouse.store import _ident
 
 log = logging.getLogger("funnelstream.publish")
 
+# Column names that must never be published, except the explicit exceptions below.
+BANNED_COLUMNS = ("name", "phone", "email", "address")
+NAME_EXCEPTIONS = {("silver_products", "name")}
+
+# PUBLISH_ALLOWLIST: explicit per-table column lists, the only columns that leave the machine.
+# NOTE: search_term (silver_events) and reason (silver_order_status) are FREE-TEXT columns. They are
+# published because the data is synthetic; review them (and possibly drop or hash them) before this
+# pipeline is used with real customer data.
 PUBLISH_ALLOWLIST = {
     "silver_events": [
         "event_id", "event_type", "event_time", "kafka_timestamp", "is_late", "is_bot", "event_version",
@@ -42,7 +49,7 @@ PUBLISH_ALLOWLIST = {
     "silver_quarantine": [  # raw_payload deliberately absent: raw rows never leave the machine
         "quarantine_id", "source_topic", "error_code", "error_detail", "received_at",
     ],
-    "silver_products": ["product_id", "updated_at", "category", "price", "is_active"],
+    "silver_products": ["product_id", "updated_at", "name", "category", "price", "is_active"],
     "silver_customers": [
         "customer_id", "updated_at", "country", "city", "signup_date", "primary_device", "marketing_consent",
     ],
@@ -63,6 +70,10 @@ PUBLISH_KEYS = {
     "silver_campaign_snapshots": ["campaign_id", "report_date", "pulled_at"],
 }
 
+# Columns refreshed on already-published keys when the mirror holds NULL (narrow repair path: rows published
+# before the column was on the allow-list). Everything else stays insert-only.
+BACKFILL_COLUMNS = {"silver_products": ["name"]}
+
 MAX_FILES = 8
 TARGET_FILE_BYTES = 128 * 1024 * 1024
 
@@ -80,9 +91,17 @@ def build_publish_statements(table, catalog, volume) -> list:
     path = volume_path(catalog, volume, table)
     on = " AND ".join("t.%s = s.%s" % (k, k) for k in PUBLISH_KEYS[table])
     collist = ", ".join(cols)
-    return ["MERGE INTO %s.silver.%s AS t USING (SELECT %s FROM parquet.`%s`) AS s ON %s "
+    keys = ", ".join(PUBLISH_KEYS[table])
+    # QUALIFY: defence in depth, the source holds each key once even if the volume folder holds duplicates.
+    source = ("SELECT %s FROM parquet.`%s` QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1"
+              % (collist, path, keys, keys))
+    backfill = ""
+    for c in BACKFILL_COLUMNS.get(table, []):
+        _ident(c)
+        backfill += " WHEN MATCHED AND t.%s IS NULL AND s.%s IS NOT NULL THEN UPDATE SET t.%s = s.%s" % (c, c, c, c)
+    return ["MERGE INTO %s.silver.%s AS t USING (%s) AS s ON %s%s "
             "WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
-            % (_ident(catalog), table, collist, path, on, collist, ", ".join("s." + c for c in cols))]
+            % (_ident(catalog), table, source, on, backfill, collist, ", ".join("s." + c for c in cols))]
 
 
 def _folder_bytes(path):

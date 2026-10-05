@@ -23,7 +23,10 @@ from warehouse.tables import all_tables
 log = logging.getLogger("funnelstream.store")
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_TRANSIENT_RE = re.compile(r"429|503|timed out|timeout|temporarily unavailable|TooManyRequests", re.IGNORECASE)
+# Anchored on purpose: a bare "503" or "429" also appears inside SQL text and parse errors.
+_TRANSIENT_RE = re.compile(
+    r"HTTP[ /]?(429|503)|status[ =:]*(429|503)|TooManyRequests|TEMPORARILY_UNAVAILABLE|timed out|ReadTimeout"
+    r"|ConnectTimeout|Connection (reset|aborted)", re.IGNORECASE)
 
 
 class StoreConfigError(ValueError):
@@ -73,18 +76,19 @@ class GoldStore(ABC):
         """Idempotent write of rows keyed by key_cols; returns the number of rows written."""
 
     @abstractmethod
-    def query(self, sql: str, params=None) -> list:
+    def query(self, sql: str, params=None, retry: bool = True) -> list:
         """Run a read statement, return rows as tuples."""
 
     @abstractmethod
-    def execute(self, sql: str) -> None:
-        """Run one statement without a result."""
+    def execute(self, sql: str, retry: bool = True) -> None:
+        """Run one statement without a result. retry=True may repeat it after a transient error, so only
+        pass statements that are safe to repeat (all current callers are: IF NOT EXISTS DDL and MERGE)."""
 
-    def run_script(self, sql_text: str) -> int:
+    def run_script(self, sql_text: str, retry: bool = True) -> int:
         """Run every statement of a script (split on semicolons outside strings); returns the count."""
         statements = split_statements(sql_text)
         for stmt in statements:
-            self.execute(stmt)
+            self.execute(stmt, retry=retry)
         return len(statements)
 
     @abstractmethod
@@ -169,7 +173,7 @@ class PostgresStore(GoldStore):
         conn.commit()
         return len(data)
 
-    def query(self, sql, params=None):
+    def query(self, sql, params=None, retry=True):
         cur = self._connection().cursor()
         try:
             cur.execute(sql, params)
@@ -177,7 +181,7 @@ class PostgresStore(GoldStore):
         finally:
             cur.close()
 
-    def execute(self, sql):
+    def execute(self, sql, retry=True):
         conn = self._connection()
         cur = conn.cursor()
         try:
@@ -240,7 +244,7 @@ class DatabricksStore(GoldStore):
                 raise self._scrub(e) from None
         return self._conn
 
-    def _run(self, sql, params=None, fetch=False):
+    def _run(self, sql, params=None, fetch=False, retry=True):
         attempt = 0
         while True:
             try:
@@ -254,7 +258,7 @@ class DatabricksStore(GoldStore):
                 finally:
                     cur.close()
             except Exception as e:
-                if attempt < self.max_retries and _TRANSIENT_RE.search(str(e)):
+                if retry and attempt < self.max_retries and _TRANSIENT_RE.search(str(e)):
                     delay = 2 ** attempt
                     attempt += 1
                     log.warning("transient Databricks error, retry %d/%d in %ss", attempt, self.max_retries, delay)
@@ -262,11 +266,11 @@ class DatabricksStore(GoldStore):
                     continue
                 raise self._scrub(e) from None
 
-    def query(self, sql, params=None):
-        return self._run(sql, params, fetch=True)
+    def query(self, sql, params=None, retry=True):
+        return self._run(sql, params, fetch=True, retry=retry)
 
-    def execute(self, sql):
-        self._run(sql)
+    def execute(self, sql, retry=True):
+        self._run(sql, retry=retry)
 
     def _plan(self, table, rows, key_cols):
         """(statements, row count) for an upsert; one MERGE per batch."""

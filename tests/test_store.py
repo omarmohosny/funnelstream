@@ -261,7 +261,7 @@ def test_retry_exhausted_raises_last_error():
 
 def test_upsert_retries_the_failed_batch():
     sleeps = []
-    conn = FakeConn(failures=[Exception("503")])
+    conn = FakeConn(failures=[Exception("HTTP 503")])
     n = dbx(conn, sleeper=sleeps.append).upsert("dim_campaign", [{"campaign_id": "c"}], ["campaign_id"])
     assert n == 1 and sleeps == [1] and len(conn.statements) == 2
 
@@ -370,3 +370,37 @@ def test_get_store_unknown_backend_and_env_honoured(monkeypatch):
     monkeypatch.setenv("GOLD_BACKEND", "postgres")
     monkeypatch.setenv("PG_DSN", "postgresql://y")
     assert isinstance(get_store(), PostgresStore)
+
+
+# I-3: anchored retry regex, retry=False
+@pytest.mark.parametrize("msg", ["HTTP 503", "HTTP/429", "HTTP429", "status=503", "status: 429", "status 503",
+                                 "TooManyRequests", "[TEMPORARILY_UNAVAILABLE] try later", "read timed out",
+                                 "ReadTimeout on socket", "ConnectTimeout", "Connection reset by peer",
+                                 "Connection aborted"])
+def test_each_anchored_transient_phrase_is_retried(msg):
+    sleeps = []
+    conn = FakeConn(failures=[Exception(msg)])
+    dbx(conn, sleeper=sleeps.append).execute("SELECT 1")
+    assert sleeps == [1] and len(conn.statements) == 2
+
+
+def test_parse_error_with_503_and_429_in_sql_is_not_retried():
+    sleeps = []
+    err = Exception("[PARSE_SYNTAX_ERROR] near 'SELECT 503, 429 FROM t WHERE id = 5030 AND x = 4290'")
+    conn = FakeConn(failures=[err])
+    with pytest.raises(Exception, match="PARSE_SYNTAX_ERROR"):
+        dbx(conn, sleeper=sleeps.append).execute("SELECT 503, 429")
+    assert sleeps == [] and len(conn.statements) == 1
+
+
+def test_retry_false_raises_immediately_on_execute_query_and_run_script():
+    for call in (lambda s: s.execute("SELECT 1", retry=False), lambda s: s.query("SELECT 1", retry=False),
+                 lambda s: s.run_script("SELECT 1; SELECT 2;", retry=False)):
+        sleeps = []
+        conn = FakeConn(failures=[Exception("HTTP 503")])
+        with pytest.raises(Exception, match="503"):
+            call(dbx(conn, sleeper=sleeps.append))
+        assert sleeps == [] and len(conn.statements) == 1
+    conn = FakeConn(failures=[Exception("HTTP 503")])
+    dbx(conn).run_script("SELECT 1;")  # default keeps retrying
+    assert len(conn.statements) == 2

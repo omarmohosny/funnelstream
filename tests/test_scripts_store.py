@@ -40,7 +40,7 @@ class FakeStore(GoldStore):
     def upsert(self, table, rows, key_cols):
         return len(rows)
 
-    def query(self, sql, params=None):
+    def query(self, sql, params=None, retry=True):
         self.queries.append(sql)
         for key, exc in self.fail.items():
             if key in sql:
@@ -50,7 +50,7 @@ class FakeStore(GoldStore):
                 return rows
         return [(1,)]
 
-    def execute(self, sql):
+    def execute(self, sql, retry=True):
         self.executed.append(sql)
 
     def close(self):
