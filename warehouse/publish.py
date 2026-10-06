@@ -79,6 +79,10 @@ PUBLISH_KEYS = {
 # before the column was on the allow-list). Everything else stays insert-only.
 BACKFILL_COLUMNS = {"silver_products": ["name"]}
 
+# --reset (publish_silver): the mirror tables the publish owns are truncated and refilled. The ad-report
+# snapshots hold rows that do not come from the local Silver lake, so they are never reset.
+RESET_EXCLUDED = ("silver_campaign_snapshots",)
+
 MAX_FILES = 8
 TARGET_FILE_BYTES = 128 * 1024 * 1024
 
@@ -107,6 +111,19 @@ def build_publish_statements(table, catalog, volume) -> list:
     return ["MERGE INTO %s.silver.%s AS t USING (%s) AS s ON %s%s "
             "WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
             % (_ident(catalog), table, source, on, backfill, collist, ", ".join("s." + c for c in cols))]
+
+
+def resettable_tables(tables=None) -> list:
+    """The tables --reset truncates: the given (default: all publishable) tables minus RESET_EXCLUDED."""
+    tables = list(tables) if tables else list(PUBLISH_ALLOWLIST)
+    return [t for t in tables if t not in RESET_EXCLUDED]
+
+
+def reset_statement(table, catalog) -> str:
+    """TRUNCATE (never DROP) of one owned mirror table."""
+    if table not in PUBLISH_ALLOWLIST or table in RESET_EXCLUDED:
+        raise ValueError("table cannot be reset: %s" % table)
+    return "TRUNCATE TABLE %s.silver.%s" % (_ident(catalog), table)
 
 
 def _folder_bytes(path):
@@ -206,13 +223,18 @@ def _parquet_rows(spark, folder):
 
 
 def publish(spark, lake_root, export_dir, store, uploader, catalog, volume, tables=None, dry_run=False,
-            export_only=False, upload_only=False) -> dict:
+            export_only=False, upload_only=False, reset=False) -> dict:
+    """reset=True: each owned table (see RESET_EXCLUDED) that was exported is TRUNCATEd on the mirror right
+    before its upload and MERGE (so a failed export never empties a table). Nothing is truncated in a dry run
+    or with export_only; a dry run lists the TRUNCATE in entry["statements"]."""
     tables = list(tables) if tables else list(PUBLISH_ALLOWLIST)
     unknown = [t for t in tables if t not in PUBLISH_ALLOWLIST]
     if unknown:
         raise ValueError("not publishable: %s" % ", ".join(unknown))
     if export_only and upload_only:
         raise ValueError("export_only and upload_only cannot be combined")
+    if reset and export_only:
+        raise ValueError("reset and export_only cannot be combined")
     result = {}
     for table in tables:
         statements = build_publish_statements(table, catalog, volume)
@@ -223,9 +245,17 @@ def publish(spark, lake_root, export_dir, store, uploader, catalog, volume, tabl
         else:
             folder, rows = export_table(spark, lake_root, table, export_dir)
         entry = {"rows": rows, "files": len(_parquet_files(folder)) if folder else 0, "merged": False}
+        do_reset = bool(reset and folder and table not in RESET_EXCLUDED)
+        if do_reset:
+            entry["reset"] = False
         if dry_run:
             entry["statements"] = statements if entry["files"] else []
+            if do_reset:
+                entry["statements"] = [reset_statement(table, catalog)] + entry["statements"]
         elif folder and not export_only:
+            if do_reset:
+                store.execute(reset_statement(table, catalog))
+                entry["reset"] = True
             entry["files"] = upload_directory(uploader, folder, volume_path(catalog, volume, table))
             if upload_only:
                 entry["rows"] = _parquet_rows(spark, folder)

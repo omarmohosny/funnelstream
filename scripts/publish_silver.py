@@ -11,7 +11,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from warehouse.publish import PUBLISH_ALLOWLIST, make_uploader, publish
+from warehouse.publish import PUBLISH_ALLOWLIST, make_uploader, publish, reset_statement, resettable_tables
 from warehouse.store import StoreConfigError, env_catalog, env_volume, get_store
 
 
@@ -29,9 +29,17 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="export locally, print the statements, upload nothing")
     ap.add_argument("--export-only", action="store_true", help="stop after the local Parquet export")
     ap.add_argument("--upload-only", action="store_true", help="skip the export, upload what is in --export-dir")
+    ap.add_argument("--reset", action="store_true",
+                    help="TRUNCATE (never drop) the Silver mirror tables this publish owns, then upload and merge "
+                         "again (silver_campaign_snapshots is never reset). Needs --yes; without it only the plan "
+                         "is printed (exit 2)")
+    ap.add_argument("--yes", action="store_true", help="really execute the --reset truncates")
     args = ap.parse_args(argv)
     if args.export_only and args.upload_only:
         print("error: --export-only and --upload-only cannot be combined", file=sys.stderr)
+        return 2
+    if args.reset and args.export_only:
+        print("error: --reset and --export-only cannot be combined", file=sys.stderr)
         return 2
     tables = [t.strip() for t in args.tables.split(",") if t.strip()] if args.tables else None
     if tables and any(t not in PUBLISH_ALLOWLIST for t in tables):
@@ -41,6 +49,16 @@ def main(argv=None):
     store = uploader = spark = None
     try:
         catalog, volume = env_catalog(), env_volume()
+        if args.reset:
+            owned = resettable_tables(tables)
+            print("WARNING: --reset TRUNCATES these Silver mirror tables and ALL their rows, then publishes again: %s"
+                  % (", ".join(owned) or "(none)"))
+            print("WARNING: silver_campaign_snapshots is never reset. Run the Gold build afterwards.")
+            for t in owned:
+                print("  plan: %s" % reset_statement(t, catalog))
+            if not args.dry_run and not args.yes:
+                print("DRY RUN: nothing was truncated or uploaded. Repeat with --yes to execute.")
+                return 2
         if not (args.dry_run or args.export_only):  # these two never talk to Databricks
             store = get_store("databricks")
             uploader = make_uploader(os.environ["DATABRICKS_HOST"], os.environ["DATABRICKS_TOKEN"])
@@ -48,7 +66,8 @@ def main(argv=None):
         if not args.upload_only:
             spark = _get_spark()
         result = publish(spark, args.lake, args.export_dir, store, uploader, catalog, volume, tables=tables,
-                         dry_run=args.dry_run, export_only=args.export_only, upload_only=args.upload_only)
+                         dry_run=args.dry_run, export_only=args.export_only, upload_only=args.upload_only,
+                         reset=args.reset)
     except (StoreConfigError, ValueError) as e:
         print("error: %s" % e, file=sys.stderr)
         return 2

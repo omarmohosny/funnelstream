@@ -95,6 +95,14 @@ class GoldStore(ABC):
         """Table name to use in a hand-written query (Postgres: the bare name)."""
         return _table_spec(table).name
 
+    def schema_prefix(self, group: str) -> str:
+        """Schema prefix to write in front of a table of schema group `group` ('gold' or 'silver') in
+        hand-written SQL, without the dot: Databricks <catalog>.<group>. Default: the bare group name (a local
+        Spark session with schemas silver and gold)."""
+        if group not in ("gold", "silver"):
+            raise ValueError("unknown schema group: %r" % (group,))
+        return group
+
     @abstractmethod
     def close(self) -> None:
         """Release the connection."""
@@ -176,6 +184,10 @@ class PostgresStore(GoldStore):
             cur.close()
         conn.commit()
         return len(data)
+
+    def schema_prefix(self, group):
+        super().schema_prefix(group)  # validates the group
+        return "public"  # Gold tables live in schema public; the Gold build SQL itself is Databricks/Spark only
 
     def query(self, sql, params=None, retry=True):
         cur = self._connection().cursor()
@@ -298,6 +310,9 @@ class DatabricksStore(GoldStore):
     def qualified(self, table):
         spec = _table_spec(table)
         return "%s.%s.%s" % (self.catalog, spec.schema_group, spec.name)
+
+    def schema_prefix(self, group):
+        return "%s.%s" % (self.catalog, super().schema_prefix(group))
 
     def upsert(self, table, rows, key_cols):
         statements, count = self._plan(table, rows, key_cols)

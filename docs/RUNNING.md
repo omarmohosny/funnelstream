@@ -314,11 +314,43 @@ docker compose run --rm spark python scripts/apply_ddl.py --backend databricks -
 docker compose run --rm spark python scripts/publish_silver.py
 ```
 
-Observed: `applied 37 statements`, then every Silver mirror count equalled the local count after a fresh run (seed 7, 20,000 events): events 18,822, orders 153, status 1,031, items 305, quarantine 314, products 200, customers 5,000. In the mirror: 0 NULL districts in events, orders and customers; 1,340 events with `utm_source` and `utm_medium`; 7,387 with `page_url`; 0 duplicate `event_id`; `raw_payload` NULL in every quarantine row; `dim_customer`, `dim_product` and `dim_campaign` each hold exactly one -1 row (the customer one has district `unknown`). The Gold tables are empty until the Gold build (Task 10c) exists.
+Observed: `applied 37 statements`, then every Silver mirror count equalled the local count after a fresh run (seed 7, 20,000 events): events 18,822, orders 153, status 1,031, items 305, quarantine 314, products 200, customers 5,000. In the mirror: 0 NULL districts in events, orders and customers; 1,340 events with `utm_source` and `utm_medium`; 7,387 with `page_url`; 0 duplicate `event_id`; `raw_payload` NULL in every quarantine row; `dim_customer`, `dim_product` and `dim_campaign` each hold exactly one -1 row (the customer one has district `unknown`). The Gold tables are empty until the Gold build runs (see "Gold build").
+
+## Gold build
+
+`warehouse/gold_build.py` recomputes the Gold tables on Databricks from the Silver mirror (publish first). It is one job with SQL files `warehouse/gold/NN_<step>.sql` (MERGE ... SELECT, Databricks SQL / Spark SQL with Delta; not portable to the Postgres fallback). It only uses the store interface (`store.execute` / `store.query`).
+
+```powershell
+docker compose run --rm spark python -m warehouse.gold_build --dry-run                      # print the rendered statements, execute nothing (needs no Databricks settings)
+docker compose run --rm spark python -m warehouse.gold_build                                # default window: the last 7 days up to today (Cairo)
+docker compose run --rm spark python -m warehouse.gold_build --days 30                      # the last 30 days up to today
+docker compose run --rm spark python -m warehouse.gold_build --from-date 2026-10-01 --to-date 2026-10-05
+docker compose run --rm spark python -m warehouse.gold_build --full                         # rebuild everything
+docker compose run --rm spark python -m warehouse.gold_build --steps fact_orders,agg_orders_daily
+```
+
+Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, checks. The run stops at the first failing step and names it (exit 1); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, and the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does).
+
+The three window options are `--from-date/--to-date` (both, ISO dates, Cairo days), `--days N` and `--full`; with none of them the window is the last 7 days. The window selects what is recomputed:
+
+- Orders: an order is recomputed when its `order_created_at` Cairo date or any of its status rows `event_date` is in the window. Later orders of the same customers are recomputed too (their `order_seq` and `is_first_order` depend on the earlier order).
+- Summaries (`agg_orders_daily`, `agg_funnel_daily`): one atomic MERGE recomputes the rows: measures of matching keys are updated, new keys inserted, and a key inside the window that has no rows any more is deleted (`WHEN NOT MATCHED BY SOURCE`), so a failure never leaves the window empty. A key that vanishes on a widened date outside the window (see below) is not deleted. `agg_orders_daily` also recomputes the order dates of every recomputed order (a late delivery for an old order fixes the day the order was placed). `agg_funnel_daily` also recomputes the dates of sessions that touch the window and the dates of late events (`event_date` before the window, `kafka_timestamp` inside it). Bots are recomputed over all events of the sessions involved (more than 100 events in 10 seconds).
+- Late status rows older than the window: `silver_order_status` has no ingestion time, so orders are found only by the order date or the status row `event_date` (the Cairo date of `status_time`). A late status row whose `status_time` is older than the window (for example a delivered row 9 days after the order, in the default 7-day window) is NOT seen: the order, its lines and its `agg_orders_daily` day stay stale until a window that covers that date, a wider `--days`, or `--full` runs. The funnel is not affected (it also looks at `kafka_timestamp`). Run `--full` periodically (for example weekly) or use a wider `--days`.
+- Dimensions are always rebuilt in full (they are small): SCD2 with `valid_from = updated_at`, one new version per day at most, new versions only when city, district and primary_device (customer) or category and price (product) change. `dim_campaign` comes from `simulator/campaigns.py`, `dim_date` covers 2025-01-01 to 2027-12-31.
+- The -1 repair: a fact row whose customer or product had no dimension version gets key -1 and keeps the natural id. Every recomputed order or line looks the key up again, so once the dimension row exists the next build that recomputes that order repairs the key. Orders outside the window keep their key until a window (or `--full`) covers them again.
+- Empty slots: `fact_attribution` (Task 13), `agg_campaign_daily` (Task 12), `agg_city_product_daily` and `rec_product` (Task 14) and the SQL checks (Task 16) have no SQL file yet; the build lists them as `empty` and skips them. `fact_orders.campaign_id` stays NULL until Task 13, and the build never overwrites it.
+
+The SQL was tested on local Spark with Delta only (`tests/test_gold_build_spark.py`); it has not been run against the real workspace yet.
+
+`publish_silver --reset` truncates the Silver mirror tables the publish owns (never drops them, never `silver_campaign_snapshots`), then uploads and merges again. Without `--yes` it prints the plan and exits 2; `--reset --dry-run` shows the `TRUNCATE` statements and executes nothing. Use it when the mirror holds rows that the local Silver no longer has (insert-only publishing never removes them), then run the Gold build with `--full`.
+
+### Gold build: verified on the real workspace
+
+`python -m warehouse.gold_build --full` ran for real on the Databricks workspace over the Silver mirror of the fresh run (seed 7, 20,000 events, noise on), twice in a row. Rows built: dim_customer 5,001 (5,000 versions plus the -1 row), dim_product 201, dim_campaign 4, dim_date 1,095, fact_orders 153, fact_order_lines 305, agg_orders_daily 27, agg_funnel_daily 41. Compared column by column with the local reference build (`streaming.gold.build`): 0 cell mismatches and no row on only one side in all four tables (surrogate keys excluded, the reference uses -1). Every order and line resolved to a real dimension key (0 NULL, 0 left at -1). Order revenue and line revenue both sum to 250,155.95. The second run changed nothing: identical row counts, key sums and revenue (no identity key was reassigned).
 
 ## What is not built yet
 
-- Databricks and the Gold store: Gold build, surrogate keys and the Gold tables in Databricks or Postgres (plan tasks 10b, 10c). The local `streaming.gold.build` output is a reference only.
+- The Gold build runs the dimensions, facts and the two summaries (see "Gold build"); attribution, campaign, city-product and recommendation tables, the SQL checks and the Postgres loader are later tasks. The local `streaming.gold.build` output is a reference only.
 - Power BI dashboards.
 - Postgres and Airflow containers exist in `docker-compose.yml` but are not part of this run; the Postgres loader and batch jobs are not exercised here.
 

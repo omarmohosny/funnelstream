@@ -79,6 +79,19 @@ Current order status is the status with the highest `status_rank` (see spec sect
 - Dates are Cairo-local for orders and events; the ad platform's `report_date` is a UTC day.
 - A fact row with no matching dimension version carries key -1 (the unknown member) and is still counted; the daily build repairs the key once the dimension row exists.
 
+## Gold build rules
+
+How `warehouse/gold_build.py` produces the tables above (details in `docs/RUNNING.md`, "Gold build").
+
+- **Window.** A run recomputes what a window of Cairo days selects (default: the last 7 days; `--from-date/--to-date`, `--days`, `--full`). Orders are recomputed when their order date or any of their status rows falls in the window, plus later orders of the same customers (`order_seq`, `is_first_order`). Nothing is incremented: every measure is recalculated from Silver or from `fact_orders`.
+- **One atomic MERGE.** `agg_orders_daily` and `agg_funnel_daily` each use a single MERGE: recomputed rows update matching keys and insert new ones, and `WHEN NOT MATCHED BY SOURCE` deletes a key inside the window that has no rows left. A failure rolls the statement back, so the window is never left empty. A key that vanishes on a widened date outside the window (only when an order or session changes group there) is not deleted.
+- **Time zone.** Every build step starts with `SET TIME ZONE 'UTC'`; Cairo dates use `from_utc_timestamp(ts, 'Africa/Cairo')` and are only right in a UTC session.
+- **Late data.** Limit: `silver_order_status` has no ingestion time, so a late status row is only found when its `event_date` (Cairo date of `status_time`) is in the window; a row older than the window (default 7 days) leaves the order, its lines and its `agg_orders_daily` day stale until a covering window or `--full` (run `--full` periodically or use a wider `--days`); the funnel is not affected. A late status row inside the window changes that order and the day it was placed (cohort view: delivered revenue stays on the order date); `agg_funnel_daily` also recomputes dates of late events (`kafka_timestamp` in the window, `event_date` before it) and of sessions that cross the window edge. In history mode (a replay) every replayed day counts as late, so a run recomputes all replayed days.
+- **Bots.** `is_bot` is not read from Silver: the funnel step recomputes it from `silver_events` (more than 100 events in 10 seconds in one session) over every event of the sessions it touches and excludes those sessions. Nothing is persisted.
+- **Dimensions.** SCD2 `valid_to` of the current row is 9999-12-31 00:00:00 UTC. Several Silver versions on one Cairo day collapse to the last one. Only tracked attributes start a new version (customer: city, district, primary_device; product: category, price); other attributes keep the first value of the run and are not back-filled.
+- **`dim_date`.** 2025-01-01 to 2027-12-31. The weekend is Friday and Saturday (`is_friday_saturday` carries the same value as `is_weekend`; both columns are in the table). Ramadan and Eid ranges in `warehouse/calendar_egypt.py` are APPROXIMATE (moon sighting), so a flag can be a day off. `is_holiday` is an Eid day or a fixed holiday (Jan 7, Jan 25, Apr 25, May 1, Jul 23, Oct 6). Days outside the range have no `dim_date` row.
+- **Unknown members.** Orders with no matching dimension version get key -1; the key is repaired by the next build that recomputes the order. Orders without `order_created_at` are left out of `fact_orders` and counted in the build output.
+
 ## Address and tracking URL
 
 - An address is country > city > district. `city` keeps the seven canonical values; `district` is always a child of its city (source of truth: `contracts/geo.py`, `DISTRICTS`). Cairo has 15 districts, Giza 8, Alexandria 10, Mansoura, Tanta and Assiut 2 each, and `Other` has the single district `Other`.
