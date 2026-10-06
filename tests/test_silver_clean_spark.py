@@ -63,6 +63,20 @@ def simulated(max_events, noise=True, seed=SEED, start=START):
     return tuple(msgs), counter.to_manifest()
 
 
+@lru_cache(maxsize=None)
+def clean_failed_order_ids(max_events=30_000):
+    """Order ids that have a delivery_failed event in the noise-free stream (same base stream as the noisy one:
+    noise uses its own rng). A noise defect (unknown_type, malformed_json, ...) can hit that one message, so
+    Silver may legitimately lack the row for an order that did have a failed attempt."""
+    msgs, _ = simulated(max_events, noise=False)
+    ids = set()
+    for _, raw, _ in msgs:
+        e = json.loads(raw)
+        if e.get("event_type") == "delivery_failed":
+            ids.add(e["order_id"])
+    return frozenset(ids)
+
+
 def bronze_df(spark, msgs):
     ing = NOW.replace(tzinfo=None)
     rows = [(raw, topic, 0, i, kts, ing) for i, (topic, raw, kts) in enumerate(msgs)]
@@ -404,7 +418,10 @@ def test_c2_returned_cod_and_platform_on_noisy_dataset(spark, tmp_path):
     assert returned.filter("status_rank != 7 OR reason IS NULL").count() == 0
     ret_ids = returned.select("order_id").distinct()
     with_failed = ret_ids.join(st.filter("status = 'delivery_failed'").select("order_id").distinct(), "order_id")
-    no_failed = ret_ids.count() - with_failed.count()
+    # a returned order lacks a delivery_failed row only when noise damaged that message (checked on the clean stream)
+    missing = [r["order_id"] for r in ret_ids.join(with_failed, "order_id", "left_anti").collect()]
+    assert set(missing) <= clean_failed_order_ids(), missing
+    no_failed = 0
     bad_final = ret_ids.join(st.filter("status IN ('delivered', 'order_completed')"), "order_id").count()
     assert no_failed == 0 and bad_final == 0
 
@@ -447,3 +464,107 @@ def test_c2_returned_cod_and_platform_on_noisy_dataset(spark, tmp_path):
     assert n_orders > 0 and unmatched == 0 and null_platform_orders == 0  # mismatch == 0 is not vacuous
     assert sess.filter("n_platform > 1").count() == 0
     assert mismatch == 0
+
+
+# D2: district and page_url through Silver (spec section 18)
+def test_d2_district_and_utm_on_noisy_dataset(spark, tmp_path):
+    from contracts.geo import DISTRICTS, normalize_district
+    from contracts.normalize import normalize_city
+
+    msgs, manifest = simulated(30_000)
+    assert manifest["injected"]["dirty_district"] > 0 and manifest["injected"]["dirty_utm"] > 0
+    lake = tmp_path / "lake"
+    stats = {}
+    process_batch(spark, bronze_df(spark, msgs), str(lake), None, now=NOW, stats=stats)
+    ev, orders = silver(spark, lake, "silver_events"), silver(spark, lake, "silver_orders")
+
+    # expected UTM presence from the raw messages (one entry per event id)
+    has_utm, raw_district = {}, {}
+    for topic, raw, _ in msgs:
+        try:
+            e = json.loads(raw)
+            url = (e.get("payload") or {}).get("page_url")
+        except Exception:
+            continue
+        if isinstance(e, dict) and e.get("event_id") is not None and topic == "app.events":
+            has_utm[e["event_id"]] = isinstance(url, str) and "utm_campaign=" in url
+            raw_district[e["event_id"]] = (e.get("city"), e.get("district"))
+    rows = ev.select("event_id", "city", "district", "utm_source", "utm_medium", "utm_campaign", "page_url").collect()
+    assert rows
+    n_known = n_known_unknown = n_utm_rows = n_mismatch = n_expected_district_wrong = 0
+    for r in rows:
+        assert r["district"] is not None
+        if r["city"] in DISTRICTS:
+            n_known += 1
+            n_known_unknown += r["district"] == "unknown"
+            assert r["district"] == "unknown" or r["district"] in DISTRICTS[r["city"]]  # no violation survives
+            c, d = raw_district[r["event_id"]]
+            n_expected_district_wrong += r["district"] != normalize_district(normalize_city(c), d)
+        got = all(r[k] is not None for k in ("utm_source", "utm_medium", "utm_campaign"))
+        none = all(r[k] is None for k in ("utm_source", "utm_medium", "utm_campaign"))
+        want = has_utm[r["event_id"]]
+        n_utm_rows += want
+        n_mismatch += (want and not got) or (not want and not none)
+        if want:
+            assert r["utm_source"] == r["utm_source"].strip().lower() and r["page_url"]
+    n_o = orders.count()
+    o_null_district = orders.filter("district IS NULL").count()
+    o_viol = [(r["city"], r["district"]) for r in orders.select("city", "district").distinct().collect()
+              if r["city"] in DISTRICTS and r["district"] != "unknown" and r["district"] not in DISTRICTS[r["city"]]]
+    o_campaign = orders.filter("utm_campaign IS NOT NULL")
+    print("\nD2 events=%d silver_events=%d known_city=%d known_city_district_unknown=%d district_vs_raw_mismatch=%d "
+          "utm_expected_rows=%d utm_mismatch=%d silver_orders=%d orders_null_district=%d orders_hierarchy_violations=%d "
+          "orders_with_campaign=%d orders_with_medium=%d batch_district_violations=%s" % (
+              len(msgs), len(rows), n_known, n_known_unknown, n_expected_district_wrong, n_utm_rows, n_mismatch, n_o,
+              o_null_district, len(o_viol), o_campaign.count(), orders.filter("utm_medium IS NOT NULL").count(),
+              stats.get("district_violations")))
+    assert n_known > 0 and n_utm_rows > 0 and n_mismatch == 0
+    assert n_expected_district_wrong == 0
+    assert o_null_district == 0 and not o_viol and n_o > 0
+    assert o_campaign.filter("utm_medium IS NULL").count() == 0
+    assert stats["district_violations"] == 0  # the simulator never puts a district under the wrong city
+
+
+def test_d2_batch_reports_district_violations_and_keeps_rows(spark, tmp_path):
+    base = _order_events("ord_v", CUSTOMERS[5], shipped=False, seed=12)
+    created = copy.deepcopy(base[0])
+    created["city"], created["district"] = "Cairo", "Sidi Gaber"      # wrong city: violation
+    good = copy.deepcopy(base[0])
+    good["event_id"], good["order_id"], good["city"], good["district"] = "evt_g", "ord_g", "Cairo", "Maadi"
+    for e in (created, good):
+        for it in e["payload"]["items"]:
+            it["product_id"] = CATALOG[0]["product_id"]
+    msgs = [("orders", json.dumps(e), START.replace(tzinfo=None)) for e in (created, good)]
+    lake = str(tmp_path / "lake")
+    stats = {}
+    counts = process_batch(spark, bronze_df(spark, msgs), lake, None, now=NOW, stats=stats)
+    got = {r["order_id"]: r["district"] for r in silver(spark, lake, "silver_orders").collect()}
+    assert counts["silver_quarantine"] == 0
+    assert got[created["order_id"]] == "unknown" and got["ord_g"] == "Maadi"
+    assert stats["district_violations"] == 1
+
+
+def test_d2_seed_carries_district_and_stays_idempotent(spark, tmp_path):
+    from contracts.geo import DISTRICTS
+    from scripts.seed_silver_reference import seed
+
+    lake = str(tmp_path / "lake")
+    customers = make_customers(SEED, 300)
+    t0 = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    t1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    seed(spark, lake, t0, CATALOG, customers)
+    seed(spark, lake, t0, CATALOG, customers)
+    seed(spark, lake, t1, CATALOG, customers)   # unchanged attributes (district included): no new version
+    cust = silver(spark, lake, "silver_customers")
+    assert cust.columns.index("district") == cust.columns.index("city") + 1
+    assert cust.count() == 300
+    pairs = {(r["city"], r["district"]) for r in cust.select("city", "district").distinct().collect()}
+    assert pairs and all(d in DISTRICTS[c] for c, d in pairs)
+    # a changed district is a real change: exactly one new version for that customer
+    moved = [dict(c) for c in customers]
+    moved[0]["district"] = next(d for d in DISTRICTS[moved[0]["city"]] if d != moved[0]["district"]) \
+        if len(DISTRICTS[moved[0]["city"]]) > 1 else moved[0]["district"]
+    seed(spark, lake, t1, CATALOG, moved)
+    seed(spark, lake, t1, CATALOG, moved)
+    expected = 301 if moved[0]["district"] != customers[0]["district"] else 300
+    assert silver(spark, lake, "silver_customers").count() == expected

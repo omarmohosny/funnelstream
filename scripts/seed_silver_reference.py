@@ -9,6 +9,7 @@ if _ROOT not in sys.path:
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from contracts.geo import normalize_district
 from contracts.normalize import normalize_city, normalize_device
 from simulator.catalog import make_catalog, make_customers
 
@@ -23,7 +24,8 @@ def catalog_to_silver_rows(catalog, customers, updated_at):
     } for p in catalog]
     custs = [{
         "customer_id": c["customer_id"], "updated_at": updated_at, "country": c["country"],
-        "city": normalize_city(c["city"]), "signup_date": c["signup_date"],
+        "city": normalize_city(c["city"]),
+        "district": normalize_district(normalize_city(c["city"]), c.get("district")), "signup_date": c["signup_date"],
         "primary_device": normalize_device(c["device_primary"]),
         "marketing_consent": bool(c["marketing_consent"]),
     } for c in customers]
@@ -33,7 +35,8 @@ def catalog_to_silver_rows(catalog, customers, updated_at):
 DEFAULT_UPDATED_AT = "2025-01-01T00:00:00+00:00"
 _ATTRS = {
     "silver_products": ("product_id", ["name", "category", "price", "is_active"]),
-    "silver_customers": ("customer_id", ["country", "city", "signup_date", "primary_device", "marketing_consent"]),
+    "silver_customers": ("customer_id", ["country", "city", "district", "signup_date", "primary_device",
+                         "marketing_consent"]),
 }
 
 

@@ -25,6 +25,10 @@ so a full replay leaves every count unchanged.
 
 process_batch returns, per Silver table, the number of rows in this batch after de-duplication on the
 table key (rows offered to the MERGE, not rows newly inserted).
+
+District hierarchy: a district that does not belong to the row's city is kept as 'unknown' (never
+quarantined). The number of such events and orders in a batch is counted in an accumulator and written to
+the batch log line as district_violations (process_batch fills stats["district_violations"]).
 """
 import json
 import logging
@@ -42,7 +46,7 @@ from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path
 from streaming.silver.orders import split_cancel_after_ship
 from streaming.silver.schemas import TABLE_COLUMNS
 from streaming.silver.spark_schemas import SCHEMAS, coerce_row
-from streaming.silver.transform import transform_message
+from streaming.silver.transform import count_district_violations, transform_message
 from streaming.silver.writer import PARTITION_COLS, SILVER_KEYS, merge_insert, silver_path
 
 log = logging.getLogger("silver_clean")
@@ -59,13 +63,28 @@ def as_utc(value):
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _transform_partition(rows, known_bc, now):
+def _violations_in(raw):
+    """1 if a raw message that became a Silver event or order row has a district outside its city."""
+    try:
+        text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
+        if not isinstance(text, str) or '"district"' not in text:
+            return 0
+        e = json.loads(text)
+        return count_district_violations([e]) if isinstance(e, dict) else 0
+    except Exception:
+        return 0
+
+
+def _transform_partition(rows, known_bc, now, violations=None):
     """Executor side: Bronze rows to (table, tuple-in-schema-order) pairs."""
     known = known_bc.value if known_bc is not None else None
     for r in rows:
         received = as_utc(r["ingest_time"])
         kafka_ts = as_utc(r["kafka_timestamp"]) or received
-        for table, row in transform_message(r["raw_value"], r["kafka_topic"], kafka_ts, received, known, now):
+        out = transform_message(r["raw_value"], r["kafka_topic"], kafka_ts, received, known, now)
+        if violations is not None and any(t in ("silver_events", "silver_orders") for t, _ in out):
+            violations.add(_violations_in(r["raw_value"]))
+        for table, row in out:
             yield table, tuple(coerce_row(table, row).values())
 
 
@@ -152,13 +171,17 @@ def _cancel_after_ship(spark, status_df, lake_root, now):
     return status_df.where(~F.col("event_id").isin(bad_ids)), quarantined
 
 
-def process_batch(spark, bronze_df, lake_root, known_products, now=None):
-    """Bronze rows to the Silver tables (MERGE insert). Returns {table: rows in batch after key dedupe}."""
+def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=None):
+    """Bronze rows to the Silver tables (MERGE insert). Returns {table: rows in batch after key dedupe}.
+
+    If stats (a dict) is given, stats["district_violations"] is set to the number of events and orders of
+    the batch whose district was outside their city (reported, not an error)."""
     now = now or datetime.now(timezone.utc)
     cols = ["raw_value", "kafka_topic", "kafka_timestamp", "ingest_time"]
     known_bc = spark.sparkContext.broadcast(set(known_products)) if known_products is not None else None
+    violations = spark.sparkContext.accumulator(0)
     pairs = (bronze_df.select(*cols).rdd
-             .mapPartitions(partial(_transform_partition, known_bc=known_bc, now=now))
+             .mapPartitions(partial(_transform_partition, known_bc=known_bc, now=now, violations=violations))
              .persist(StorageLevel.MEMORY_AND_DISK))
     counts = {t: 0 for t in SILVER_TABLES}
     try:
@@ -183,6 +206,8 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None):
             if n:
                 merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table],
                              PARTITION_COLS.get(table))
+        if stats is not None:
+            stats["district_violations"] = int(violations.value)
     finally:
         pairs.unpersist()
         if known_bc is not None:
@@ -201,8 +226,9 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False):
 
     def handle(df: DataFrame, batch_id):
         sess = df.sparkSession
-        counts = process_batch(sess, df, lake_root, load_known_products(lake_root, sess))
-        log.info("batch %s: %s", batch_id, counts)
+        stats = {}
+        counts = process_batch(sess, df, lake_root, load_known_products(lake_root, sess), stats=stats)
+        log.info("batch %s: %s district_violations=%d", batch_id, counts, stats.get("district_violations", 0))
 
     writer = (union.writeStream.foreachBatch(handle)
               .option("checkpointLocation", os.path.join(checkpoint_root, "silver_clean"))

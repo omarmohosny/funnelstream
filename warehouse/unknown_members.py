@@ -20,7 +20,7 @@ VALID_TO = datetime(9999, 12, 31, tzinfo=timezone.utc)
 UNKNOWN_ROWS = {
     "dim_customer": {
         "customer_key": UNKNOWN_KEY, "customer_id": "unknown", "country": "unknown", "city": "unknown",
-        "signup_date": None, "primary_device": "unknown", "marketing_consent": False,
+        "district": "unknown", "signup_date": None, "primary_device": "unknown", "marketing_consent": False,
         "valid_from": VALID_FROM, "valid_to": VALID_TO, "is_current": True,
     },
     "dim_product": {

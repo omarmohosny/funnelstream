@@ -3,8 +3,10 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
+from contracts.geo import district_violation, normalize_district
 from contracts.normalize import normalize_city, normalize_device, to_decimal, to_utc_iso
 from contracts.validate import APP_EVENT_TYPES, validate_raw
 from streaming.common.status import STATUS_RANK
@@ -81,6 +83,47 @@ def _row(columns, **values):
     return {c: values.get(c) for c in columns}
 
 
+def _clean_utm(v):
+    """Lower-cased, trimmed text; empty or non-text becomes None."""
+    if not isinstance(v, str):
+        return None
+    v = v.strip().lower()
+    return v or None
+
+
+def parse_page_url(page_url):
+    """(utm_source, utm_medium, utm_campaign) of a tracking URL. Never raises: a malformed or non-text
+    URL gives all None."""
+    if not isinstance(page_url, str):
+        return None, None, None
+    try:
+        query = parse_qs(urlsplit(page_url.strip()).query, keep_blank_values=True)
+    except ValueError:
+        return None, None, None
+    return tuple(_clean_utm((query.get(k) or [None])[0]) for k in ("utm_source", "utm_medium", "utm_campaign"))
+
+
+def _event_utm(p):
+    """(utm_source, utm_medium, utm_campaign) of an app event: parsed from page_url; payload fields only
+    for older Bronze data that has no page_url (utm_medium NULL there)."""
+    if p.get("page_url") is not None:
+        return parse_page_url(p["page_url"])
+    return _clean_utm(p.get("utm_source")), None, _clean_utm(p.get("utm_campaign"))
+
+
+def count_district_violations(rows):
+    """Number of event or order dicts (as sent, before normalisation) whose non-empty district does not
+    belong to their normalised city. Reported only: such rows are kept with district 'unknown'."""
+    n = 0
+    for e in rows:
+        try:
+            if district_violation(normalize_city(e.get("city")), e.get("district")):
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
 def _cairo_date(iso_utc):
     return datetime.fromisoformat(iso_utc).astimezone(CAIRO).date().isoformat()
 
@@ -88,6 +131,9 @@ def _cairo_date(iso_utc):
 def _app_event(e, p, kafka_timestamp):
     et = to_utc_iso(e["event_time"])
     ts = datetime.fromisoformat(et)
+    city = normalize_city(e.get("city"))
+    utm_source, utm_medium, utm_campaign = _event_utm(p)
+    page_url = p.get("page_url")
     return [("silver_events", _row(
         SILVER_EVENTS_COLUMNS,
         event_id=_text(e["event_id"]), event_type=e["event_type"], event_time=et,
@@ -96,9 +142,11 @@ def _app_event(e, p, kafka_timestamp):
         is_bot=False, event_version=e["event_version"],
         session_id=_text(e.get("session_id")), customer_id=_text(e.get("customer_id")),
         device=normalize_device(e.get("device")), channel=_text(e.get("channel")),
-        platform=_platform(e.get("platform")), country=_text(e.get("country")) or "EG", city=normalize_city(e.get("city")),
-        campaign_id=None, utm_source=_text(p.get("utm_source")), utm_campaign=_text(p.get("utm_campaign")),
-        click_id=_text(p.get("click_id")), product_id=_text(p.get("product_id")),
+        platform=_platform(e.get("platform")), country=_text(e.get("country")) or "EG", city=city,
+        district=normalize_district(city, e.get("district")),
+        campaign_id=None, utm_source=utm_source, utm_campaign=utm_campaign, utm_medium=utm_medium,
+        click_id=_text(p.get("click_id")), page_url=page_url if isinstance(page_url, str) else None,
+        product_id=_text(p.get("product_id")),
         element=_text(p.get("element")), dwell_seconds=_int(p.get("dwell_seconds"), "dwell_seconds"),
         cart_id=_text(p.get("cart_id")), order_id=_text(p.get("order_id")),
         search_term=_text(p.get("search_term")), event_date=_cairo_date(et)))]
@@ -136,12 +184,14 @@ def _order_event(e, p):
             SILVER_ORDER_ITEMS_COLUMNS, order_id=order_id, line_no=n, product_id=_text(item.get("product_id")),
             quantity=qty, unit_price=unit.quantize(_CENT), line_total=line.quantize(_CENT),
             currency=CURRENCY, order_time=et)))
+    city = normalize_city(e.get("city"))
     order = _row(
         SILVER_ORDERS_COLUMNS, order_id=order_id, customer_id=_text(e.get("customer_id")),
         session_id=_text(p.get("session_id")), channel=_text(p.get("channel")),
-        platform=_platform(p.get("platform")), utm_source=_text(p.get("utm_source")), utm_campaign=_text(p.get("utm_campaign")),
+        platform=_platform(p.get("platform")), utm_source=_clean_utm(p.get("utm_source")),
+        utm_campaign=_clean_utm(p.get("utm_campaign")), utm_medium=_clean_utm(p.get("utm_medium")),
         click_id=_text(p.get("click_id")), payment_method=_text(p.get("payment_method")),
-        city=normalize_city(e.get("city")), country=_text(e.get("country")) or "EG",
+        city=city, district=normalize_district(city, e.get("district")), country=_text(e.get("country")) or "EG",
         order_total=_money(p.get("order_total")), order_created_at=et, event_date=_cairo_date(et))
     return [("silver_orders", order), ("silver_order_status", status)] + item_rows
 

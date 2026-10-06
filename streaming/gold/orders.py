@@ -12,14 +12,14 @@ from streaming.common.status import STATUS_RANK
 
 FACT_ORDERS_COLUMNS = [
     "order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign",
-    "click_id", "campaign_id", "payment_method", "carrier", "city", "country", "order_total", "current_status",
+    "click_id", "campaign_id", "payment_method", "carrier", "city", "district", "country", "order_total", "current_status",
     "status_rank", "order_created_at", "delivered_at", "cancelled_at", "returned_at", "delivery_lead_hours",
     "delivery_failed_count", "has_failed_attempt", "first_attempt_delivered", "is_cancelled", "is_delivered",
     "is_returned", "order_seq", "is_first_order", "date_key",
 ]
 FACT_ORDER_LINES_COLUMNS = [
     "order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city",
-    "quantity", "line_total",
+    "district", "quantity", "line_total",
 ]
 UNKNOWN_KEY = -1
 
@@ -116,15 +116,15 @@ def build_fact_order_lines(silver_orders: DataFrame, silver_order_items: DataFra
     """One row per order line; items whose order is missing from silver_orders are dropped.
 
     customer_key and product_key (surrogate keys) are the dimension versions valid at order_created_at, else -1 (unknown
-    member); the natural customer_id and product_id stay beside them. date_key and city come from the order
+    member); the natural customer_id and product_id stay beside them. date_key, city and district come from the order
     (Cairo-local date).
     """
-    o = silver_orders.select("order_id", "customer_id", "city", "order_created_at")
+    o = silver_orders.select("order_id", "customer_id", "city", "district", "order_created_at")
     j = silver_order_items.join(o, "order_id", "inner")
     j = _version_key(j, dim_customer, "customer_id", "customer_key", "order_created_at")
     j = _version_key(j, dim_product, "product_id", "product_key", "order_created_at")
     return j.select("order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id",
-                    cairo_date_key(F.col("order_created_at")).alias("date_key"), "city", "quantity", "line_total")
+                    cairo_date_key(F.col("order_created_at")).alias("date_key"), "city", "district", "quantity", "line_total")
 
 
 def report_negative_lead_time(fact_orders: DataFrame) -> int:

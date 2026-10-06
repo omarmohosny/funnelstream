@@ -17,7 +17,8 @@ DIMS = ("dim_customer", "dim_product", "dim_campaign")
 def test_fact_orders_columns_exact():
     assert gold_table("fact_orders").column_names() == [
         "order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source",
-        "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "country", "order_total",
+        "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "district", "country",
+        "order_total",
         "current_status", "status_rank", "order_created_at", "delivered_at", "cancelled_at", "returned_at",
         "delivery_lead_hours", "delivery_failed_count", "has_failed_attempt", "first_attempt_delivered",
         "is_cancelled", "is_delivered", "is_returned", "order_seq", "is_first_order", "date_key"]
@@ -29,7 +30,7 @@ def test_fact_orders_columns_exact():
 def test_fact_order_lines_and_agg_columns_exact():
     assert gold_table("fact_order_lines").column_names() == [
         "order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city",
-        "quantity", "line_total"]
+        "district", "quantity", "line_total"]
     assert gold_table("fact_attribution").column_names() == [
         "order_id", "model", "campaign_id", "click_id", "order_total"]
     assert gold_table("fact_attribution").keys == ("order_id", "model")

@@ -68,10 +68,10 @@ _SCD2 = "SCD2 dimension, current row has valid_to = 9999-12-31 00:00:00 UTC"
 
 GOLD_TABLES = [
     _gold("dim_customer",
-          "customer_key:bigint customer_id:string country:string? city:string? signup_date:date? "
+          "customer_key:bigint customer_id:string country:string? city:string? district:string? signup_date:date? "
           "primary_device:string? marketing_consent:boolean? valid_from:timestamp valid_to:timestamp "
           "is_current:boolean",
-          ["customer_key"], identity=["customer_key"], comment=_SCD2 + "; lookup: customer_id, is_current; tracked: city, primary_device"),
+          ["customer_key"], identity=["customer_key"], comment=_SCD2 + "; lookup: customer_id, is_current; tracked: city, district, primary_device"),
     _gold("dim_product",
           "product_key:bigint product_id:string name:string? category:string? price:%s? is_active:boolean? "
           "valid_from:timestamp valid_to:timestamp is_current:boolean" % M,
@@ -87,7 +87,7 @@ GOLD_TABLES = [
     _gold("fact_orders",
           "order_id:string customer_key:bigint? customer_id:string? session_id:string? channel:string? "
           "platform:string? utm_source:string? utm_campaign:string? click_id:string? campaign_id:string? "
-          "payment_method:string? carrier:string? city:string? country:string? order_total:%s? "
+          "payment_method:string? carrier:string? city:string? district:string? country:string? order_total:%s? "
           "current_status:string? status_rank:int? order_created_at:timestamp? delivered_at:timestamp? "
           "cancelled_at:timestamp? returned_at:timestamp? delivery_lead_hours:%s? delivery_failed_count:int? "
           "has_failed_attempt:boolean? first_attempt_delivered:boolean? is_cancelled:boolean? "
@@ -96,7 +96,7 @@ GOLD_TABLES = [
           ["order_id"], comment="one row per order, current state; customer_key -1 is the unknown member"),
     _gold("fact_order_lines",
           "order_id:string line_no:int customer_key:bigint? customer_id:string? product_key:bigint? "
-          "product_id:string? date_key:int? city:string? quantity:int? line_total:%s?" % M,
+          "product_id:string? date_key:int? city:string? district:string? quantity:int? line_total:%s?" % M,
           ["order_id", "line_no"], comment="one row per order line"),
     _gold("fact_attribution",
           "order_id:string model:string campaign_id:string? click_id:string? order_total:%s?" % M,
@@ -132,7 +132,7 @@ GOLD_TABLES = [
           "co_view_sessions:bigint? window_end:date?",
           ["segment_level", "segment_value", "anchor_product_id", "rank"], comment="co-view recommendations"),
     _gold("customer_360",
-          "customer_id:string customer_key:bigint? country:string? city:string? total_sessions:bigint? "
+          "customer_id:string customer_key:bigint? country:string? city:string? district:string? total_sessions:bigint? "
           "product_views:bigint? add_to_cart_count:bigint? checkouts_count:bigint? orders_count:bigint? "
           "delivered_count:bigint? cancelled_count:bigint? total_spend:%s? avg_order_value:%s? "
           "first_order_at:timestamp? last_order_at:timestamp? last_seen_at:timestamp? "

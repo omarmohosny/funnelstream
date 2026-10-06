@@ -13,7 +13,7 @@ from pyspark.sql.types import (BooleanType, DateType, DecimalType, IntegerType, 
 from streaming.silver.schemas import TABLE_COLUMNS
 
 SILVER_PRODUCTS_COLUMNS = ["product_id", "updated_at", "name", "category", "price", "is_active"]
-SILVER_CUSTOMERS_COLUMNS = ["customer_id", "updated_at", "country", "city", "signup_date", "primary_device",
+SILVER_CUSTOMERS_COLUMNS = ["customer_id", "updated_at", "country", "city", "district", "signup_date", "primary_device",
                             "marketing_consent"]
 
 _TS = TimestampType()

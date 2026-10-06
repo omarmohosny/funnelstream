@@ -71,6 +71,16 @@ def simulated(max_events, bots_only=False, seed=SEED):
     return tuple(msgs), counter.to_manifest()
 
 
+@lru_cache(maxsize=None)
+def clean_failed_order_ids(max_events=30_000):
+    """Order ids with a delivery_failed event in the noise-free stream (the noisy stream has the same base
+    events; noise uses its own rng). Noise can damage that one message, so Silver may lack the row."""
+    stream = iter_batch(random.Random(SEED), CUSTOMERS, CATALOG, START, max_events=max_events)
+    out = list(apply_noise(stream, random.Random(SEED * 1_000_003 + 7), NoiseConfig.off(), CATALOG_IDS,
+                           NoiseCounter(), now=NOW))
+    return frozenset(p["order_id"] for _, p in out if p.get("event_type") == "delivery_failed")
+
+
 def bronze_df(spark, msgs):
     ing = NOW.replace(tzinfo=None)
     rows = [(raw, topic, 0, i, kts, ing) for i, (topic, raw, kts) in enumerate(msgs)]
@@ -290,8 +300,8 @@ def test_gold_invariants_on_end_to_end_dataset(spark, e2e):
     assert n_delivered > 0
     cols = fact_df.columns
     assert cols == ["order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source",
-                    "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "country",
-                    "order_total", "current_status", "status_rank", "order_created_at", "delivered_at",
+                    "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "district",
+                    "country", "order_total", "current_status", "status_rank", "order_created_at", "delivered_at",
                     "cancelled_at", "returned_at", "delivery_lead_hours", "delivery_failed_count",
                     "has_failed_attempt", "first_attempt_delivered", "is_cancelled", "is_delivered",
                     "is_returned", "order_seq", "is_first_order", "date_key"]
@@ -692,7 +702,7 @@ def test_customer_key_unknown_member_and_versioned_lookup(spark):
     assert [f.name for f in build_fact_order_lines(mk(spark, "silver_orders", orders),
                                                    mk(spark, "silver_order_items", items)).schema.fields] == [
         "order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city",
-        "quantity", "line_total"]
+        "district", "quantity", "line_total"]
 
 
 # ---------------------------------------------------------------- C3: agg_orders_daily
@@ -770,11 +780,15 @@ def test_returned_orders_and_failed_attempts_on_end_to_end_dataset(spark, e2e):
     fact = build_fact_orders(f["silver_orders"], f["silver_order_status"]).cache()
     returned = fact.where("is_returned")
     n_ret, n_failed = returned.count(), fact.where("has_failed_attempt").count()
-    bad = returned.where("NOT has_failed_attempt OR is_delivered OR current_status <> 'order_returned'").count()
+    bad = returned.where("is_delivered OR current_status <> 'order_returned'").count()
+    # a returned order lacks a failed attempt only when noise damaged its delivery_failed message
+    lost = [r["order_id"] for r in returned.where("NOT has_failed_attempt").select("order_id").collect()]
+    assert set(lost) <= clean_failed_order_ids(), lost
+    n_lost = len(lost)
     cancel_then_ship = report_cancel_then_shipped(f["silver_order_status"])
     print("\nC3 orders=%d returned=%d has_failed_attempt=%d returned_inconsistent=%d cancel_then_shipped=%d" % (
         fact.count(), n_ret, n_failed, bad, cancel_then_ship))
-    assert n_ret > 0 and n_failed >= n_ret
+    assert n_ret > 0 and n_failed + n_lost >= n_ret
     assert bad == 0
 
 
@@ -864,3 +878,33 @@ def test_orders_without_created_at_are_left_out_of_fact_and_reported(spark):
     agg = build_agg_orders_daily(fact).collect()
     assert [r["date_key"] for r in agg] == [20261001] and agg[0]["orders_placed"] == 1
     assert report_orders_without_created_at(mk(spark, "silver_orders", orders[:1]), ss) == 0
+
+
+# ---------------------------------------------------------------- D2: district on the facts
+def test_d2_fact_orders_and_lines_carry_silver_orders_district(spark):
+    orders = [dict(order_row("o1"), district="Maadi"), dict(order_row("o2"), district="unknown"),
+              dict(order_row("o3"), district=None)]
+    statuses = [status_row(o["order_id"], "order_created", t(1, 10)) for o in orders]
+    got = {r["order_id"]: r["district"] for r in
+           build_fact_orders(mk(spark, "silver_orders", orders), mk(spark, "silver_order_status", statuses)).collect()}
+    assert got == {"o1": "Maadi", "o2": "unknown", "o3": None}
+    items = [{"order_id": o["order_id"], "line_no": 1, "product_id": "p1", "quantity": 1,
+              "unit_price": Decimal("100.00"), "line_total": Decimal("100.00")} for o in orders]
+    lines = {r["order_id"]: r["district"] for r in build_fact_order_lines(
+        mk(spark, "silver_orders", orders), mk(spark, "silver_order_items", items)).collect()}
+    assert lines == got
+
+
+def test_d2_fact_orders_district_equals_silver_orders_district_end_to_end(spark, e2e):
+    f = silver_frames(spark, e2e["lake"])
+    fact_df = build_fact_orders(f["silver_orders"], f["silver_order_status"])
+    lines_df = build_fact_order_lines(f["silver_orders"], f["silver_order_items"])
+    so = f["silver_orders"].select("order_id", F.col("district").alias("sd"))
+    bad = fact_df.join(so, "order_id").where(~F.col("district").eqNullSafe(F.col("sd"))).count()
+    bad_lines = lines_df.join(so, "order_id").where(~F.col("district").eqNullSafe(F.col("sd"))).count()
+    n, nl = fact_df.count(), lines_df.count()
+    n_null = fact_df.where("district IS NULL").count()
+    print("\nD2G fact_orders=%d fact_order_lines=%d district_mismatch=%d line_district_mismatch=%d null_district=%d "
+          "distinct_districts=%d" % (n, nl, bad, bad_lines, n_null,
+                                      fact_df.select("district").distinct().count()))
+    assert n > 0 and nl > 0 and bad == 0 and bad_lines == 0 and n_null == 0

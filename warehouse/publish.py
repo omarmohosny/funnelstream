@@ -31,13 +31,13 @@ NAME_EXCEPTIONS = {("silver_products", "name")}
 PUBLISH_ALLOWLIST = {
     "silver_events": [
         "event_id", "event_type", "event_time", "kafka_timestamp", "is_late", "is_bot", "event_version",
-        "session_id", "customer_id", "device", "channel", "platform", "country", "city", "campaign_id",
-        "utm_source", "utm_campaign", "click_id", "product_id", "element", "dwell_seconds", "cart_id", "order_id",
+        "session_id", "customer_id", "device", "channel", "platform", "country", "city", "district",
+        "campaign_id", "utm_source", "utm_campaign", "utm_medium", "click_id", "page_url", "product_id", "element", "dwell_seconds", "cart_id", "order_id",
         "search_term", "event_date",
     ],
     "silver_orders": [
-        "order_id", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "click_id",
-        "payment_method", "city", "country", "order_total", "order_created_at", "event_date",
+        "order_id", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "utm_medium",
+        "click_id", "payment_method", "city", "district", "country", "order_total", "order_created_at", "event_date",
     ],
     "silver_order_status": [
         "event_id", "order_id", "customer_id", "status", "status_rank", "status_time", "payment_method",
@@ -51,7 +51,8 @@ PUBLISH_ALLOWLIST = {
     ],
     "silver_products": ["product_id", "updated_at", "name", "category", "price", "is_active"],
     "silver_customers": [
-        "customer_id", "updated_at", "country", "city", "signup_date", "primary_device", "marketing_consent",
+        "customer_id", "updated_at", "country", "city", "district", "signup_date", "primary_device",
+        "marketing_consent",
     ],
     "silver_campaign_snapshots": [
         "campaign_id", "report_date", "pulled_at", "utm_campaign", "ad_platform", "impressions", "clicks",
