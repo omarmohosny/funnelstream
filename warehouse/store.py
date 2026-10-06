@@ -91,6 +91,10 @@ class GoldStore(ABC):
             self.execute(stmt, retry=retry)
         return len(statements)
 
+    def qualified(self, table: str) -> str:
+        """Table name to use in a hand-written query (Postgres: the bare name)."""
+        return _table_spec(table).name
+
     @abstractmethod
     def close(self) -> None:
         """Release the connection."""
@@ -290,6 +294,10 @@ class DatabricksStore(GoldStore):
             out.append("MERGE INTO %s AS t USING (SELECT * FROM VALUES %s AS s(%s)) ON %s%s%s"
                        % (target, values, collist, on, update, insert))
         return out, len(rows)
+
+    def qualified(self, table):
+        spec = _table_spec(table)
+        return "%s.%s.%s" % (self.catalog, spec.schema_group, spec.name)
 
     def upsert(self, table, rows, key_cols):
         statements, count = self._plan(table, rows, key_cols)

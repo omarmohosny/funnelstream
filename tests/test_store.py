@@ -404,3 +404,10 @@ def test_retry_false_raises_immediately_on_execute_query_and_run_script():
     conn = FakeConn(failures=[Exception("HTTP 503")])
     dbx(conn).run_script("SELECT 1;")  # default keeps retrying
     assert len(conn.statements) == 2
+
+
+def test_qualified_names_per_backend():
+    assert PostgresStore("postgresql://x").qualified("silver_campaign_snapshots") == "silver_campaign_snapshots"
+    dbx = DatabricksStore("https://h", TOKEN, warehouse_id="w", catalog="funnelstream", connection=object())
+    assert dbx.qualified("silver_campaign_snapshots") == "funnelstream.silver.silver_campaign_snapshots"
+    assert dbx.qualified("fact_orders") == "funnelstream.gold.fact_orders"

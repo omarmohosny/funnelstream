@@ -1,4 +1,4 @@
-name: funnelstream
+﻿name: funnelstream
 
 services:
   kafka:
@@ -28,12 +28,15 @@ services:
 
   airflow:
     image: apache/airflow:2.9.2-python3.11
+    profiles: ["airflow"]   # off by default (2 GB): docker compose --profile airflow up -d airflow
     mem_limit: 2g
     ports: ["8080:8080"]
     env_file: .env
     environment:
-      _PIP_ADDITIONAL_REQUIREMENTS: "databricks-sql-connector requests pyarrow"
+      _PIP_ADDITIONAL_REQUIREMENTS: "databricks-sql-connector requests pyarrow pyspark==3.5.1 psycopg[binary]==3.1.19"
       AD_API_URL: "http://host.docker.internal:8000"
+      PYTHONPATH: /opt/airflow
+      PG_DSN: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -42,6 +45,7 @@ services:
       - ./simulator:/opt/airflow/simulator
       - ./warehouse:/opt/airflow/warehouse
       - ./contracts:/opt/airflow/contracts
+      - ./streaming:/opt/airflow/streaming
       - ./data:/opt/airflow/data
     command: standalone
     restart: unless-stopped
