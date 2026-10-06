@@ -2,9 +2,9 @@ import random
 from datetime import date, datetime, timezone
 
 CAMPAIGNS = [
-    {"campaign_id": "camp_201", "utm_campaign": "eid_sale_1", "utm_source": "google", "platform": "google", "channel": "paid_search", "daily_budget": 1500.0},
-    {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1", "utm_source": "meta", "platform": "meta", "channel": "paid_social", "daily_budget": 2000.0},
-    {"campaign_id": "camp_203", "utm_campaign": "retarget_cart_1", "utm_source": "meta", "platform": "meta", "channel": "paid_social", "daily_budget": 600.0},
+    {"campaign_id": "camp_201", "utm_campaign": "eid_sale_1", "utm_source": "google", "utm_medium": "cpc", "platform": "google", "channel": "paid_search", "daily_budget": 1500.0},
+    {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1", "utm_source": "meta", "utm_medium": "paid_social", "platform": "meta", "channel": "paid_social", "daily_budget": 2000.0},
+    {"campaign_id": "camp_203", "utm_campaign": "retarget_cart_1", "utm_source": "meta", "utm_medium": "paid_social", "platform": "meta", "channel": "paid_social", "daily_budget": 600.0},
 ]
 
 

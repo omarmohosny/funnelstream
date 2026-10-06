@@ -1,8 +1,22 @@
 import random
 from datetime import timedelta
 
+from simulator.catalog import weighted_district
 
-def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None, platform=None):
+SHOP_URL = "https://shop.example.eg/"
+
+
+def tracking_url(path: str, campaign=None) -> str:
+    """Landing/product page URL; campaign sessions carry the three UTM parameters (spec 18.4)."""
+    url = SHOP_URL + path
+    if campaign:
+        url += "?utm_source=%s&utm_medium=%s&utm_campaign=%s" % (
+            campaign["utm_source"], campaign["utm_medium"], campaign["utm_campaign"])
+    return url
+
+
+def _event(event_type, t, session_id, customer_id, device, channel, country, city, payload, rng=None, platform=None,
+           district=None):
     if rng is None:
         rng = random.Random()
     event_id = f"evt_{rng.getrandbits(64):016x}"
@@ -16,6 +30,7 @@ def _event(event_type, t, session_id, customer_id, device, channel, country, cit
         "channel": channel,
         "country": country,
         "city": city,
+        "district": district,
         "payload": payload,
     }
     if platform is not None:
@@ -32,6 +47,7 @@ def journey(rng, customer, catalog, campaign, start):
     device = customer["device_primary"] if customer else rng.choice(["mobile", "desktop"])
     platform = ("app" if rng.random() < 0.7 else "web") if device == "mobile" else "web"
     city = customer["city"] if customer else "Cairo"
+    district = customer.get("district") if customer else None  # anonymous: drawn after the journey
     country = "EG"
     channel = campaign["channel"] if campaign else rng.choice(["organic", "direct", "email"])
     t = start
@@ -45,20 +61,16 @@ def journey(rng, customer, catalog, campaign, start):
     def add(etype, payload, dt=5):
         nonlocal t
         t = t + timedelta(seconds=rng.randint(dt, dt * 4))
-        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload, rng, platform))
+        events.append(_event(etype, t, session_id, customer_id, device, channel, country, city, payload, rng, platform, district))
 
     add("app_open", {})
-    first_page = {"page": "home"}
-    if campaign:
-        first_page.update({"utm_campaign": campaign["utm_campaign"], "utm_source": campaign["utm_source"]})
-    add("page_view", first_page)
+    add("page_view", {"page": "home", "page_url": tracking_url("", campaign)})
 
     n_views = rng.randint(1, 6)
     viewed = rng.sample(active_products, n_views)
     for i, product in enumerate(viewed):
-        pv = {"product_id": product["product_id"], "price": product["price"], "category": product["category"]}
-        if i == 0 and campaign:
-            pv.update({"utm_campaign": campaign["utm_campaign"], "utm_source": campaign["utm_source"]})
+        pv = {"product_id": product["product_id"], "price": product["price"], "category": product["category"],
+              "page_url": tracking_url("p/" + product["product_id"], campaign if i == 0 else None)}
         add("product_view", pv)
         if rng.random() < 0.5:
             add("product_click", {"product_id": product["product_id"], "element": rng.choice(["image", "size", "color", "reviews"])})
@@ -73,4 +85,8 @@ def journey(rng, customer, catalog, campaign, start):
             if rng.random() < 0.7:
                 order_id = f"ord_{rng.getrandbits(64):016x}"
                 add("purchase", {"order_id": order_id, "total": item["price"]})
+    if district is None:  # anonymous session: Cairo district from a side rng, so the main stream is untouched
+        district = weighted_district(random.Random(session_id), city)
+        for e in events:
+            e["district"] = district
     return events

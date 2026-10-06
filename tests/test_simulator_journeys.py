@@ -5,7 +5,8 @@ from simulator.core import journey
 from contracts.validate import validate_event
 
 START = datetime(2026, 10, 4, 18, 0, tzinfo=timezone.utc)
-CAMPAIGN = {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1", "utm_source": "meta", "channel": "paid_social"}
+CAMPAIGN = {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1", "utm_source": "meta",
+            "utm_medium": "paid_social", "channel": "paid_social"}
 
 
 def _journeys(n=200, seed=7):
@@ -44,7 +45,7 @@ def test_session_id_is_constant_within_journey():
 
 def test_utm_only_on_campaign_sessions_first_touch_events():
     for events in _journeys():
-        with_utm = [e for e in events if "utm_campaign" in e["payload"]]
+        with_utm = [e for e in events if "utm_campaign=" in e["payload"].get("page_url", "")]
         for e in with_utm:
             assert e["event_type"] in ("page_view", "product_view")
 

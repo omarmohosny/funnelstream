@@ -62,7 +62,7 @@ def test_order_created_carries_session_and_click():
     batch = _batch()
     events = [e for _, e in batch]
     sessions_with_campaign = {e["session_id"] for e in events
-                              if e["payload"].get("utm_campaign")}
+                              if "utm_campaign=" in e["payload"].get("page_url", "")}
     by_order = {e["payload"]["order_id"]: e["session_id"] for e in events if e["event_type"] == "purchase"}
     created = [e for e in events if e["event_type"] == "order_created"]
     seen_campaign = seen_none = False
@@ -78,7 +78,7 @@ def test_order_created_carries_session_and_click():
             seen_none = True
     assert seen_campaign and seen_none
     for e in events:
-        if e["payload"].get("utm_campaign") and e["event_type"] in ("page_view", "product_view"):
+        if "utm_campaign=" in e["payload"].get("page_url", "") and e["event_type"] in ("page_view", "product_view"):
             assert e["payload"]["click_id"] == "clk_" + e["session_id"][5:]
 
 

@@ -8,9 +8,11 @@ order, a later kind fires at about rate x (1 - earlier rates).
 """
 import copy
 import json
+import random
 from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta, timezone
 
+from contracts.geo import DISTRICTS, alias_variants, normalize_district
 from contracts.validate import APP_EVENT_TYPES, ORDER_EVENT_TYPES, DELIVERY_EVENT_TYPES, PRODUCT_EVENT_TYPES
 
 ORDERISH = ORDER_EVENT_TYPES | DELIVERY_EVENT_TYPES
@@ -35,6 +37,10 @@ class NoiseConfig:
     out_of_order_status: float = 0.005
     cancel_after_ship: float = 0.003
     bot_session: float = 0.001  # share of sessions, not of messages
+    # spec 18.6. Declared last so they are tried last, and they draw from their own rng (see
+    # SIDE_KINDS) so the draws of every older kind stay identical.
+    dirty_district: float = 0.02  # share of app events with a valid district
+    dirty_utm: float = 0.05  # share of events whose page_url carries UTM parameters
 
     @classmethod
     def off(cls) -> "NoiseConfig":
@@ -47,6 +53,8 @@ class NoiseConfig:
 KINDS = [f.name for f in fields(NoiseConfig)]
 # per-message kinds tried in this order; bot_session is decided once per new session
 MESSAGE_KINDS = [k for k in KINDS if k != "bot_session"]
+# kinds that use a side rng derived from the main one, so older seeded noise streams do not move
+SIDE_KINDS = ("dirty_district", "dirty_utm")
 
 
 class NoiseCounter:
@@ -73,6 +81,27 @@ _DEVICE_DIRTY = {
     "desktop": ["Desktop", "DESKTOP", "pc", "PC", " desktop "],
     "tablet": ["Tablet", "TABLET", " tablet", "tablet "],
 }
+
+
+def _district_variants(city, district):
+    base = {district.lower().replace(" ", "-"), district.upper(), " %s " % district, district.lower(),
+            district.lower().replace(" ", "_")}
+    for alias in alias_variants(district):
+        base |= {alias, alias.upper(), alias.title(), alias.replace(" ", "-")}
+    return sorted(v for v in base if v != district and normalize_district(city, v) == district)
+
+
+def _utm_dirty(url, style):
+    base, sep, query = url.partition("?")
+    parts = []
+    for pair in query.split("&"):
+        k, eq, v = pair.partition("=")
+        if k.startswith("utm_") and eq and v:
+            v = v.upper() if style == 0 else "%20" + v + "%20"
+        parts.append(k + eq + v)
+    return base + sep + "&".join(parts)
+
+
 _NUM_FIELDS = ("price", "total", "order_total")
 
 
@@ -109,6 +138,12 @@ def _eligible(kind, e):
         return et in PRODUCT_EVENT_TYPES and p.get("product_id") not in (None, "")
     if kind == "dirty_text":
         return any(isinstance(e.get(k), str) and e.get(k) for k in ("city", "device"))
+    if kind == "dirty_district":
+        return (et in APP_EVENT_TYPES and isinstance(e.get("district"), str)
+                and normalize_district(e.get("city"), e["district"]) == e["district"])
+    if kind == "dirty_utm":
+        url = p.get("page_url")
+        return isinstance(url, str) and "?utm_" in url
     if kind == "numeric_string":
         return bool(_numeric_slots(e))
     if kind == "cancel_after_ship":
@@ -161,6 +196,11 @@ def _mutate(kind, e, rng, catalog_ids, now):
         table = _CITY_DIRTY if k == "city" else _DEVICE_DIRTY
         variants = [v for v in table.get(e[k], []) if v != e[k]] or [e[k] + " "]
         e[k] = variants[rng.randrange(len(variants))]
+    elif kind == "dirty_district":
+        variants = _district_variants(e["city"], e["district"])
+        e["district"] = variants[rng.randrange(len(variants))]
+    elif kind == "dirty_utm":
+        e["payload"]["page_url"] = _utm_dirty(e["payload"]["page_url"], rng.randrange(2))
     elif kind == "numeric_string":
         slots = _numeric_slots(e)
         c, k = slots[rng.randrange(len(slots))]
@@ -192,6 +232,7 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
     """Core generator yielding (topic_hint, payload, pace_time). pace_time is the original
     event_time of the source message (used for live pacing)."""
     rates = {k: getattr(config, k) for k in KINDS}
+    side = random.Random(repr(rng.getstate()))  # does not consume the main rng
     seen_sessions = set()
     pending = None  # (hint, event, pace) held for an out_of_order_status swap
 
@@ -222,7 +263,7 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
         chosen = None
         for kind in MESSAGE_KINDS:
             r = rates[kind]
-            if r > 0 and _eligible(kind, e) and rng.random() < r:
+            if r > 0 and _eligible(kind, e) and (side if kind in SIDE_KINDS else rng).random() < r:
                 chosen = kind
                 break
 
@@ -252,7 +293,7 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
             pending = (hint, e, pace)  # counted when the successor arrives
         else:
             counter.counts[chosen] += 1
-            yield out(hint, _mutate(chosen, e, rng, catalog_ids, now), pace)
+            yield out(hint, _mutate(chosen, e, side if chosen in SIDE_KINDS else rng, catalog_ids, now), pace)
 
         if new_session:
             counter.counts["bot_session"] += 1

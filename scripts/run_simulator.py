@@ -48,7 +48,7 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
             starts[events[0]["session_id"]] = t
         click_id = ("clk_" + events[0]["session_id"][5:]) if camp else None
         for e in events:
-            if "utm_campaign" in e["payload"]:
+            if camp and "utm_campaign=" in e["payload"].get("page_url", ""):
                 e["payload"]["click_id"] = click_id
             n_events += 1
             yield "app", e

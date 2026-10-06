@@ -12,6 +12,7 @@ def _ev(rng, etype, t, order_id, customer, payload):
         "customer_id": customer["customer_id"],
         "country": customer.get("country", "EG"),
         "city": customer["city"],
+        "district": customer.get("district"),
         "payload": payload,
     }
 
@@ -32,6 +33,7 @@ def make_order(rng, customer, catalog, campaign, t, order_id):
     created = {"order_id": order_id, "payment_method": payment, "items": lines, "order_total": total,
                "channel": campaign["channel"] if campaign else "organic",
                "utm_source": campaign["utm_source"] if campaign else None,
+               "utm_medium": campaign["utm_medium"] if campaign else None,
                "utm_campaign": campaign["utm_campaign"] if campaign else None}
     out = [("orders", _ev(rng, "order_created", t, order_id, customer, created))]
 

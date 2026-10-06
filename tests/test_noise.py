@@ -49,7 +49,7 @@ def test_off_is_identity():
 
 def test_config_helpers_and_defaults():
     assert set(KINDS) == set(NoiseConfig().__dict__)
-    assert len(KINDS) == 17
+    assert len(KINDS) == 19
     assert all(v == 0 for v in NoiseConfig.off().__dict__.values())
     s = NoiseConfig().scaled(2.0)
     assert s.duplicate == pytest.approx(0.02) and s.bot_session == pytest.approx(0.002)

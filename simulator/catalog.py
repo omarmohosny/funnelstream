@@ -1,6 +1,8 @@
 import random
 from datetime import date, timedelta
 
+from contracts.geo import DISTRICTS, DISTRICT_WEIGHTS
+
 CATEGORIES = {
     "fashion": ["Galabeya", "Abaya", "Denim jacket", "Sneakers", "Hijab set"],
     "beauty": ["Argan oil", "Face serum", "Lipstick", "Kohl pencil"],
@@ -39,13 +41,24 @@ def _weighted_city(rng: random.Random) -> str:
     return "Other"
 
 
+def weighted_district(rng: random.Random, city: str) -> str:
+    """One draw (rng.random) from the city's DISTRICT_WEIGHTS."""
+    r, acc = rng.random(), 0.0
+    names, weights = DISTRICTS[city], DISTRICT_WEIGHTS[city]
+    for name, w in zip(names, weights):
+        acc += w
+        if r <= acc:
+            return name
+    return names[-1]
+
+
 def make_customers(seed: int, n: int) -> list[dict]:
     rng = random.Random(seed)
     out = []
     for i in range(n):
         prefix = rng.choice(["10", "11", "12", "15"])
         phone = "+20" + prefix + "".join(str(rng.randint(0, 9)) for _ in range(8))
-        out.append({
+        row = {
             "customer_id": f"cust_{i + 1:06d}",
             "name": f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}",
             "phone": phone,
@@ -54,5 +67,14 @@ def make_customers(seed: int, n: int) -> list[dict]:
             "device_primary": rng.choice(["mobile", "mobile", "mobile", "desktop"]),
             "signup_date": (date(2025, 1, 1) + timedelta(days=rng.randint(0, 600))).isoformat(),
             "marketing_consent": rng.random() < 0.6,
-        })
-    return out
+        }
+        out.append(row)
+    # districts come from the same rng stream, in a second pass after EVERY customer's older draws,
+    # so all earlier seeded fields of all customers stay identical (spec 18)
+    result = []
+    for row in out:
+        district = weighted_district(rng, row["city"])
+        result.append({k: row[k] for k in ("customer_id", "name", "phone", "country", "city")}
+                      | {"district": district}
+                      | {k: row[k] for k in ("device_primary", "signup_date", "marketing_consent")})
+    return result

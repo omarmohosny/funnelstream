@@ -87,9 +87,10 @@ def test_flattened_payload_fields_and_types():
     row = tm(pe)[0][1]
     assert isinstance(row["dwell_seconds"], int) and row["dwell_seconds"] == pe["payload"]["dwell_seconds"]
     assert row["product_id"] == pe["payload"]["product_id"]
-    pv = next(e for e in evs if e["event_type"] == "product_view" and "utm_campaign" in e["payload"])
+    # UTM now lives only inside payload["page_url"] (spec 18.4); Silver parses it in D2.
+    pv = next(e for e in evs if e["event_type"] == "product_view" and "utm_campaign=" in e["payload"]["page_url"])
     row = tm(pv)[0][1]
-    assert row["utm_campaign"] == pv["payload"]["utm_campaign"]
+    assert row["product_id"] == pv["payload"]["product_id"]
     purchase = next(e for e in evs if e["event_type"] == "purchase")
     assert tm(purchase)[0][1]["order_id"] == purchase["payload"]["order_id"]
     ev = copy.deepcopy(pv)
