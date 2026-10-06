@@ -188,11 +188,11 @@ Late events stay in Bronze. Nothing is dropped at Bronze.
 
 | Table | Grain | Key | Columns |
 |---|---|---|---|
-| `silver_events` | One app or web event | `event_id` | `event_type`, `event_time` (UTC), `kafka_timestamp`, `is_late`, `event_version`, `session_id`, `customer_id` (nullable), `device`, `channel`, `country`, `city`, `campaign_id`, `utm_source`, `utm_campaign`, `click_id`, `product_id`, `element`, `dwell_seconds`, `cart_id`, `order_id`, `search_term`, `event_date` (Africa/Cairo) |
+| `silver_events` | One app or web event | `event_id` | `event_type`, `event_time` (UTC), `kafka_timestamp`, `is_late`, `event_version`, `session_id`, `customer_id` (nullable), `device`, `channel`, `country`, `city`, `district`, `campaign_id`, `utm_source`, `utm_campaign`, `utm_medium`, `click_id`, `page_url`, `product_id`, `element`, `dwell_seconds`, `cart_id`, `order_id`, `search_term`, `event_date` (Africa/Cairo) |
 | `silver_order_status` | One status change | `event_id` | `order_id`, `customer_id`, `status`, `status_rank`, `status_time`, `payment_method`, `carrier`, `reason`, `event_date` |
 | `silver_order_items` | One order line | `order_id`, `line_no` | `product_id`, `quantity`, `unit_price` (EGP), `line_total` (EGP), `currency`, `order_time` |
 | `silver_campaign_snapshots` | One campaign per report date per pull | `campaign_id`, `report_date`, `pulled_at` | `utm_campaign`, `platform`, `impressions`, `clicks`, `spend` (EGP), `currency` |
-| `silver_customers` | One customer version | `customer_id`, `updated_at` | `country`, `city`, `signup_date`, `primary_device`, `marketing_consent` |
+| `silver_customers` | One customer version | `customer_id`, `updated_at` | `country`, `city`, `district`, `signup_date`, `primary_device`, `marketing_consent` |
 | `silver_products` | One product version | `product_id`, `updated_at` | `name`, `category`, `price` (EGP), `is_active` |
 | `silver_quarantine` | One rejected row | none | `raw_payload`, `source_topic`, `error_code`, `error_detail`, `received_at` |
 
@@ -206,12 +206,12 @@ Silver rules:
 
 | Table | Owner | Grain | Key | Columns |
 |---|---|---|---|---|
-| `dim_customer` | Databricks Gold build | Customer version (SCD2) | `customer_key` | `customer_id`, `country`, `city` (tracked), `signup_date`, `primary_device` (tracked), `marketing_consent`, `valid_from`, `valid_to`, `is_current` |
+| `dim_customer` | Databricks Gold build | Customer version (SCD2) | `customer_key` | `customer_id`, `country`, `city` (tracked), `district` (tracked), `signup_date`, `primary_device` (tracked), `marketing_consent`, `valid_from`, `valid_to`, `is_current` |
 | `dim_product` | Databricks Gold build | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active`, `valid_from`, `valid_to`, `is_current` |
 | `dim_campaign` | Databricks Gold build | Campaign | `campaign_key` | `campaign_id`, `utm_campaign`, `platform`, `name`, `start_date`, `end_date` |
 | `dim_date` | Databricks Gold build | Day | `date_key` (yyyymmdd) | `date`, `week`, `month`, `is_weekend`, `is_friday_saturday`, `is_ramadan`, `is_eid`, `is_holiday` |
-| `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key` (-1 for an unknown member), `customer_id`, `session_id`, `channel`, `platform`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `returned_at`, `delivery_lead_hours`, `delivery_failed_count`, `has_failed_attempt`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `is_returned`, `order_seq`, `is_first_order`, `date_key` |
-| `fact_order_lines` | Databricks Gold build | Order line | `order_id`, `line_no` | `customer_key`, `customer_id`, `product_key`, `product_id`, `date_key`, `city`, `quantity`, `line_total` (EGP) |
+| `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key` (-1 for an unknown member), `customer_id`, `session_id`, `channel`, `platform`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `district`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `returned_at`, `delivery_lead_hours`, `delivery_failed_count`, `has_failed_attempt`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `is_returned`, `order_seq`, `is_first_order`, `date_key` |
+| `fact_order_lines` | Databricks Gold build | Order line | `order_id`, `line_no` | `customer_key`, `customer_id`, `product_key`, `product_id`, `date_key`, `city`, `district`, `quantity`, `line_total` (EGP) |
 | `live_metrics_minute` (local serving, not Gold) | Local Spark stream | One minute, country | `minute_start`, `country` | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed`. Computed on 1-minute tumbling windows from non-late Silver events |
 | `fact_attribution` | Databricks Gold build | Order and attribution model | `order_id`, `model` | `campaign_id` (NULL for direct), `click_id` (NULL for direct), `order_total` (EGP), `model` (`last_touch` or `first_touch`) |
 | `agg_orders_daily` | Databricks Gold build | Day, channel, payment method, platform | `date_key`, `channel`, `payment_method`, `platform` | `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `new_customer_orders` |
@@ -219,7 +219,7 @@ Silver rules:
 | `agg_campaign_daily` | Databricks Gold build | Campaign per report date and attribution model | `campaign_id`, `report_date`, `attribution_model` | `ad_platform` (`meta` or `google`), `impressions`, `clicks`, `platform_conversions`, `spend` (EGP), `orders_placed`, `orders_delivered`, `orders_cancelled`, `orders_returned`, `orders_with_failed_attempt`, `revenue_placed` (EGP), `revenue_delivered` (EGP), `cancel_rate`, `failed_attempt_rate`, `return_rate`, `open_rate`, `new_customer_orders`, `aov` (EGP), `ctr`, `conversion_rate`, `cpa` (EGP, placed), `cost_per_delivered_order` (EGP), `roas_placed`, `roas_delivered` |
 | `agg_city_product_daily` | Databricks Gold build | City, product, day | `city`, `product_id`, `date_key` | `sessions_viewed`, `add_to_cart`, `units`, `revenue` (EGP) |
 | `rec_product` | Databricks Gold build | Recommendation | `segment_level`, `segment_value`, `anchor_product_id`, `rank` | `rec_product_id`, `co_view_sessions`, `window_end` |
-| `customer_360` (stretch) | Databricks Gold build | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
+| `customer_360` (stretch) | Databricks Gold build | Customer, current state | `customer_id` | `customer_key`, `country`, `city`, `district`, `total_sessions`, `product_views`, `add_to_cart_count`, `checkouts_count`, `orders_count`, `delivered_count`, `cancelled_count`, `total_spend` (EGP), `avg_order_value` (EGP), `first_order_at`, `last_order_at`, `last_seen_at`, `days_since_last_order`, `top_category`, `preferred_payment_method`, `last_campaign_id`, `is_repeat_buyer` |
 
 **Stretch: contribution margin.** `cfg_cost_assumptions` (Airflow, one row per product category): `margin_pct`, `carrier_fee_egp`, `failed_attempt_cost_egp`, `cod_fee_egp`. Adds `contribution_egp` to `fact_orders` and `agg_campaign_daily`. Labelled as assumption-based on the dashboard.
 
@@ -395,3 +395,20 @@ These rulings win over any older wording in this spec, the plan or the documents
 24. Silver tables `silver_events`, `silver_orders` and `silver_order_status` are partitioned by `event_date` (done).
 25. The "J&T Express" typo in the PDF is a character-entity bug and is fixed.
 26. The Airflow-or-Python fallback decision date is 10 Oct, not 11 Oct. Python script is primary; Airflow DAG only if time allows.
+
+## 18. Amendment D: district under city, UTM in the page URL (2026-10-06)
+
+These rulings win over any older wording.
+
+1. **Address hierarchy.** An address is country > city > district. `city` keeps the existing canonical values (Cairo, Giza, Alexandria, Mansoura, Tanta, Assiut, Other). `district` is a new column, always a child of its city. Source of truth: `contracts/geo.py` (`DISTRICTS`: city to ordered tuple of districts). The district names are the official subdivisions (qisms / ahya) of Egypt:
+   - **Cairo:** Nasr City, Heliopolis (Masr El Gedida), Maadi, New Cairo, Shubra, Zamalek, Downtown, Garden City, El Moqattam, Helwan, El Matareya, El Marg, El Zaytoun, Sayeda Zeinab, El Shorouk.
+   - **Giza:** Dokki, Agouza, Haram (Pyramids), Imbaba, Omraniya, Bulaq El Dakrour, El Warraq, Giza (centre). Mohandessin and Faisal are neighbourhoods inside these qisms, not districts, so they are not used. 6th of October and Sheikh Zayed are separate cities (not under Giza city) and fall under city `Other`.
+   - **Alexandria:** Montaza, Raml, Sidi Gaber, Moharam Bek, Karmouz, Amreya, Dekhela, Attarin, Manshiya, Labban.
+   - **Mansoura:** Mansoura First, Mansoura Second. **Tanta:** Tanta First, Tanta Second. **Assiut:** Assiut First, Assiut Second.
+   - **Other:** the single value `Other` (smaller cities have no modelled districts).
+2. **Values.** `district` of a known pair is the canonical spelling. A district that is missing, unrecognised, or does not belong to the row's city is stored as `unknown` (the row is kept, never quarantined). `Other` is a real value (city `Other` only). `unknown` city gives `unknown` district. A reported (non-failing) check counts hierarchy violations (district given but not under the city).
+3. **Where it lives.** `district` sits directly after `city` on customers (`silver_customers`, `dim_customer`, tracked SCD2 attribute with city), app events and order events (`silver_events`, `silver_orders`), and in Gold on `fact_orders`, `fact_order_lines`, `customer_360`. Unknown members carry `unknown`. `agg_city_product_daily` stays at city grain on purpose.
+4. **Tracking URL.** Landing and product pages carry a real URL in the payload field `page_url`, for example `https://shop.example.eg/p/prod_0042?utm_source=meta&utm_medium=paid_social&utm_campaign=ramadan_offer_1`. The simulator no longer writes `utm_source` / `utm_campaign` into the payload; they exist only inside `page_url`. Sessions with no campaign get a plain URL (organic, direct, email) with no UTM parameters.
+5. **UTM parsing.** Silver parses `page_url` (urllib) and fills `utm_source`, `utm_medium`, `utm_campaign` (lower-cased, trimmed) and keeps `page_url`. For rows that still carry the old payload fields (older Bronze data) the payload value is the fallback. A malformed URL is kept with NULL UTM fields. `silver_events` gains `utm_medium` and `page_url`; `silver_orders` gains `utm_medium`. Campaigns gain `utm_medium` (`cpc` for google, `paid_social` for meta).
+6. **Noise.** Two new noise kinds with manifest counts: `dirty_district` (case, spacing, hyphen and common alias variants such as "nasr-city", "Madinet Nasr", "MAADI") and `dirty_utm` (upper case or padded UTM values inside the URL). Both are cleaned by Silver, not quarantined.
+7. **Privacy.** District is not personal data on its own; it is on the publish allow-list. `page_url` is published (synthetic data; review before real data). Names and phones stay off.

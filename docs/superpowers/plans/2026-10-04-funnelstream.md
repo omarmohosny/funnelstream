@@ -1241,6 +1241,15 @@ Task order from here: **C1** simulator and contracts, **C2** Silver, **C3** Gold
 
 ---
 
+## Amendment D: district under city and UTM in the page URL (spec section 18)
+
+Task order: **D1** geography reference, simulator, contracts and noise; **D2** Silver, publish, Gold model, DDL and docs. Both come before Task 10c. The controller recreates the affected Databricks tables after D2.
+
+- **D1:** `contracts/geo.py` with `DISTRICTS`, `normalize_district(city, value)`; customers get `district`; events and `order_created` carry `district`; `page_url` with UTM parameters on landing and product-view events (no `utm_*` in the payload any more); campaigns gain `utm_medium`; noise kinds `dirty_district` and `dirty_utm`; validator stays compatible.
+- **D2:** Silver parses `page_url` and normalises `district`; new columns per spec 18.3 and 18.5 in Spark schemas, publish allow-list, `warehouse/tables.py`, generated DDL (both dialects), unknown members, Gold reference builders; docs (`metrics.md`, `RUNNING.md`); reported hierarchy-violation count.
+
+---
+
 ## Task 7: Spark session and Bronze ingest
 
 **Files:**
@@ -1952,7 +1961,7 @@ git commit -m "feat: postgres gold DDL and idempotent upsert loader"
 - Consumes: catalog and customer rows from `simulator/catalog.py` (Task 3)
 - Produces:
   - `apply_scd2(current_rows: list[dict], incoming: list[dict], key: str, tracked: list[str], now: datetime) -> tuple[list[dict], list[dict]]` returns `(to_close, to_insert)`. `to_close` are the old versions with `valid_to = now` and `is_current = False`. `to_insert` are new versions with `valid_from = now`, `valid_to = 'infinity'`, `is_current = True`. Only tracked columns trigger a new version.
-  - `load_dimensions(conn, catalog_rows, customer_rows, now)` applies SCD2 to `dim_product` (tracked: `price`, `category`) and `dim_customer` (tracked: `city`, `primary_device`).
+  - `load_dimensions(conn, catalog_rows, customer_rows, now)` applies SCD2 to `dim_product` (tracked: `price`, `category`) and `dim_customer` (tracked: `city`, `district`, `primary_device`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2038,12 +2047,12 @@ def load_dimensions(conn, catalog_rows, customer_rows, now: datetime) -> None:
         cur.execute("SELECT product_id, price, category, is_active, valid_from, valid_to, is_current FROM dim_product WHERE is_current")
         cols = [d.name for d in cur.description]
         cur_products = [dict(zip(cols, r)) for r in cur.fetchall()]
-        cur.execute("SELECT customer_id, city, primary_device, country, signup_date, marketing_consent, valid_from, valid_to, is_current FROM dim_customer WHERE is_current")
+        cur.execute("SELECT customer_id, city, district, primary_device, country, signup_date, marketing_consent, valid_from, valid_to, is_current FROM dim_customer WHERE is_current")
         cols = [d.name for d in cur.description]
         cur_customers = [dict(zip(cols, r)) for r in cur.fetchall()]
 
     close_p, insert_p = apply_scd2(cur_products, catalog_rows, "product_id", ["price", "category"], now)
-    close_c, insert_c = apply_scd2(cur_customers, customer_rows, "customer_id", ["city", "primary_device"], now)
+    close_c, insert_c = apply_scd2(cur_customers, customer_rows, "customer_id", ["city", "district", "primary_device"], now)
     for r in close_p:
         upsert(conn, "dim_product", [r], ["product_id", "valid_from"])
     for r in close_c:
