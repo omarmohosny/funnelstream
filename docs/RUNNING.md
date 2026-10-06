@@ -40,7 +40,7 @@ Host (Spark tests are skipped on Windows). Takes about 6 seconds.
 .venv\Scripts\python -m pytest -q
 ```
 
-Observed: `246 passed, 45 skipped`. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
+Observed: `485 passed, 74 skipped`. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
 
 Everything including Spark tests, in Docker. Takes about 6 to 8 minutes (501 s observed).
 
@@ -49,7 +49,7 @@ docker compose build spark
 docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests -q
 ```
 
-Observed: `289 passed, 2 skipped` (about 8 minutes). The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
+Observed: `557 passed, 2 skipped` (about 10.5 minutes). The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
 
 ## Run the pipeline step by step
 
@@ -98,10 +98,10 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafk
 Takes a few seconds. Expected last line:
 
 ```
-{'app.events': 19053, 'orders': 751, 'delivery.events': 402} total 20206
+{'app.events': 19316, 'orders': 667, 'delivery.events': 383} total 20366
 ```
 
-It also writes `noise_manifest.json` in the current folder (git-ignored). Its `total_messages` is 20206 and `injected` lists how many of each noise type were added. A harmless librdkafka line about "Coordinator load in progress" can appear right after Kafka starts.
+It also writes `noise_manifest.json` in the current folder (git-ignored). Its `total_messages` is 20366 and `injected` lists how many of each noise type were added. A harmless librdkafka line about "Coordinator load in progress" can appear right after Kafka starts.
 
 ### 3. Bronze ingest
 
@@ -131,7 +131,7 @@ print("COUNT total", tot)
 docker compose run --rm spark python data/count.py data/lake/bronze/bronze_app_events data/lake/bronze/bronze_orders data/lake/bronze/bronze_delivery_events
 ```
 
-Expected: 19053, 751, 402, total 20206, equal to the simulator total and `total_messages`.
+Expected: 19316, 667, 383, total 20366, equal to the simulator total and `total_messages`.
 
 ### 4. Seed reference data (products and customers)
 
@@ -150,26 +150,26 @@ docker compose run --rm spark python -m streaming.jobs.silver_clean --once --lak
 About 40 s. Expected log line:
 
 ```
-INFO:silver_clean:batch 0: {'silver_events': 18577, 'silver_orders': 151, 'silver_order_status': 1125, 'silver_order_items': 286, 'silver_quarantine': 301}
+INFO:silver_clean:batch 0: {'silver_events': 18822, 'silver_orders': 153, 'silver_order_status': 1031, 'silver_order_items': 305, 'silver_quarantine': 314} district_violations=0
 ```
 
 Row counts after this step (same `count.py`, paths `data/lake/silver/<table>`):
 
 | Table | Rows |
 |---|---|
-| silver_events | 18577 |
-| silver_orders | 151 |
-| silver_order_status | 1125 |
-| silver_order_items | 286 |
-| silver_quarantine | 301 |
+| silver_events | 18822 |
+| silver_orders | 153 |
+| silver_order_status | 1031 |
+| silver_order_items | 305 |
+| silver_quarantine | 314 |
 | silver_products | 200 |
 | silver_customers | 5000 |
 
-The quarantine count equals the sum of the manifest counts for the defects the validator can see: malformed_json 73 + missing_field 46 + unknown_type 20 + bad_version 24 + negative_price 9 + future_timestamp 21 + null_product_id 63 + unknown_product_id 44 + cancel_after_ship 1 = 301. By error code: BAD_JSON 73, MISSING_FIELD 109 (missing_field plus null_product_id), UNKNOWN_EVENT_TYPE 20, BAD_VERSION 24, FUTURE_TIMESTAMP 21, UNKNOWN_PRODUCT 44, NEGATIVE_PRICE 9, CANCEL_AFTER_SHIPMENT 1. Also: 20206 - 301 quarantined - 203 duplicates = 19702 = silver_events + silver_order_status. In history mode every row is flagged `is_late`; that is expected.
+The quarantine count equals the sum of the manifest counts for the defects the validator can see: malformed_json 80 + missing_field 50 + unknown_type 21 + bad_version 20 + negative_price 14 + future_timestamp 17 + null_product_id 65 + unknown_product_id 47 + cancel_after_ship 0 = 314. Also: 20366 - 314 quarantined - 199 duplicates = 19853 = silver_events + silver_order_status (18822 + 1031). The manifest also lists dirty_district 345 and dirty_utm 68: Silver cleans both (no quarantine), and every district ends valid (`district_violations=0`). In history mode every row is flagged `is_late`; that is expected.
 
 Running Silver again changes nothing (checked: same counts, and also the same after deleting `data/checkpoints/silver_clean` and replaying).
 
-After Amendment C (step C2) `silver_events` and `silver_orders` have a nullable `platform` column (`app` or `web`) right after `channel`, and `silver_order_status` can hold `order_returned` rows (rank 7). The counts and quarantine numbers above were observed before Amendment C and were not re-measured: the simulator now also emits `order_returned` and no `payment_authorised` for cash on delivery, so a new run gives different counts. `silver_campaign_snapshots` (Databricks mirror, no local Silver job yet) gains `platform_conversions` right after `clicks`.
+After Amendment C (step C2) `silver_events` and `silver_orders` have a nullable `platform` column (`app` or `web`) right after `channel`, and `silver_order_status` can hold `order_returned` rows (rank 7). The counts above were measured on a fresh run after Amendment D (seed 7, 20,000 events). `silver_campaign_snapshots` (Databricks mirror, no local Silver job yet) gains `platform_conversions` right after `clicks`.
 
 After Amendment D, `silver_events` has `district` (right after `city`), `utm_medium` (after `utm_campaign`) and `page_url` (after `click_id`); `silver_orders` has `district` and `utm_medium` in the same places; `silver_customers` has `district` after `city`. `utm_source`, `utm_medium` and `utm_campaign` of an event are parsed from its `page_url` (older Bronze data without `page_url` falls back to the payload fields, `utm_medium` NULL). A district outside its city becomes `unknown` and the row is kept; `silver_clean` logs the number of such events and orders per batch as `district_violations=N`. Existing Silver Delta tables must be recreated (delete `data/lake/silver` and the Silver checkpoint, rerun `seed_silver_reference.py` and Silver) because the schemas changed. No counts were measured for this change in this document.
 
@@ -304,6 +304,17 @@ docker compose --profile airflow logs airflow | Select-String password   # stand
 ```
 
 In the UI trigger the DAG with config `{"report_date": "2026-10-03"}` to backfill a day or `{"force": true}` to pull again. Verified for real: `airflow dags test ads_yesterday_report` twice against the real workspace printed `pulled` then `cached` with identical numbers.
+
+### Migrating after Amendment D (district, utm_medium, page_url)
+
+Amendment D added columns to existing tables, and `CREATE TABLE IF NOT EXISTS` does not alter them. Verified for real on the workspace: recreate the six Silver mirror tables that changed or hold older rows and the four Gold tables that gained `district`, then republish. `silver_products`, `silver_campaign_snapshots` (it keeps the ad-report rows) and the other Gold tables stay.
+
+```powershell
+docker compose run --rm spark python scripts/apply_ddl.py --backend databricks --recreate silver_events,silver_orders,silver_order_status,silver_order_items,silver_quarantine,silver_customers,dim_customer,fact_orders,fact_order_lines,customer_360 --yes
+docker compose run --rm spark python scripts/publish_silver.py
+```
+
+Observed: `applied 37 statements`, then every Silver mirror count equalled the local count after a fresh run (seed 7, 20,000 events): events 18,822, orders 153, status 1,031, items 305, quarantine 314, products 200, customers 5,000. In the mirror: 0 NULL districts in events, orders and customers; 1,340 events with `utm_source` and `utm_medium`; 7,387 with `page_url`; 0 duplicate `event_id`; `raw_payload` NULL in every quarantine row; `dim_customer`, `dim_product` and `dim_campaign` each hold exactly one -1 row (the customer one has district `unknown`). The Gold tables are empty until the Gold build (Task 10c) exists.
 
 ## What is not built yet
 

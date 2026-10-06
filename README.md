@@ -17,7 +17,7 @@ Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstrea
 | `kafka/` | Topic creation | 6 |
 | `streaming/` | Spark jobs: Bronze ingest, Silver clean, Gold stream tables | 7, 8, 9 |
 | `batch/` | SCD2, campaigns, attribution, recommendations, batch runner | 11-15, 19 |
-| `airflow/dags/` | Airflow DAG (calls `batch/run_batch.py`) | 15 |
+| `airflow/dags/` | Airflow DAGs (`ads_yesterday_report`; the batch DAG comes with Task 15) | 15 |
 | `warehouse/` | Postgres DDL, loader, data-quality checks | 10, 16 |
 | `dashboards/` | Power BI file, measures, screenshots | 18 |
 | `scripts/` | Run simulator, benchmark, failure demo, sample export | 6, 17 |
@@ -41,6 +41,18 @@ Written only by the Databricks Gold build (spec section 17, rule 13). Full defin
 | `agg_city_product_daily` | City, product, day views, carts and sales |
 | `rec_product` | Co-view product recommendations |
 | `customer_360` (stretch) | Customer current state |
+
+## Address and tracking
+
+An address is country, city, then district (spec section 18). Districts are the official Egyptian subdivisions of each city (for example Nasr City, Maadi and Heliopolis under Cairo; Dokki, Agouza and Imbaba under Giza); a missing or mismatched district is stored as `unknown`. Campaign traffic is tracked by UTM parameters inside the page URL (`page_url`); Silver parses `utm_source`, `utm_medium` and `utm_campaign` from it.
+
+## Yesterday's ad report
+
+Airflow DAG `ads_yesterday_report` (03:00 UTC daily, `airflow/dags/`, logic in `batch/ads_report.py`) pulls the ad API for yesterday once, stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. A rerun on the same day returns the stored report without calling the API. Start Airflow with `docker compose --profile airflow up -d airflow`. Details in [docs/RUNNING.md](docs/RUNNING.md).
+
+## Status
+
+Built and tested: simulator with noise, Kafka, Bronze and Silver (Spark in Docker), the Gold model and DDL, the Databricks Silver mirror, the ad-report DAG. Next: the Gold build (Task 10c), then Grafana live monitoring and the remaining batch tasks. See the plan for the full order.
 
 ## Getting started
 

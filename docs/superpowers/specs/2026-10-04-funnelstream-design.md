@@ -110,6 +110,8 @@ Simulator → Kafka (`app.events`, `orders`, `delivery.events`) → Spark `bronz
 | Null `product_id` on a product event | 0.5% | Quarantine (`MISSING_FIELD`) |
 | `product_id` not in the catalog | 0.3% | Quarantine (`UNKNOWN_PRODUCT`) |
 | Dirty text: `city` or `device` casing, spaces, aliases (`cairo `, `ALEX`) | 3% | Silver standardises with a lookup table |
+| Dirty `district` (`nasr-city`, `MAADI`, `Madinet Nasr`) on app events | 2% | Silver maps it to the canonical district of the city (section 18) |
+| UTM values in the page URL upper-cased or padded (`META`, `%20google`) | 5% of campaign URLs | Silver lower-cases and trims the parsed UTM values |
 | Number sent as a string (`"79.9"`) | 0.3% | Silver casts to decimal, quarantines if it fails |
 | Order status out of order, or cancel after shipment | 0.5% and 0.3% | Status rank in Gold; the cancel goes to quarantine |
 | Bot session (hundreds of events in seconds) | 0.1% of sessions | Silver flags `is_bot`, excluded from funnel and attribution |
@@ -120,7 +122,7 @@ Quality proof for the defense: the SQL check compares the quarantine rate and du
 
 **Limit:** synthetic data cannot be proven 100% realistic. The team documents these assumptions and checks distributions against them.
 
-**UTM linking:** Ad URLs carry `utm_source` and `utm_campaign`. The first session event carrying UTM parameters defines `click_id`. Orders carry `session_id`, `channel`, `utm_source`, `utm_campaign` and `click_id` on `order_created`.
+**UTM linking:** Landing and product pages carry a `page_url` whose query string holds `utm_source`, `utm_medium` and `utm_campaign` (section 18); Silver parses them. The first session event carrying UTM parameters defines `click_id`. Orders carry `session_id`, `channel`, `utm_source`, `utm_campaign` and `click_id` on `order_created`.
 
 **Click definition:** a session click is the first `page_view` or `product_view` event in a session that carries `utm_campaign`. Attribution uses this session click. CTR uses the clicks reported by the ad API. The dashboard labels each one, because the two counts differ.
 
@@ -134,7 +136,7 @@ Quality proof for the defense: the SQL check compares the quarantine rate and du
 
 Producers use `acks=all` and idempotence. Per-session order is kept for app events. Per-order order is kept for order and delivery events.
 
-**Order payload (`order_created`):** `order_id`, `customer_id`, `session_id`, `channel`, `utm_source`, `utm_campaign`, `click_id`, `platform` (`app` or `web`), `payment_method`, `city`, `country`, `items` (product_id, quantity, unit_price, line_total), `order_total`.
+**Order payload (`order_created`):** `order_id`, `customer_id`, `session_id`, `channel`, `utm_source`, `utm_medium`, `utm_campaign`, `click_id`, `platform` (`app` or `web`), `payment_method`, `country`, `items` (product_id, quantity, unit_price, line_total), `order_total`. `city` and `district` of the delivery address sit at the top level of the order event, next to the envelope fields.
 
 ## 6. Order Lifecycle and Status Rank
 
