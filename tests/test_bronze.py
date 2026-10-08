@@ -145,3 +145,11 @@ def test_await_all_without_session_raises():
     with pytest.raises(RuntimeError, match="no active SparkSession"):
         await_all(qs, None)
     assert qs[0].stopped
+
+
+def test_format_progress_lines():
+    from streaming.jobs.bronze_ingest import format_progress
+    assert "waiting" in format_progress("orders", None)
+    line = format_progress("orders", {"batchId": 4, "numInputRows": 25, "inputRowsPerSecond": 2.5,
+                                      "sources": [{"endOffset": {"orders": {"0": 120, "1": 98}}}]})
+    assert "orders" in line and "batch 4" in line and "+25 rows" in line and "0:120,1:98" in line

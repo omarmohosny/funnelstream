@@ -181,7 +181,11 @@ def pace_stream(timed, emit, now_fn=lambda: datetime.now(timezone.utc), sleep_fn
 def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--events", type=int, default=100_000, help="approximate event count")
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=42,
+                    help="seeds the event stream (session, order and event ids); a new value gives new ids")
+    ap.add_argument("--universe-seed", type=int, default=None,
+                    help="seeds the customers and the product catalog; default: --seed. Use the same value on every run "
+                         "(for example 7) so new runs add events for the same customers and products")
     ap.add_argument("--bootstrap", default="localhost:9092")
     ap.add_argument("--start", default=None, help="ISO start time; default now-7d (history mode)")
     ap.add_argument("--live", action="store_true")
@@ -195,10 +199,37 @@ def build_parser():
     ap.add_argument("--noise-off", action="store_true", help="publish clean events only")
     ap.add_argument("--noise-scale", type=float, default=1.0, help="multiply every noise rate")
     ap.add_argument("--manifest", default="noise_manifest.json", help="where to write the noise manifest")
+    ap.add_argument("--show", action="store_true", help="print every published event as one line in the terminal")
+    ap.add_argument("--show-every", type=int, default=1, metavar="N",
+                    help="with --show: print every Nth event only (e.g. 10 in a fast live run)")
     return ap
 
 
-def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, rate=200.0,
+def format_event(topic, payload, width=170) -> str:
+    """One terminal line per published message: topic, type, time, key fields. Raw (broken) payloads show as RAW."""
+    if not isinstance(payload, dict):
+        return ("%-15s RAW %s" % (topic, str(payload)[:width - 20])).replace(chr(10), " ")
+    body = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+    when = str(payload.get("event_time", ""))[11:19]
+    parts = []
+    for name in ("session_id", "order_id", "customer_id"):
+        if payload.get(name):
+            parts.append("%s=%s" % (name.replace("_id", ""), str(payload[name])[-8:]))
+    where = "/".join(str(payload[k]) for k in ("city", "district") if payload.get(k))
+    if where:
+        parts.append(where)
+    for name in ("platform", "device", "channel"):
+        if payload.get(name):
+            parts.append(str(payload[name]))
+    for name in ("product_id", "page", "payment_method", "order_total", "total", "reason", "carrier"):
+        if body.get(name) is not None:
+            parts.append("%s=%s" % (name, body[name]))
+    if body.get("page_url"):
+        parts.append(str(body["page_url"]).replace("https://", ""))
+    return ("%-15s %-18s %s  %s" % (topic, payload.get("event_type", "?"), when, "  ".join(parts)))[:width]
+
+
+def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, rate=200.0, universe_seed=None, show_every=0, show_fn=print,
                  time_scale=21600.0, session_scale=60.0, max_tail=60.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
     """iter_batch -> (history guard) -> apply_noise -> publish; writes the noise manifest.
 
@@ -208,7 +239,8 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
     """
     rng = random.Random(seed)
     noise_rng = random.Random(seed * 1_000_003 + 7)
-    customers, catalog = make_customers(seed, 5_000), make_catalog(seed)
+    universe = seed if universe_seed is None else universe_seed
+    customers, catalog = make_customers(universe, 5_000), make_catalog(universe)
     catalog_ids = {p["product_id"] for p in catalog}
     counter = NoiseCounter()
     counts = Counter()
@@ -217,6 +249,8 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
         topic, key = route(hint, payload)
         pub.send(topic, key, payload)
         counts[topic] += 1
+        if show_every and sum(counts.values()) % show_every == 0:
+            show_fn(format_event(topic, payload))
 
     if live:
         mean_gap = AVG_EVENTS_PER_SESSION / rate
@@ -245,9 +279,10 @@ def main():
     start = resolve_start(args.start, args.live, now)
     config = NoiseConfig.off() if args.noise_off else NoiseConfig().scaled(args.noise_scale)
     pub = Publisher(args.bootstrap)
-    counts = run_pipeline(seed=args.seed, events=args.events, start=start, now=now, live=args.live, pub=pub,
+    counts = run_pipeline(seed=args.seed, universe_seed=args.universe_seed, events=args.events, start=start, now=now, live=args.live, pub=pub,
                           config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale,
-                          session_scale=args.session_scale, max_tail=args.max_tail_seconds)
+                          session_scale=args.session_scale, max_tail=args.max_tail_seconds,
+                          show_every=max(1, args.show_every) if args.show else 0)
     print(dict(counts), "total", sum(counts.values()))
 
 

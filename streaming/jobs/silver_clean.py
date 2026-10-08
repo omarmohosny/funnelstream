@@ -215,7 +215,35 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
     return counts
 
 
-def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False):
+SHOW_TABLES = [("silver_events", "event_time", "event_type", "district", "platform", "utm_source", "page_url"),
+               ("silver_orders", "order_created_at", "order_id", "city", "district", "payment_method", "order_total"),
+               ("silver_order_status", "status_time", "order_id", "status"),
+               ("silver_quarantine", "received_at", "error_code", "source_topic", "error_detail")]
+
+
+def _say(text):
+    print(text, flush=True)  # flush: the line must appear at once even when stdout is a pipe or a file
+
+
+def show_batch(spark, lake_root, batch_id, counts, stats, sample=3, out=_say):
+    """Terminal view of one Silver batch: the counts and the newest `sample` rows of each table that grew."""
+    out("[silver] batch %s  %s  district_violations=%d" % (
+        batch_id, "  ".join("%s=%d" % (t.replace("silver_", ""), n) for t, n in counts.items()),
+        stats.get("district_violations", 0)))
+    for table, order_col, *cols in SHOW_TABLES:
+        if not counts.get(table) or not sample:
+            continue
+        try:
+            rows = (spark.read.format("delta").load(silver_path(lake_root, table))
+                    .orderBy(F.col(order_col).desc()).select(order_col, *cols).limit(sample).collect())
+        except Exception as e:  # keep the stream alive if a sample read fails
+            out("          (%s sample unavailable: %s)" % (table, type(e).__name__))
+            continue
+        for r in rows:
+            out("          %-19s %s" % (table.replace("silver_", ""), "  ".join(str(v)[:60] for v in r)))
+
+
+def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, show=0):
     lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
     spark = get_spark("silver_clean")
     frames = [spark.readStream.format("delta").option("maxBytesPerTrigger", "64m")
@@ -229,6 +257,8 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False):
         stats = {}
         counts = process_batch(sess, df, lake_root, load_known_products(lake_root, sess), stats=stats)
         log.info("batch %s: %s district_violations=%d", batch_id, counts, stats.get("district_violations", 0))
+        if show:
+            show_batch(sess, lake_root, batch_id, counts, stats, sample=show)
 
     writer = (union.writeStream.foreachBatch(handle)
               .option("checkpointLocation", os.path.join(checkpoint_root, "silver_clean"))
@@ -244,7 +274,9 @@ if __name__ == "__main__":
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--lake", default="data/lake")
     ap.add_argument("--checkpoints", default="data/checkpoints")
+    ap.add_argument("--show", type=int, nargs="?", const=3, default=0, metavar="N",
+                    help="print each batch's counts and the newest N rows of every table that grew (default 3)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
-    q = run(args.lake, args.checkpoints, once=args.once)
+    q = run(args.lake, args.checkpoints, once=args.once, show=args.show)
     await_all([q], SparkSession.getActiveSession())

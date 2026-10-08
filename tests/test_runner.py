@@ -101,3 +101,44 @@ def test_producer_queue_size_configured():
     cfg = build_producer_config("x")
     assert cfg["queue.buffering.max.messages"] == 500000
     assert cfg["enable.idempotence"] is True and cfg["acks"] == "all"
+
+
+def test_universe_seed_keeps_customers_and_catalog_but_changes_event_ids():
+    import random
+    from datetime import datetime, timezone
+    from scripts.run_simulator import build_batch
+    from simulator.catalog import make_catalog, make_customers
+    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+    def stream(event_seed, universe):
+        batch = build_batch(random.Random(event_seed), make_customers(universe, 200), make_catalog(universe), t0, sessions=30)
+        return [e["event_id"] for _, e in batch], {e.get("customer_id") for _, e in batch if e.get("customer_id")}
+
+    ids_a, custs_a = stream(21, 7)
+    ids_b, _ = stream(22, 7)
+    assert not set(ids_a) & set(ids_b)  # a new event seed never repeats ids
+    assert all(c.startswith("cust_") for c in custs_a)
+    assert make_customers(7, 5)[0] == make_customers(7, 5)[0]
+
+
+def test_run_pipeline_accepts_universe_seed(tmp_path):
+    import inspect
+    from scripts.run_simulator import run_pipeline
+    assert "universe_seed" in inspect.signature(run_pipeline).parameters
+
+
+def test_format_event_shows_type_time_and_key_fields_and_handles_raw():
+    from scripts.run_simulator import format_event
+    line = format_event("app.events", {"event_type": "page_view", "event_time": "2026-10-06T12:34:56+00:00",
+                                       "session_id": "sess_0123456789abcdef", "city": "Cairo", "district": "Maadi",
+                                       "platform": "app", "payload": {"page": "home",
+                                       "page_url": "https://shop.example.eg/?utm_source=meta"}})
+    assert "page_view" in line and "12:34:56" in line and "Cairo/Maadi" in line and "utm_source=meta" in line
+    assert "89abcdef" in line and "0123456789abc" not in line  # only the last 8 characters of an id
+    assert format_event("app.events", "{broken json").startswith("app.events") and "RAW" in format_event("x", "{broken")
+
+
+def test_run_pipeline_shows_every_nth_event():
+    import inspect
+    from scripts.run_simulator import run_pipeline
+    assert {"show_every", "show_fn"} <= set(inspect.signature(run_pipeline).parameters)

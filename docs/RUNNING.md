@@ -243,6 +243,19 @@ Observed after a history run plus the live run above (then `timeout 60` Bronze a
 2026-10-04 20:22:00  EG  1151  111  349  45  12
 ```
 
+## Watch the data move (generator, Kafka, Bronze, Silver)
+
+`scripts\watch_demo.ps1` opens four windows: a Kafka listener (every message with its topic), Bronze (a line per batch with row counts and Kafka offsets, plus the newest raw messages), Silver (per-batch counts, the newest cleaned rows and quarantine rows) and the generator (one line per published event). It starts Kafka, creates the topics, stops Postgres to free memory, gives Spark about a minute to start, and picks a new seed each run (kept in `data\state
+ext_seed.txt`) so ids never repeat.
+
+```powershell
+.\scripts\watch_demo.ps1                     # 3000 events at 50 per second
+.\scripts\watch_demo.ps1 -Events 20000 -ShowEvery 20
+.\scripts\stop_demo.ps1                      # stops the Bronze and Silver containers; then close the windows
+```
+
+The same views by hand: `bronze_ingest --show [N]` and `silver_clean --show [N]` (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
+
 ## Publish to Databricks
 
 Pushes the allow-listed Silver columns to a Databricks Silver mirror. Verified against a real Databricks workspace (Free Edition, catalog `funnelstream`, SQL warehouse, volume `silver_upload`) with a 5000-event run: `check_databricks.py --upload-test`, `apply_ddl.py --backend databricks`, `publish_silver.py` (dry run, full run twice, `--upload-only`) all ran for real.
