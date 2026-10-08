@@ -2,6 +2,8 @@
 
 How to run everything locally: [docs/RUNNING.md](docs/RUNNING.md)
 
+New to the project? Start with the team handoff (Q&A, status, remaining tasks): [docs/FunnelStream-Team-Handoff.pdf](docs/FunnelStream-Team-Handoff.pdf)
+
 Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.
 
 Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan.xlsx`.
