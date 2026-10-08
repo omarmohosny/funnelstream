@@ -1,15 +1,19 @@
-"""Gold reference build: Silver Delta tables to fact_orders, fact_order_lines, agg_orders_daily, agg_funnel_daily.
+"""Gold reference build: Silver Delta tables to fact_orders, fact_order_lines, fact_attribution, agg_orders_daily,
+agg_funnel_daily.
 
 python -m streaming.gold.build [--lake data/lake] [--out data/lake/gold_ref]
-Surrogate keys are -1 (unknown member) here: the reference build reads no dimensions.
+Surrogate keys are -1 (unknown member) here: the reference build reads no dimensions. Campaigns are resolved
+from simulator.campaigns (the same rows as dim_campaign); fact_orders.campaign_id is the last_touch campaign.
 """
 import argparse
 import os
 
+from simulator.campaigns import CAMPAIGNS
+from streaming.gold.attribution import build_clicks, build_fact_attribution
 from streaming.gold.bots import mark_bot_sessions
 from streaming.gold.agg_orders import build_agg_orders_daily
 from streaming.gold.funnel import build_agg_funnel_daily
-from streaming.gold.orders import build_fact_order_lines, build_fact_orders
+from streaming.gold.orders import build_fact_order_lines, build_fact_orders, with_last_touch_campaign
 from streaming.silver.writer import silver_path
 
 
@@ -27,10 +31,17 @@ def build_all(spark, lake_root: str = "data/lake", out_root=None) -> dict:
 
     events = mark_bot_sessions(read("silver_events"))
     orders, status, items = read("silver_orders"), read("silver_order_status"), read("silver_order_items")
-    fact_orders = build_fact_orders(orders, status)
+    base_orders = build_fact_orders(orders, status)
+    camps = spark.createDataFrame([(c["campaign_id"], c["utm_campaign"]) for c in CAMPAIGNS],
+                                  "campaign_id string, utm_campaign string")
+    # attribution covers the orders fact_orders has (orders with status rows), like the Gold SQL does
+    attributed = orders.join(base_orders.select("order_id"), "order_id", "left_semi")
+    attribution = build_fact_attribution(attributed, build_clicks(events, camps))
+    fact_orders = with_last_touch_campaign(base_orders, attribution)
     result = {
         "fact_orders": fact_orders,
         "fact_order_lines": build_fact_order_lines(orders, items),
+        "fact_attribution": attribution,
         "agg_orders_daily": build_agg_orders_daily(fact_orders),
         "agg_funnel_daily": build_agg_funnel_daily(events, orders),
     }

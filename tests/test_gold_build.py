@@ -19,8 +19,8 @@ from warehouse.tables import gold_table
 GOLD_DIR = gb.GOLD_DIR
 SQL_FILES = sorted(f for f in os.listdir(GOLD_DIR) if f.endswith(".sql"))
 BUILT = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-         "agg_orders_daily", "agg_funnel_daily"]
-SLOTS = ["fact_attribution", "agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"]
+         "fact_attribution", "agg_orders_daily", "agg_funnel_daily"]
+SLOTS = ["agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"]
 
 
 class FakeStore(GoldStore):
@@ -89,23 +89,23 @@ def test_statements_run_in_step_order_and_slots_are_reported_empty():
         assert result["steps"][n]["statements"] == len(step_statements(n, placeholders("a", "b", *WINDOW.values())))
     counts = [q for q in store.queries if q.startswith("SELECT count(*)")]
     assert counts == ["SELECT count(*) FROM funnelstream.gold.%s" % n for n in BUILT]
-    assert result["reported"] == {"orders_without_created_at": 3}
+    assert result["reported"] == {"orders_without_created_at": 3, "orders_without_click": 3, "orders_direct": 3,
+                                  "unresolved_clicks": 3}
     assert result["window"] == {"from": "2026-10-01", "to": "2026-10-03", "full": False}
 
 
 def test_a_step_file_dropped_into_a_slot_runs_at_its_position(tmp_path, monkeypatch):
     for f in SQL_FILES:
         (tmp_path / f).write_text(open(os.path.join(GOLD_DIR, f), encoding="utf-8").read(), encoding="utf-8")
-    (tmp_path / "07_fact_attribution.sql").write_text("SELECT 'attribution {gold}';", encoding="utf-8")
+    (tmp_path / "10_agg_campaign_daily.sql").write_text("SELECT 'campaign {gold}';", encoding="utf-8")
     monkeypatch.setattr(gb, "GOLD_DIR", str(tmp_path))
     store = FakeStore()
     result = run_build(store, **WINDOW)
-    i = store.executed.index("SELECT 'attribution funnelstream.gold';")
+    i = store.executed.index("SELECT 'campaign funnelstream.gold';")
     assert store.executed[i - 1] == gb.TIME_ZONE_SQL
-    assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.fact_order_lines")
-    assert store.executed[i + 1] == gb.TIME_ZONE_SQL
-    assert store.executed[i + 2].startswith("MERGE INTO funnelstream.gold.agg_orders_daily")
-    assert result["steps"]["fact_attribution"]["status"] == "ok"
+    assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.agg_funnel_daily")
+    assert i + 1 == len(store.executed)  # nothing after it: rec_product and the later slots are still empty
+    assert result["steps"]["agg_campaign_daily"]["status"] == "ok"
 
 
 def test_steps_subset_runs_in_fixed_order_and_unknown_step_is_rejected():

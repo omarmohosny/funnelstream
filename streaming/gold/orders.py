@@ -2,8 +2,8 @@
 
 Natural ids (customer_id, product_id) stay beside the surrogate keys. The keys are looked up in optional
 dimension DataFrames (the version valid at order time) and are -1 (the unknown member, spec 17.2) when there
-is no dimension, no natural id or no matching version. campaign_id is always NULL in this module (the
-attribution build adds it).
+is no dimension, no natural id or no matching version. campaign_id is NULL unless an attribution DataFrame
+is passed to build_fact_orders (then it is the last_touch campaign of the order, see streaming/gold/attribution.py).
 Dates: date_key is the Africa/Cairo local date of the order time as an int yyyymmdd (spec 16.6).
 """
 from pyspark.sql import DataFrame, Window, functions as F
@@ -52,7 +52,18 @@ def _version_key(df, dim, natural, key, at_col):
     return j.drop("_nat", "_key", "valid_from", "valid_to", "_rid", "_rn")
 
 
-def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, dim_customer=None) -> DataFrame:
+def with_last_touch_campaign(fact_orders: DataFrame, attribution: DataFrame) -> DataFrame:
+    """fact_orders with campaign_id = the last_touch campaign of the order (NULL for direct orders and for
+    orders that have no attribution row). attribution is a fact_attribution DataFrame (order_id, model, campaign_id)."""
+    last = (attribution.where(F.col("model") == "last_touch")
+            .select("order_id", F.col("campaign_id").alias("_lt_campaign")))
+    cols = fact_orders.columns
+    return (fact_orders.drop("campaign_id").join(last, "order_id", "left")
+            .withColumn("campaign_id", F.col("_lt_campaign").cast("string")).select(*cols))
+
+
+def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, dim_customer=None,
+                      attribution=None) -> DataFrame:
     """One row per order that has at least one status row (current state). Spec 17.5, 17.6, 17.8.
 
     current_status (same rule as streaming.common.status.resolve_current_status_timed): an order_cancelled
@@ -67,6 +78,9 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, 
 
     customer_key (surrogate key): the dim_customer version valid at order_created_at, else -1; the natural
     customer_id stays so a later build repairs a -1.
+
+    attribution (optional fact_attribution DataFrame): campaign_id becomes the order's last_touch campaign;
+    without it campaign_id is NULL (unchanged default).
     """
     # an order without order_created_at has no date_key and no order_seq position: it is left out and counted
     # by report_orders_without_created_at
@@ -108,7 +122,8 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, 
     o = (o.withColumn("order_seq", F.row_number().over(seq).cast("int"))
          .withColumn("is_first_order", F.col("order_seq") == 1)
          .withColumn("date_key", cairo_date_key(F.col("order_created_at"))))
-    return o.select(*FACT_ORDERS_COLUMNS)
+    o = o.select(*FACT_ORDERS_COLUMNS)
+    return o if attribution is None else with_last_touch_campaign(o, attribution)
 
 
 def build_fact_order_lines(silver_orders: DataFrame, silver_order_items: DataFrame, dim_customer=None,

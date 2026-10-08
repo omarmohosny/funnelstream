@@ -515,10 +515,10 @@ def test_refresh_live_metrics_keeps_last_hour_and_matches_builder(spark, tmp_pat
 
 
 # ---------------------------------------------------------------- group 7: build_all
-def test_build_all_writes_four_tables_and_reads_back(spark, e2e, tmp_path):
+def test_build_all_writes_five_tables_and_reads_back(spark, e2e, tmp_path):
     out_root = str(tmp_path / "gold_ref")
     res = build_all(spark, lake_root=e2e["lake"], out_root=out_root)
-    assert set(res) == {"fact_orders", "fact_order_lines", "agg_orders_daily", "agg_funnel_daily"}
+    assert set(res) == {"fact_orders", "fact_order_lines", "fact_attribution", "agg_orders_daily", "agg_funnel_daily"}
     counts = {}
     for name, df in res.items():
         back = spark.read.format("delta").load("%s/%s" % (out_root, name))

@@ -19,6 +19,7 @@ from pyspark.sql import functions as F  # noqa: E402
 
 from scripts.seed_silver_reference import seed  # noqa: E402
 from streaming.gold.agg_orders import build_agg_orders_daily  # noqa: E402
+from streaming.gold.attribution import build_clicks, build_fact_attribution  # noqa: E402
 from streaming.gold.bots import mark_bot_sessions  # noqa: E402
 from streaming.gold.funnel import build_agg_funnel_daily  # noqa: E402
 from streaming.gold.orders import (build_fact_order_lines, build_fact_orders,  # noqa: E402
@@ -40,6 +41,9 @@ DIM_NATURAL = {"dim_customer": ("customer_key", ["customer_id", "valid_from"]),
 SILVER_FACTS = ("silver_events", "silver_orders", "silver_order_status", "silver_order_items", "silver_customers",
                 "silver_products")
 ORD = ["dim_customer", "dim_product", "fact_orders", "fact_order_lines", "agg_orders_daily"]  # scenario builds
+# The hand-built datasets sit in October 2026. A build without a window means "the last 7 days up to today", which
+# moves with the calendar, so these tests name their window.
+MONTH = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
 REBUILD = ["fact_orders", "fact_order_lines", "agg_orders_daily"]  # dimensions unchanged: skip them
 GOLD_NEEDED = ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
                "fact_attribution", "agg_orders_daily", "agg_funnel_daily")
@@ -191,17 +195,23 @@ def test_build_result_lists_every_step_in_order_with_counts(e2e):
                            "fact_order_lines", "fact_attribution", "agg_orders_daily", "agg_funnel_daily",
                            "agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"]
     for name in ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-                 "agg_orders_daily", "agg_funnel_daily"):
+                 "fact_attribution", "agg_orders_daily", "agg_funnel_daily"):
         assert steps[name]["status"] == "ok" and steps[name]["rows"] > 0, name
-    for name in ("fact_attribution", "agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"):
+    assert steps["fact_attribution"]["rows"] == 2 * steps["fact_orders"]["rows"]
+    for name in ("agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"):
         assert steps[name]["status"] == "empty", name
     assert steps["dim_date"]["rows"] == 1095  # 2025-01-01 .. 2027-12-31
     assert steps["dim_campaign"]["rows"] == 4  # three campaigns plus the unknown member
 
 
 def test_fact_orders_equals_reference_column_by_column(spark, e2e):
-    ref = build_fact_orders(silver_df(spark, "silver_orders"), silver_df(spark, "silver_order_status"),
-                            dim_frame(spark, "dim_customer", "customer_key", "customer_id"))
+    dim = dim_frame(spark, "dim_customer", "customer_key", "customer_id")
+    base = build_fact_orders(silver_df(spark, "silver_orders"), silver_df(spark, "silver_order_status"), dim)
+    # campaign_id is the last_touch campaign (Task 13): the reference applies its own attribution
+    att = build_fact_attribution(silver_df(spark, "silver_orders").join(base.select("order_id"), "order_id", "left_semi"),
+                                 build_clicks(silver_df(spark, "silver_events"), gold_df(spark, "dim_campaign")))
+    ref = build_fact_orders(silver_df(spark, "silver_orders"), silver_df(spark, "silver_order_status"), dim,
+                            attribution=att)
     cols = ref.columns
     n_sql, n_ref, only_sql, only_ref, mism, samples = compare(gold_df(spark, "fact_orders").select(*cols), ref,
                                                               ["order_id"], cols)
@@ -373,7 +383,7 @@ def test_unknown_customer_gets_minus_one_and_a_later_build_repairs_it(spark, env
     seed_dims(spark, env, customers=("c1",))
     put_order(spark, env, "o_known", "c1", t(1, 10))
     put_order(spark, env, "o_new", "c_new", t(1, 11))
-    run_build(env, steps=ORD)
+    run_build(env, steps=ORD, **MONTH)
     keys = {r["order_id"]: r["customer_key"] for r in spark.table(env.gold + ".fact_orders").collect()}
     c1_key = spark.sql("SELECT customer_key FROM %s.dim_customer WHERE customer_id = 'c1'" % env.gold).first()[0]
     assert keys == {"o_known": c1_key, "o_new": -1}
@@ -397,7 +407,7 @@ def test_late_status_row_changes_that_order_and_its_day_only(spark, env):
     put_order(spark, env, "o1", "c1", t(1, 10), [("order_created", 0), ("order_shipped", 2)], total="100.00")
     put_order(spark, env, "o2", "c2", t(2, 10), [("order_created", 0), ("order_shipped", 2)], total="200.00")
     put_order(spark, env, "o3", "c1", t(3, 10), [("order_created", 0)], total="300.00")
-    run_build(env, steps=ORD)
+    run_build(env, steps=ORD, **MONTH)
     before = snapshot(spark, env)
     # a late delivered row for o1 (placed Oct 1) arrives with status_time Oct 5
     load(spark, env.silver, "silver_order_status", [status_row("o1", "delivered", t(5, 9), customer="c1")])
@@ -423,7 +433,7 @@ def test_late_status_row_changes_that_order_and_its_day_only(spark, env):
 def test_late_order_for_a_customer_shifts_later_orders_first_flag(spark, env):
     seed_dims(spark, env)
     put_order(spark, env, "later", "c1", t(5, 10))
-    run_build(env, steps=ORD)
+    run_build(env, steps=ORD, **MONTH)
     assert spark.sql("SELECT is_first_order FROM %s.fact_orders WHERE order_id = 'later'" % env.gold).first()[0] is True
     put_order(spark, env, "earlier", "c1", t(2, 10))  # arrives late, belongs to Oct 2
     run_build(env, from_date="2026-10-02", to_date="2026-10-02", steps=REBUILD)
@@ -436,7 +446,7 @@ def test_late_order_for_a_customer_shifts_later_orders_first_flag(spark, env):
 def test_a_day_that_loses_all_its_orders_in_the_window_is_deleted_from_the_summary(spark, env):
     seed_dims(spark, env)
     put_order(spark, env, "o1", "c1", t(2, 10))
-    run_build(env, steps=ORD)
+    run_build(env, steps=ORD, **MONTH)
     spark.sql("DELETE FROM %s.fact_orders WHERE order_id = 'o1'" % env.gold)  # the fact no longer has the day
     run_build(env, from_date="2026-10-02", to_date="2026-10-02", steps=["agg_orders_daily"])
     assert spark.table(env.gold + ".agg_orders_daily").count() == 0
@@ -576,7 +586,7 @@ def test_unknown_product_gets_minus_one_and_stays_unknown_until_the_dimension_ha
     load(spark, env.silver, "silver_order_items", [
         {"order_id": "o1", "line_no": "9", "product_id": "p_missing", "quantity": 1, "unit_price": Decimal("5.00"),
          "line_total": Decimal("5.00"), "currency": "EGP", "order_time": t(1, 10)}])
-    run_build(env, steps=ORD)
+    run_build(env, steps=ORD, **MONTH)
     keys = {r["line_no"]: (r["product_key"], r["product_id"]) for r in spark.table(env.gold + ".fact_order_lines").collect()}
     assert keys[9] == (-1, "p_missing") and keys[1][0] not in (None, -1)
     load(spark, env.silver, "silver_products", [
@@ -592,7 +602,7 @@ def test_orders_without_created_at_are_reported_and_not_in_the_fact(spark, env):
     put_order(spark, env, "ok", "c1", t(1, 10))
     load(spark, env.silver, "silver_orders", [dict(order_row("nocreated", customer="c1"), order_created_at=None)])
     load(spark, env.silver, "silver_order_status", [status_row("nocreated", "order_created", t(1, 10))])
-    result = run_build(env, steps=["fact_orders"])
+    result = run_build(env, steps=["fact_orders"], **MONTH)
     assert result["reported"] == {"orders_without_created_at": 1}
     assert [r[0] for r in spark.table(env.gold + ".fact_orders").select("order_id").collect()] == ["ok"]
 
