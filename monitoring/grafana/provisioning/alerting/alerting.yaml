@@ -1,0 +1,166 @@
+apiVersion: 1
+# Spec 17.19. Three alert rules, evaluated every minute, notifying the webhook contact point fs-webhook
+# (scripts/alert_sink.py listens on the host, port 9099, and prints/logs every alert).
+#
+# NOTE: history-mode data is late by rule (every event is older than the watermark), so rule (a) is meaningful for
+# --live runs only. Rules (b) and (c) work in both modes.
+#
+# Every rule reads the contract tables only (pipeline_health_minute). A query that returns no row means "not enough
+# data": rules (a) and (b) then report OK (noDataState OK); rule (c) treats no data as firing.
+groups:
+  - orgId: 1
+    name: fs-pipeline
+    folder: FunnelStream alerts
+    interval: 1m
+    rules:
+      - uid: fs-late-rate
+        title: Late-event rate above 5% (5 min)
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Late-event rate is above 5% over the last 5 minutes"
+          runbook: "Check the simulator for a clock skew or a replay of old events, then check the Silver watermark; if the source is healthy, raise the watermark delay."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, 100.0 * sum(late_events) / sum(events) AS late_pct
+                FROM pipeline_health_minute
+                WHERE minute_start >= now() - interval '5 minutes'
+                HAVING sum(events) >= 20
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [5]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-quarantine-share
+        title: Quarantine share above 2% (5 min)
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 2% of the rows received in the last 5 minutes went to silver_quarantine"
+          runbook: "Group silver_quarantine by reason for the last 10 minutes; fix the producer (simulator or source) that sends the bad rows, then replay if needed."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, 100.0 * sum(quarantined) / (sum(events) + sum(quarantined)) AS quarantine_pct
+                FROM pipeline_health_minute
+                WHERE minute_start >= now() - interval '5 minutes'
+                HAVING sum(events) + sum(quarantined) >= 20
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [2]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-no-events
+        title: No events for 2 minutes
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Silver events arrived in the last 2 minutes"
+          runbook: "Check that the simulator and the Silver job are running (docker compose ps, the spark container logs); restart the Silver job, then confirm the event line recovers."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, coalesce(sum(events), 0) AS events_2m
+                FROM pipeline_health_minute
+                WHERE minute_start >= now() - interval '2 minutes'
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+              datasource: {type: __expr__, uid: __expr__}
+contactPoints:
+  - orgId: 1
+    name: fs-webhook
+    receivers:
+      - uid: fs-webhook
+        type: webhook
+        settings:
+          url: http://host.docker.internal:9099/alert
+          httpMethod: POST
+        disableResolveMessage: false
+policies:
+  - orgId: 1
+    receiver: fs-webhook
+    group_by: [alertname]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 1h

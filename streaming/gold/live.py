@@ -36,6 +36,48 @@ def build_live_metrics_minute(silver_events: DataFrame) -> DataFrame:
                     "product_views", "add_to_cart", "orders_placed"))
 
 
+def minute_epochs(minutes) -> list:
+    """Sorted distinct minute starts as epoch seconds from datetimes (naive = UTC) or ints (any second of the minute)."""
+    out = set()
+    for m in minutes:
+        if isinstance(m, datetime):
+            m = int((m if m.tzinfo else m.replace(tzinfo=timezone.utc)).timestamp())
+        out.add(int(m) - int(m) % 60)
+    return sorted(out)
+
+
+MAX_MINUTE_LIST = 2000  # above this many minutes the filter is a range, not an IN list
+
+
+def live_metrics_for_minutes(events: DataFrame, minutes, bot_lookback_hours: float = 6,
+                             country_default: str = "unknown") -> DataFrame:
+    """build_live_metrics_minute restricted to the given minutes, with the same bot rule as refresh_live_metrics.
+
+    Full totals for those minutes (never increments). Bot sessions are detected with mark_bot_sessions over the
+    events from `bot_lookback_hours` before the first minute up to now. A null country becomes country_default
+    (the Postgres key column is NOT NULL). LIMITATION as above: a burst older than the lookback is not detected.
+    """
+    epochs = minute_epochs(minutes)
+    if not epochs:
+        return build_live_metrics_minute(events.limit(0))
+    lo, hi = epochs[0], epochs[-1] + 60
+    sec = F.unix_timestamp("event_time")
+    minute = sec - (sec % 60)
+    small = len(epochs) <= MAX_MINUTE_LIST
+    recent = events.where(minute.isin(epochs) if small
+                          else (F.col("event_time") >= F.timestamp_seconds(F.lit(lo)))
+                          & (F.col("event_time") < F.timestamp_seconds(F.lit(hi))))
+    wide = events.where(F.col("event_time") >= F.timestamp_seconds(F.lit(lo - int(bot_lookback_hours * 3600))))
+    bots = mark_bot_sessions(wide).where("is_bot").select("session_id").distinct()
+    flagged = recent.join(F.broadcast(bots.withColumn("_bot", F.lit(True))), "session_id", "left")
+    flagged = (flagged.withColumn("is_bot", F.coalesce(F.col("_bot"), F.lit(False)))
+               .withColumn("country", F.coalesce(F.col("country"), F.lit(country_default)))
+               .select(*recent.columns))
+    out = build_live_metrics_minute(flagged)
+    start = F.unix_timestamp("minute_start")
+    return out.where(start.isin(epochs) if small else (start >= lo) & (start < hi))
+
+
 def write_live_metrics(df: DataFrame, path: str = DEFAULT_PATH) -> str:
     """Full overwrite (no replaceWhere) of the Delta table at path with the recomputed window."""
     path = os.path.abspath(path)

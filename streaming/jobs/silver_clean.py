@@ -171,11 +171,20 @@ def _cancel_after_ship(spark, status_df, lake_root, now):
     return status_df.where(~F.col("event_id").isin(bad_ids)), quarantined
 
 
+def _minutes(df, col):
+    """Distinct minute starts (epoch seconds, UTC) of a timestamp column; no Python datetimes are involved."""
+    sec = F.unix_timestamp(col)
+    return sorted(r["m"] for r in df.where(F.col(col).isNotNull()).select((sec - (sec % 60)).alias("m"))
+                  .distinct().collect())
+
+
 def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=None):
     """Bronze rows to the Silver tables (MERGE insert). Returns {table: rows in batch after key dedupe}.
 
     If stats (a dict) is given, stats["district_violations"] is set to the number of events and orders of
-    the batch whose district was outside their city (reported, not an error)."""
+    the batch whose district was outside their city (reported, not an error). With stats["collect_minutes"] true
+    it also gets stats["event_minutes"] (minutes of event_time of the batch's Silver events), ["arrival_minutes"]
+    (minutes of kafka_timestamp) and ["quarantine_minutes"] (minutes of received_at), as epoch seconds."""
     now = now or datetime.now(timezone.utc)
     cols = ["raw_value", "kafka_topic", "kafka_timestamp", "ingest_time"]
     known_bc = spark.sparkContext.broadcast(set(known_products)) if known_products is not None else None
@@ -199,10 +208,16 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
                 .withColumn("received_at", F.col("received_at").cast("timestamp"))
                 .select(*TABLE_COLUMNS["silver_quarantine"]))
             frames["silver_quarantine"] = frames["silver_quarantine"].unionByName(extra)
+        want_minutes = stats is not None and stats.get("collect_minutes")
         for table in SILVER_TABLES:
             df = frames[table].dropDuplicates(SILVER_KEYS[table])
             n = df.count()
             counts[table] = n
+            if want_minutes and n and table == "silver_events":
+                stats["event_minutes"] = _minutes(df, "event_time")
+                stats["arrival_minutes"] = _minutes(df, "kafka_timestamp")
+            if want_minutes and n and table == "silver_quarantine":
+                stats["quarantine_minutes"] = _minutes(df, "received_at")
             if n:
                 merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table],
                              PARTITION_COLS.get(table))
@@ -243,8 +258,17 @@ def show_batch(spark, lake_root, batch_id, counts, stats, sample=3, out=_say):
             out("          %-19s %s" % (table.replace("silver_", ""), "  ".join(str(v)[:60] for v in r)))
 
 
-def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, show=0):
+def live_store_enabled(flag=False, env=None):
+    """The live and health tables are written when --live-store is given or PG_DSN is set."""
+    env = os.environ if env is None else env
+    return bool(flag or env.get("PG_DSN"))
+
+
+def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, show=0, live_store=False, sink=None):
     lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
+    if sink is None and live_store_enabled(live_store):
+        from warehouse.live_store import LiveSink  # psycopg is only imported on the first connect
+        sink = LiveSink(lake_root)
     spark = get_spark("silver_clean")
     frames = [spark.readStream.format("delta").option("maxBytesPerTrigger", "64m")
               .load(bronze_path(lake_root, topic)) for topic in BRONZE_TABLES]
@@ -254,9 +278,12 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, s
 
     def handle(df: DataFrame, batch_id):
         sess = df.sparkSession
-        stats = {}
+        stats = {"collect_minutes": sink is not None}
         counts = process_batch(sess, df, lake_root, load_known_products(lake_root, sess), stats=stats)
         log.info("batch %s: %s district_violations=%d", batch_id, counts, stats.get("district_violations", 0))
+        if sink is not None:
+            sink.on_batch(sess, batch_id, stats.get("event_minutes", ()), stats.get("arrival_minutes", ()),
+                          stats.get("quarantine_minutes", ()))  # never raises
         if show:
             show_batch(sess, lake_root, batch_id, counts, stats, sample=show)
 
@@ -264,7 +291,10 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, s
               .option("checkpointLocation", os.path.join(checkpoint_root, "silver_clean"))
               .queryName("silver_clean"))
     writer = writer.trigger(availableNow=True) if once else writer.trigger(processingTime="10 seconds")
-    return writer.start()
+    q = writer.start()
+    if sink is not None and not once:
+        sink.start_liveness(q)  # silver_job heartbeat every 15 s while the query is active
+    return q
 
 
 if __name__ == "__main__":
@@ -276,7 +306,9 @@ if __name__ == "__main__":
     ap.add_argument("--checkpoints", default="data/checkpoints")
     ap.add_argument("--show", type=int, nargs="?", const=3, default=0, metavar="N",
                     help="print each batch's counts and the newest N rows of every table that grew (default 3)")
+    ap.add_argument("--live-store", action="store_true",
+                    help="write live_metrics_minute and the health tables to Postgres (also on when PG_DSN is set)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
-    q = run(args.lake, args.checkpoints, once=args.once, show=args.show)
+    q = run(args.lake, args.checkpoints, once=args.once, show=args.show, live_store=args.live_store)
     await_all([q], SparkSession.getActiveSession())

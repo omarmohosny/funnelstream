@@ -116,7 +116,8 @@ class GoldStore(ABC):
 
 
 def _table_spec(name):
-    spec = next((t for t in all_tables() if t.name == _ident(name)), None)
+    from warehouse.live_tables import LIVE_TABLES  # local serving tables, not part of all_tables()
+    spec = next((t for t in list(all_tables()) + LIVE_TABLES if t.name == _ident(name)), None)
     if spec is None:
         raise ValueError("unknown table: %s" % name)
     return spec
@@ -154,17 +155,34 @@ def _prepare(table, rows, key_cols):
 class PostgresStore(GoldStore):
     """PostgreSQL fallback. Gold tables live in schema public."""
 
-    def __init__(self, dsn, connection=None):
+    def __init__(self, dsn, connection=None, connect_timeout=None, statement_timeout_ms=None,
+                 tcp_user_timeout_ms=None):
         self._dsn = dsn
         self._conn = connection
+        self._connect_timeout = connect_timeout  # seconds; None = the driver default
+        # Live path only: bound a statement on the server and an unanswered socket on the client. None = unbounded
+        # (the Gold path keeps its old behaviour).
+        self._statement_timeout_ms = statement_timeout_ms
+        self._tcp_user_timeout_ms = tcp_user_timeout_ms
 
     def __repr__(self):
         return "PostgresStore()"
 
+    @classmethod
+    def bounded(cls, dsn):
+        """Store for the live path (Silver job, heartbeats): connect 3 s, statement 5 s, unanswered socket 5 s."""
+        return cls(dsn, connect_timeout=3, statement_timeout_ms=5000, tcp_user_timeout_ms=5000)
+
     def _connection(self):
         if self._conn is None:
             import psycopg
-            self._conn = psycopg.connect(self._dsn)
+            extra = {} if self._connect_timeout is None else {"connect_timeout": int(self._connect_timeout)}
+            if self._statement_timeout_ms is not None:
+                extra["options"] = "-c statement_timeout=%d" % int(self._statement_timeout_ms)
+            if self._tcp_user_timeout_ms is not None:
+                extra.update(tcp_user_timeout=int(self._tcp_user_timeout_ms), keepalives=1, keepalives_idle=5,
+                             keepalives_interval=2, keepalives_count=3)
+            self._conn = psycopg.connect(self._dsn, **extra)
         return self._conn
 
     def upsert(self, table, rows, key_cols):
@@ -180,9 +198,12 @@ class PostgresStore(GoldStore):
         cur = conn.cursor()
         try:
             cur.executemany(sql, data)
+            conn.commit()
+        except Exception:
+            self._rollback()  # an aborted transaction must not poison the next call
+            raise
         finally:
             cur.close()
-        conn.commit()
         return len(data)
 
     def schema_prefix(self, group):
@@ -194,6 +215,9 @@ class PostgresStore(GoldStore):
         try:
             cur.execute(sql, params)
             return [tuple(r) for r in cur.fetchall()]
+        except Exception:
+            self._rollback()
+            raise
         finally:
             cur.close()
 
@@ -202,9 +226,19 @@ class PostgresStore(GoldStore):
         cur = conn.cursor()
         try:
             cur.execute(sql)
+            conn.commit()
+        except Exception:
+            self._rollback()
+            raise
         finally:
             cur.close()
-        conn.commit()
+
+    def _rollback(self):
+        try:
+            if self._conn is not None and hasattr(self._conn, "rollback"):
+                self._conn.rollback()
+        except Exception:
+            pass
 
     def close(self):
         if self._conn is not None:

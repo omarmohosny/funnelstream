@@ -86,6 +86,9 @@ def main(argv=None):
         print("%-28s rows=%-8d files=%d merged=%s" % (table, r["rows"], r["files"], r["merged"]))
         for stmt in r.get("statements", []):
             print("  would run: " + stmt)
+    if not (args.dry_run or args.export_only):
+        from warehouse.heartbeat import beat
+        beat("publish", "tables: %s" % ",".join(result))
     return 0
 
 

@@ -5,9 +5,12 @@ Source of truth for every KPI shown in Power BI. Each formula names its table, n
 ## Attribution model
 
 - `agg_campaign_daily` uses the `last_touch` model and says so in its `attribution_model` column. `fact_attribution` also holds `first_touch` rows, keyed by `order_id` and `model`.
-- Last touch is resolved in two steps. The order's own session comes first (the `click_id` on `order_created`). If that session has no click, the order falls back to the customer's last click in the 7 days before the order (identified customers only).
-- An order with no click in either step is direct: one row with NULL `campaign_id` and `click_id`.
-- Linking an anonymous pre-login session to a customer after login is out of scope. Those orders can show as direct. This is a known limitation.
+- Click: the first `page_view` or `product_view` event of a session that carries a `utm_campaign` (parsed from `page_url` in Silver). Bot sessions (`is_bot` recomputed over all events of the session, same rule as the funnel) have no click, and quarantined rows are not in `silver_events`, so they never make one. The click is attributed to `silver_events.campaign_id` when it is set, else to the `dim_campaign` row with the same `utm_campaign` (the unknown member never matches). A click whose UTM campaign cannot be resolved has no campaign and does not count as a click for attribution; the build reports their number (`unresolved_clicks`).
+- Last touch is resolved in order: (1) the order's own session, the click whose `click_id` equals the `click_id` on `order_created` (no time condition); (2) if there is none and the order has a `customer_id`, the customer's most recent click from ANY of their sessions in the window `order_created_at - 7 days` (inclusive) to `order_created_at` (exclusive), so a click 6 days 23 hours before counts, one 7 days 1 hour before does not, and a click after the order is ignored; (3) otherwise direct.
+- First touch uses the same steps; only step 2 differs: the customer's EARLIEST click in the same window. When the order's own session has a click, both models give that click.
+- An order with no click in either step is direct: one row per model with NULL `campaign_id` and `click_id`. Anonymous orders (NULL `customer_id`) never use step 2; they are attributed only through their own session click.
+- Ties: two clicks with the same click time go to the smallest `click_id` (NULL last), then the smallest `session_id`, so a rebuild always gives the same row. Output grain: exactly two rows per order, key `(order_id, model)`, `order_total` copied from the order. `fact_orders.campaign_id` is the `last_touch` campaign (NULL for direct orders).
+- A click belongs to the `customer_id` carried by its own event. Linking an anonymous pre-login session to a customer after login is out of scope. Those orders can show as direct. This is a known limitation.
 - Delivered revenue is counted on the ORDER date (cohort view). An order placed on day D that is delivered on day D+3 adds its revenue to day D, so recent days are incomplete until their orders settle.
 
 ## Order outcome metrics (`agg_campaign_daily`, `agg_orders_daily`)
@@ -73,11 +76,29 @@ Current order status is the status with the highest `status_rank` (see spec sect
 
 ## Filters that apply to every metric above
 
-- Bot sessions (`is_bot`) and quarantined rows are excluded from funnel, attribution and spend.
+- Bot sessions (`is_bot`) and quarantined rows are excluded from funnel, attribution and spend (attribution recomputes the bot rule itself, like the funnel).
 - `silver_campaign_snapshots` is used after quarantine (negative spend and clicks above impressions removed).
 - "Placed" means every attributed order regardless of status.
 - Dates are Cairo-local for orders and events; the ad platform's `report_date` is a UTC day.
 - A fact row with no matching dimension version carries key -1 (the unknown member) and is still counted; the daily build repairs the key once the dimension row exists.
+
+## Pipeline health (Postgres, written by the Silver job)
+
+`pipeline_health_minute` has one row per UTC minute. The Silver job recomputes the whole row for every minute a batch touches, from the Silver tables, so the numbers are totals, not increments (spec 17.3).
+
+| Column | Definition |
+|---|---|
+| `events` | Silver events whose Kafka arrival (`kafka_timestamp`) falls in the minute |
+| `late_events` | of those, rows with `is_late = true` (arrival more than 600 seconds after the event time) |
+| `quarantined` | `silver_quarantine` rows whose `received_at` falls in the minute |
+| `silver_batches` | Silver micro-batches that finished in the minute (rows of `pipeline_batch_log`) |
+
+- **Late-event rate** = `late_events` / `events` over the window (sum both over the window first; a window with `events` = 0 has no rate).
+- **Quarantine share** = `quarantined` / (`events` + `quarantined`) over the window: the share of messages that did not become Silver events. Quarantine rows of the orders and delivery topics count in the numerator and not in `events`, so it is a rough share, not an exact one.
+- **Seconds since the Silver job last reported / since the last Gold update** = now minus `last_seen_at` of the `silver_job` / `gold_build` rows of `pipeline_heartbeat`. The Silver job reports twice over: `batch N` after every micro-batch and `alive` every 15 seconds from a timer thread while the Silver query is active, so the age stays under about 15 seconds on a healthy but idle job (Spark runs no batch when the source is quiet) and grows only when the job is stopped, hung or cannot reach Postgres. Panel thresholds: amber at 30 s, red at 120 s.
+- History-mode data is all late by rule, so the late-event rate is meaningful in `--live` runs only.
+
+`live_metrics_minute` (events, active sessions, product views, add to cart, orders placed per minute and country) uses the rules of `streaming/gold/live.py`: late events and bot sessions are excluded, minutes are UTC, `orders_placed` counts `purchase` events (the simulator emits one per order). It can differ from `silver_orders` for the same minute when a purchase event is missing or a session places two orders.
 
 ## Gold build rules
 
@@ -85,6 +106,7 @@ How `warehouse/gold_build.py` produces the tables above (details in `docs/RUNNIN
 
 - **Window.** A run recomputes what a window of Cairo days selects (default: the last 7 days; `--from-date/--to-date`, `--days`, `--full`). Orders are recomputed when their order date or any of their status rows falls in the window, plus later orders of the same customers (`order_seq`, `is_first_order`). Nothing is incremented: every measure is recalculated from Silver or from `fact_orders`.
 - **One atomic MERGE.** `agg_orders_daily` and `agg_funnel_daily` each use a single MERGE: recomputed rows update matching keys and insert new ones, and `WHEN NOT MATCHED BY SOURCE` deletes a key inside the window that has no rows left. A failure rolls the statement back, so the window is never left empty. A key that vanishes on a widened date outside the window (only when an order or session changes group there) is not deleted.
+- **Attribution.** `fact_attribution` is one atomic MERGE over the orders of the `fact_orders` window, the orders without an attribution row and the orders whose click inputs changed (a click candidate of a session with an event in the window or a late event); an order that left `fact_orders` is deleted by the same MERGE. A second statement updates `fact_orders.campaign_id` (changed values only). A click row that arrives late for an old session (`event_date` and `kafka_timestamp` both before the window) is found only by a covering window or `--full`.
 - **Time zone.** Every build step starts with `SET TIME ZONE 'UTC'`; Cairo dates use `from_utc_timestamp(ts, 'Africa/Cairo')` and are only right in a UTC session.
 - **Late data.** Limit: `silver_order_status` has no ingestion time, so a late status row is only found when its `event_date` (Cairo date of `status_time`) is in the window; a row older than the window (default 7 days) leaves the order, its lines and its `agg_orders_daily` day stale until a covering window or `--full` (run `--full` periodically or use a wider `--days`); the funnel is not affected. A late status row inside the window changes that order and the day it was placed (cohort view: delivered revenue stays on the order date); `agg_funnel_daily` also recomputes dates of late events (`kafka_timestamp` in the window, `event_date` before it) and of sessions that cross the window edge. In history mode (a replay) every replayed day counts as late, so a run recomputes all replayed days.
 - **Bots.** `is_bot` is not read from Silver: the funnel step recomputes it from `silver_events` (more than 100 events in 10 seconds in one session) over every event of the sessions it touches and excludes those sessions. Nothing is persisted.

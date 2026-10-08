@@ -5,7 +5,7 @@ python -m warehouse.gold_build [--from-date D --to-date D | --days N | --full] [
 Every step is a script of statements in warehouse/gold/NN_<step>.sql (NN is the position in STEPS), split by
 warehouse.ddl_render.split_statements and run through store.execute. The SQL is Databricks SQL / Spark SQL with
 Delta (MERGE); it is NOT portable to the Postgres fallback. Steps whose SQL file does not exist yet
-(fact_attribution, agg_campaign_daily, agg_city_product_daily, rec_product, checks) are named empty slots: the
+(agg_campaign_daily, agg_city_product_daily, rec_product, checks) are named empty slots: the
 later tasks only drop their file in.
 
 Placeholders in the SQL (anything else is rejected): {silver} and {gold} schema prefixes (store.schema_prefix,
@@ -47,6 +47,33 @@ TIME_ZONE_SQL = "SET TIME ZONE 'UTC'"
 ORDERS_WITHOUT_CREATED_AT_SQL = (
     "SELECT COUNT(DISTINCT o.order_id) FROM {silver}.silver_orders o "
     "JOIN {silver}.silver_order_status s ON s.order_id = o.order_id WHERE o.order_created_at IS NULL")
+
+# Reported by the fact_attribution step (counts over the whole table, cheap). orders_without_click: orders whose own
+# session has no usable click (the last_touch row does not carry the order's own click_id); orders_direct: orders
+# with no campaign in the last_touch model. unresolved_clicks: first UTM events of non-bot sessions whose campaign
+# neither silver_events.campaign_id nor dim_campaign resolves (same click rule as 07_fact_attribution.sql).
+ATTRIBUTION_REPORTED_SQL = {
+    "orders_without_click": (
+        "SELECT COUNT(*) FROM {gold}.fact_attribution a JOIN {gold}.fact_orders f ON f.order_id = a.order_id "
+        "WHERE a.model = 'last_touch' AND (a.click_id IS NULL OR f.click_id IS NULL OR a.click_id <> f.click_id)"),
+    "orders_direct": (
+        "SELECT COUNT(*) FROM {gold}.fact_attribution a WHERE a.model = 'last_touch' AND a.campaign_id IS NULL"),
+    "unresolved_clicks": (
+        "WITH cand AS (SELECT e.session_id, e.campaign_id, e.utm_campaign, e.event_time, e.event_id "
+        "FROM {silver}.silver_events e WHERE e.session_id IS NOT NULL AND e.event_time IS NOT NULL "
+        "AND e.utm_campaign IS NOT NULL AND e.event_type IN ('page_view', 'product_view')), "
+        "timed AS (SELECT e.session_id, unix_micros(e.event_time) AS us FROM {silver}.silver_events e "
+        "JOIN (SELECT DISTINCT session_id FROM cand) c ON c.session_id = e.session_id "
+        "WHERE e.event_time IS NOT NULL), "
+        "burst AS (SELECT session_id, COUNT(1) OVER (PARTITION BY session_id ORDER BY us "
+        "RANGE BETWEEN 10000000 PRECEDING AND CURRENT ROW) AS n FROM timed), "
+        "bots AS (SELECT DISTINCT session_id FROM burst WHERE n > 100), "
+        "fc AS (SELECT x.* FROM (SELECT c.*, ROW_NUMBER() OVER (PARTITION BY c.session_id "
+        "ORDER BY c.event_time, c.event_id) AS rn FROM cand c LEFT ANTI JOIN bots b "
+        "ON b.session_id = c.session_id) x WHERE x.rn = 1) "
+        "SELECT COUNT(*) FROM fc f WHERE f.campaign_id IS NULL AND NOT EXISTS ("
+        "SELECT 1 FROM {gold}.dim_campaign d WHERE d.utm_campaign = f.utm_campaign AND d.campaign_id <> 'unknown')"),
+}
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -202,6 +229,9 @@ def run_build(store=None, from_date=None, to_date=None, full=False, dry_run=Fals
                 if name == "fact_orders":
                     out["reported"]["orders_without_created_at"] = int(store.query(
                         render_sql(ORDERS_WITHOUT_CREATED_AT_SQL, values))[0][0])
+                if name == "fact_attribution":
+                    for key, text in ATTRIBUTION_REPORTED_SQL.items():
+                        out["reported"][key] = int(store.query(render_sql(text, values))[0][0])
             except Exception as e:
                 raise GoldBuildError(name, e, out["steps"]) from e
             out["steps"][name] = {"status": "ok", "statements": len(statements), "rows": rows}
@@ -273,6 +303,9 @@ def main(argv=None):
         if store is not None:
             store.close()
     _print_result(result)
+    if not args.dry_run:
+        from warehouse.heartbeat import beat
+        beat("gold_build", "steps: %s" % ",".join(n for n, r in result["steps"].items() if r["status"] == "ok"))
     return 0
 
 

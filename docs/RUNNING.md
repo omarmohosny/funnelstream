@@ -184,11 +184,12 @@ About 25 s. Expected:
 ```
 fact_orders: <n> rows
 fact_order_lines: <n> rows
+fact_attribution: <n> rows
 agg_orders_daily: <n> rows
 agg_funnel_daily: <n> rows
 ```
 
-The row counts `<n>` depend on the simulated run and were not measured on a full local run. The Gold test dataset of 30,000 events (a test-dataset number, not a full-run number) gives 239 orders, 29 `agg_orders_daily` rows and 48 `agg_funnel_daily` rows. `fact_orders` carries `platform`, `returned_at`, `has_failed_attempt` and `is_returned`; its `customer_key` is -1 here because the reference build reads no dimensions.
+The row counts `<n>` depend on the simulated run and were not measured on a full local run. The Gold test dataset of 30,000 events (a test-dataset number, not a full-run number) gives 239 orders, 478 `fact_attribution` rows (two per order), 29 `agg_orders_daily` rows and 48 `agg_funnel_daily` rows. `fact_orders.campaign_id` is the `last_touch` campaign here. `fact_orders` carries `platform`, `returned_at`, `has_failed_attempt` and `is_returned`; its `customer_key` is -1 here because the reference build reads no dimensions.
 
 This is a local reference build under `data/lake/gold_ref`, not the real Gold store (see "What is not built yet").
 
@@ -243,18 +244,58 @@ Observed after a history run plus the live run above (then `timeout 60` Bronze a
 2026-10-04 20:22:00  EG  1151  111  349  45  12
 ```
 
-## Watch the data move (generator, Kafka, Bronze, Silver)
+## Live and health tables
 
-`scripts\watch_demo.ps1` opens four windows: a Kafka listener (every message with its topic), Bronze (a line per batch with row counts and Kafka offsets, plus the newest raw messages), Silver (per-batch counts, the newest cleaned rows and quarantine rows) and the generator (one line per published event). It starts Kafka, creates the topics, stops Postgres to free memory, gives Spark about a minute to start, and picks a new seed each run (kept in `data\state
-ext_seed.txt`) so ids never repeat.
+The Silver job fills three small Postgres tables that Grafana reads (spec 17.3, 17.17; the schema is `warehouse/live_ddl.sql`):
+
+| Table | One row per | Holds |
+|---|---|---|
+| `live_metrics_minute` | minute (UTC) and country | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed` of non-late, non-bot events (the rules of `streaming/gold/live.py`) |
+| `pipeline_health_minute` | minute (UTC) | `events` (Silver events by Kafka arrival minute), `late_events`, `quarantined` (by `received_at`), `silver_batches` (batches finished in the minute) |
+| `pipeline_heartbeat` | component | `last_seen_at` and `details` for `silver_job` (`batch N` after every batch and `alive` every 15 s while the Silver query is active), `gold_build` and `publish` (after a successful run) |
+
+`pipeline_batch_log` (one row per finished Silver batch, key `job_run_id`, `batch_id`) is the source of `silver_batches`. Dashboards and alerts read these tables only, through the read-only role `grafana_ro` (SELECT on these four tables, password from `GRAFANA_DB_PASSWORD` in `.env`; `.env.example` lists the names).
+
+Apply the DDL (idempotent, safe to repeat; it prints what it created and never prints a password):
+
+```powershell
+docker compose up -d postgres
+docker compose run --rm spark python scripts/apply_live_ddl.py      # PG_DSN inside the container points at host "postgres"
+```
+
+Without `GRAFANA_DB_PASSWORD` the tables are created, the role is skipped, a red error is printed and the exit code is 3 (`watch_demo.ps1` prints a warning and carries on).
+
+How the Silver job fills them: after each micro-batch `process_batch` succeeds, the job takes the minutes the batch touched (event-time minutes of its Silver events, Kafka-arrival minutes, quarantine minutes, and the minute the batch finished) and recomputes the full totals for those minutes from the Silver tables. Each measure is written with `INSERT ... ON CONFLICT DO UPDATE SET measure = EXCLUDED.measure`, so a total is always replaced, never incremented, and running a batch twice changes nothing. It is on when `PG_DSN` is set (the `spark` service sets it, host `postgres`) or `--live-store` is passed, and off otherwise (no psycopg import, the Silver flow is unchanged). The log shows one line per batch: `live_store: N metric minutes, M health minutes`. A Postgres outage never fails a batch: a warning is logged, the minutes stay pending and are written with the next batch that reaches the database (retry after 30 seconds). Limitations: the bot rule looks back 6 hours before the first touched minute, as in `streaming/gold/live.py`; minutes pending after an outage are lost if the job stops before the database is back (restart repairs only minutes that later batches touch).
+
+Check what was written:
+
+```powershell
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT component, details, now() - last_seen_at AS age FROM pipeline_heartbeat" -c "SELECT * FROM live_metrics_minute ORDER BY minute_start DESC LIMIT 5" -c "SELECT * FROM pipeline_health_minute ORDER BY minute_start DESC LIMIT 5"'
+```
+
+History-mode data is all late (by rule), so `live_metrics_minute` fills only from `--live` runs; `pipeline_health_minute` fills for both.
+
+The heartbeats of `publish_silver.py` and `warehouse/gold_build.py` are best effort (3 second connect timeout, errors swallowed, nothing happens without `PG_DSN`); on the host set `PG_DSN` (the value in `.env` already points at `localhost:5432`) to have them written.
+
+### One combined streaming job
+
+```powershell
+docker compose run --rm spark python -m streaming.jobs.pipeline --lake data/lake --checkpoints data/checkpoints --show 3 --live-store
+```
+
+`streaming.jobs.pipeline` runs the three Bronze queries and the Silver query in one process and one Spark session (one container instead of two, about 3 GB). `--show N` prints the same `[bronze]` progress lines and `[silver]` batch views as the two separate jobs; Ctrl+C stops all four queries. Missing Bronze tables are created empty first so the Silver stream can start at once. `streaming.jobs.bronze_ingest` and `streaming.jobs.silver_clean` still work on their own.
+
+## Watch the data move (generator, Kafka, pipeline)
+
+`scripts\watch_demo.ps1` starts Kafka (topics created), Postgres (waits for `pg_isready`, applies the live DDL) and Grafana, then opens three windows: a Kafka listener (every message with its topic), `FS 2 Pipeline` (one Spark job: a `[bronze]` line per batch with row counts and Kafka offsets plus the newest raw messages, a `[silver]` view per batch with counts, the newest cleaned rows and quarantine rows; it also writes the live and health tables) and the generator (one line per published event). Memory target for the whole stack: Kafka 1 GB, Postgres 0.5 GB, Grafana 0.5 GB, one Spark container 3 GB. It gives Spark about a minute to start, picks a new seed each run (kept in `data\state\next_seed.txt`) so ids never repeat, and prints the Grafana URL at the end: http://localhost:3000.
 
 ```powershell
 .\scripts\watch_demo.ps1                     # 3000 events at 50 per second
 .\scripts\watch_demo.ps1 -Events 20000 -ShowEvery 20
-.\scripts\stop_demo.ps1                      # stops the Bronze and Silver containers; then close the windows
+.\scripts\stop_demo.ps1                      # stops the pipeline container (fs-pipeline); then close the windows
 ```
 
-The same views by hand: `bronze_ingest --show [N]` and `silver_clean --show [N]` (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
+The same views by hand: `streaming.jobs.pipeline --show [N]`, or `bronze_ingest --show [N]` and `silver_clean --show [N]` as two jobs (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
 
 ## Publish to Databricks
 
@@ -342,7 +383,7 @@ docker compose run --rm spark python -m warehouse.gold_build --full             
 docker compose run --rm spark python -m warehouse.gold_build --steps fact_orders,agg_orders_daily
 ```
 
-Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, checks. The run stops at the first failing step and names it (exit 1); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, and the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does).
+Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, checks. The run stops at the first failing step and names it (exit 1); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does) and the three attribution counts.
 
 The three window options are `--from-date/--to-date` (both, ISO dates, Cairo days), `--days N` and `--full`; with none of them the window is the last 7 days. The window selects what is recomputed:
 
@@ -351,7 +392,13 @@ The three window options are `--from-date/--to-date` (both, ISO dates, Cairo day
 - Late status rows older than the window: `silver_order_status` has no ingestion time, so orders are found only by the order date or the status row `event_date` (the Cairo date of `status_time`). A late status row whose `status_time` is older than the window (for example a delivered row 9 days after the order, in the default 7-day window) is NOT seen: the order, its lines and its `agg_orders_daily` day stay stale until a window that covers that date, a wider `--days`, or `--full` runs. The funnel is not affected (it also looks at `kafka_timestamp`). Run `--full` periodically (for example weekly) or use a wider `--days`.
 - Dimensions are always rebuilt in full (they are small): SCD2 with `valid_from = updated_at`, one new version per day at most, new versions only when city, district and primary_device (customer) or category and price (product) change. `dim_campaign` comes from `simulator/campaigns.py`, `dim_date` covers 2025-01-01 to 2027-12-31.
 - The -1 repair: a fact row whose customer or product had no dimension version gets key -1 and keeps the natural id. Every recomputed order or line looks the key up again, so once the dimension row exists the next build that recomputes that order repairs the key. Orders outside the window keep their key until a window (or `--full`) covers them again.
-- Empty slots: `fact_attribution` (Task 13), `agg_campaign_daily` (Task 12), `agg_city_product_daily` and `rec_product` (Task 14) and the SQL checks (Task 16) have no SQL file yet; the build lists them as `empty` and skips them. `fact_orders.campaign_id` stays NULL until Task 13, and the build never overwrites it.
+- Attribution (`fact_attribution`, `warehouse/gold/07_fact_attribution.sql`, after `fact_order_lines`): exactly two rows per order, `last_touch` and `first_touch`, key `(order_id, model)`, `order_total` copied from the order. Rules (full text in `docs/metrics.md`, "Attribution model"): (1) the order's own session click, found by the order's `click_id`; (2) if there is none and the order has a `customer_id`, the customer's clicks from any session in the 7 days before `order_created_at` (from `order_created_at - 7 days` inclusive to `order_created_at` exclusive), `last_touch` the latest and `first_touch` the earliest; (3) otherwise direct: `campaign_id` and `click_id` NULL. A click is the first `page_view` or `product_view` of a session that carries a `utm_campaign`; bot sessions (recomputed, same rule as the funnel) are excluded; the campaign is `silver_events.campaign_id` when set, else the `dim_campaign` row with that `utm_campaign`; an unresolved UTM is not a click. Ties on click time go to the smallest `click_id`.
+  - Window: the step recomputes the orders of the `fact_orders` window (order date or status row in the window), the orders that have no attribution row yet, and the orders whose inputs changed: orders reached (own `click_id`, or same customer within 7 days after the click) by a click candidate of any session that has an event dated in the window or a late event (`event_date` before the window, `kafka_timestamp` Cairo date inside it). It is one atomic MERGE; an order that is no longer in `fact_orders` is deleted from the same MERGE (tombstone rows: `NOT MATCHED BY SOURCE` cannot be limited to the window orders because the table has no date column). A second statement of the file MERGE-updates `fact_orders.campaign_id` from the `last_touch` rows (NULL for direct orders), writing only changed values; it is the only column of `fact_orders` this step touches, and the `fact_orders` step never overwrites it.
+  - First run and gaps: the first run (or any `--full`) recomputes every order. Orders with a NULL `order_created_at` or no status row are not in `fact_orders`, so they get no attribution row. If a `silver_events` row is removed or rewritten, an order outside the window keeps its old attribution until a covering window or `--full` runs.
+  - Real workspace check: on the Databricks workspace (351 orders, seed 7 data plus two small live runs) the step wrote 702 rows (two per order); 145 orders were attributed to a campaign and 206 were direct, and the result equalled the local reference build with 0 mismatches in all five Gold tables.
+  - Reported after the step: `orders_without_click` (orders whose own session has no usable click), `orders_direct` (orders with no campaign in `last_touch`) and `unresolved_clicks` (first UTM events of non-bot sessions that no campaign could be matched to). Counts only, over the whole table.
+  - Limits: a click row that arrives late for an old session with an `event_date` and a `kafka_timestamp` both before the window is found only by a covering window or `--full`. Linking an anonymous pre-login session to a customer after login is out of scope (spec 17.11): such orders can show as direct, and a click only belongs to the customer id its own event carries.
+- Empty slots: `agg_campaign_daily` (Task 12), `agg_city_product_daily` and `rec_product` (Task 14) and the SQL checks (Task 16) have no SQL file yet; the build lists them as `empty` and skips them.
 
 The SQL was tested on local Spark with Delta only (`tests/test_gold_build_spark.py`); it has not been run against the real workspace yet.
 
@@ -361,9 +408,23 @@ The SQL was tested on local Spark with Delta only (`tests/test_gold_build_spark.
 
 `python -m warehouse.gold_build --full` ran for real on the Databricks workspace over the Silver mirror of the fresh run (seed 7, 20,000 events, noise on), twice in a row. Rows built: dim_customer 5,001 (5,000 versions plus the -1 row), dim_product 201, dim_campaign 4, dim_date 1,095, fact_orders 153, fact_order_lines 305, agg_orders_daily 27, agg_funnel_daily 41. Compared column by column with the local reference build (`streaming.gold.build`): 0 cell mismatches and no row on only one side in all four tables (surrogate keys excluded, the reference uses -1). Every order and line resolved to a real dimension key (0 NULL, 0 left at -1). Order revenue and line revenue both sum to 250,155.95. The second run changed nothing: identical row counts, key sums and revenue (no identity key was reassigned).
 
+## Grafana (live monitoring)
+
+Grafana (`grafana/grafana-oss:11.3.0`, 512 MB limit) starts with the default `docker compose up -d`. It reads the four Postgres live/health tables through the read-only role `grafana_ro` and is fully provisioned from `monitoring/grafana/`.
+
+Setup (once): put `GRAFANA_DB_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` in `.env` (names in `.env.example`), start Postgres, then create the tables and the role: `docker compose run --rm spark python scripts/apply_live_ddl.py` (the host does not read `.env`; the container gets `PG_DSN` and `GRAFANA_DB_PASSWORD` from it). Without `GRAFANA_DB_PASSWORD` the script creates the tables, prints a red error and exits with code 3, and the datasource health check fails.
+
+- URL: http://localhost:3000. The dashboard "FunnelStream: live pipeline" (uid `fs-live`, refresh 5 s, last 30 minutes, Cairo time) opens as the home page without a login (anonymous Viewer). To edit or manage alerts log in as `admin` with `GRAFANA_ADMIN_PASSWORD`. Provisioned items are read-only in the UI; change the files under `monitoring/grafana/` instead (dashboards reload within 30 s, alert and datasource files after `docker compose restart grafana`).
+- Panels: events per minute (all countries) and the last full minute; active sessions, orders placed, product views and add-to-cart per minute (from `live_metrics_minute`, non-late non-bot events); late-event rate (gauge for the last 5 minutes and a 5 minute sliding line, red at 5%); quarantine share (gauge and line, red at 2%) and quarantine rows in the trailing hour (from `pipeline_health_minute`); seconds since the Silver job last reported (alive every 15 s or batch; amber 30 s, red 120 s), last Gold update and last publish (amber 24 h, red 48 h; from `pipeline_heartbeat`); a text panel with the three alerts and what to do.
+- Alerts (folder "FunnelStream alerts", group `fs-pipeline`, evaluated every minute): late-event rate above 5% over 5 minutes (needs 20 events, live runs only because history mode is all late by rule); quarantine share above 2% over 5 minutes (needs 20 rows); no events for 2 minutes (no data also fires). All notify the webhook contact point `fs-webhook` (`http://host.docker.internal:9099/alert`).
+- Alert sink: in a separate terminal run `python scripts/alert_sink.py` (`--port` to change). It prints one line per alert (time, FIRING or RESOLVED, rule, summary) and appends the raw JSON to `logs/alerts.log` (git-ignored). `GET http://localhost:9099/` returns `ok`.
+- Empty panels or "no data" are normal until the Silver job has written to Postgres (the stat panels show "no data" until a heartbeat exists). The "no events" alert fires while nothing is flowing.
+- Reset: `docker compose rm -sf grafana; docker volume rm funnelstream_grafanadata` (drops Grafana's own state; the provisioned files are re-read on the next start). To empty the data: `TRUNCATE live_metrics_minute, pipeline_health_minute, pipeline_batch_log, pipeline_heartbeat;` in Postgres.
+- Verified on 2026-10-08 against a real Grafana 11.3.0 container and the compose Postgres with sample rows (datasource health OK, every panel query returned rows, the three rules fired and the webhook reached the sink). Not verified with live Silver job output; that depends on the G1 writers.
+
 ## What is not built yet
 
-- The Gold build runs the dimensions, facts and the two summaries (see "Gold build"); attribution, campaign, city-product and recommendation tables, the SQL checks and the Postgres loader are later tasks. The local `streaming.gold.build` output is a reference only.
+- The Gold build runs the dimensions, facts, attribution and the two summaries (see "Gold build"); campaign, city-product and recommendation tables, the SQL checks and the Postgres loader are later tasks. The local `streaming.gold.build` output is a reference only.
 - Power BI dashboards.
 - Postgres and Airflow containers exist in `docker-compose.yml` but are not part of this run; the Postgres loader and batch jobs are not exercised here.
 
