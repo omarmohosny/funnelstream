@@ -12,7 +12,8 @@ param(
     [Parameter(Position = 0)]
     [ValidateSet('kill', 'status', 'restart', 'verify')]
     [string]$Step,
-    [int]$Sample = 3         # same meaning as in watch_demo.ps1 (rows printed per batch)
+    [int]$Sample = 3,        # same meaning as in watch_demo.ps1 (rows printed per batch)
+    [switch]$Force           # kill even when the events line is already stale
 )
 $ErrorActionPreference = 'Continue'   # docker writes progress to stderr; Stop would make that fatal in PowerShell 5.1
 $root = Split-Path -Parent $PSScriptRoot
@@ -54,6 +55,12 @@ switch ($Step) {
         Test-Docker
         $running = docker ps --filter name=fs-pipeline --format '{{.Names}}'
         if (-not $running) { Fail "fs-pipeline is not running. Start it with .\scripts\watch_demo.ps1 or .\scripts\failure_demo.ps1 restart." }
+        $lag = Query-Pg "SELECT coalesce(round(extract(epoch FROM now() - max(minute_start)))::text, '') FROM live_metrics_minute"
+        if ($lag -match '^\d+$' -and [int]$lag -gt 150) {
+            Write-Host ("WARNING: the newest minute with events is already {0} s old, so the 'No events for 2 minutes' alert is already firing and a kill will not trigger a new alert." -f $lag) -ForegroundColor Yellow
+            Write-Host "Start the generator (or wait until the pipeline has caught up: .\scripts\failure_demo.ps1 status shows under about 90 s), then kill. Use -Rate 20 -SyncEvery 0 on watch_demo.ps1 if the pipeline falls behind." -ForegroundColor Yellow
+            if (-not $Force) { Write-Host "Not killed. Repeat with -Force to kill anyway." -ForegroundColor Yellow; exit 3 }
+        }
         $t = Get-Date
         docker kill fs-pipeline
         if ($LASTEXITCODE -ne 0) { Fail "docker kill fs-pipeline failed" }
