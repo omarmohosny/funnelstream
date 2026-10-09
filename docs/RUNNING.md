@@ -414,6 +414,30 @@ The SQL was tested on local Spark with Delta only (`tests/test_gold_build_spark.
 
 `python -m warehouse.gold_build --full` ran for real on the Databricks workspace over the Silver mirror of the fresh run (seed 7, 20,000 events, noise on), twice in a row. Rows built: dim_customer 5,001 (5,000 versions plus the -1 row), dim_product 201, dim_campaign 4, dim_date 1,095, fact_orders 153, fact_order_lines 305, agg_orders_daily 27, agg_funnel_daily 41. Compared column by column with the local reference build (`streaming.gold.build`): 0 cell mismatches and no row on only one side in all four tables (surrogate keys excluded, the reference uses -1). Every order and line resolved to a real dimension key (0 NULL, 0 left at -1). Order revenue and line revenue both sum to 250,155.95. The second run changed nothing: identical row counts, key sums and revenue (no identity key was reassigned).
 
+## One command: publish, Gold build, checks
+
+`scripts/run_batch.py` runs the three batch phases in order and prints one summary. Publish needs Spark (it exports the local Silver tables), so run it in the container; everything else also works on the host.
+
+```powershell
+docker compose run --rm spark python scripts/run_batch.py                    # publish, Gold build (last 7 days), checks
+docker compose run --rm spark python scripts/run_batch.py --days 30
+docker compose run --rm spark python scripts/run_batch.py --from-date 2026-10-01 --to-date 2026-10-05
+docker compose run --rm spark python scripts/run_batch.py --full             # rebuild all of Gold
+docker compose run --rm spark python scripts/run_batch.py --skip-publish     # Gold build and checks only
+docker compose run --rm spark python scripts/run_batch.py --dry-run          # publish dry-run and Gold dry-run, nothing executed
+python scripts/run_batch.py --skip-publish --dry-run                         # host: prints the Gold plan, needs no settings
+```
+
+Options: `--skip-publish`; the Gold window `--from-date/--to-date`, `--days N`, `--full` (same meaning and rules as `warehouse.gold_build`); `--steps a,b` (Gold steps only, `checks` is not accepted because it always runs last); `--dry-run`; `--lake` and `--export-dir` (passed to publish).
+
+Phases: `publish` (the same code as `scripts/publish_silver.py`), `gold` (`run_build` for every step except `checks`, or the steps from `--steps`) and `checks` (`run_build` with only the `checks` step). A phase that fails stops the run: stderr gets `BATCH FAILED at <phase>: <reason>` and the phases that had finished. The checks step fails the batch when it raises a Gold build error or reports failed checks. While the checks have no SQL file (Task 16) the run prints `checks: not built yet (T16)` and still succeeds.
+
+Exit codes: 0 success, 1 a phase failed, 2 bad arguments or missing store settings (the same convention as `gold_build`). The publish and `gold_build` heartbeats are written once each after their phase succeeded, never in a dry run, and a heartbeat problem never fails the batch.
+
+The summary shows the seconds per phase, the row counts publish returned per table, the Gold window, the status and row count of every Gold step, the reported figures (orders without `order_created_at` and the three attribution counts), the checks status and a last line `BATCH OK in <seconds>s`.
+
+`scripts/sync_gold.ps1` still runs the publish and the Gold build as two separate commands; it can call `run_batch.py` later.
+
 ## Grafana (live monitoring)
 
 Grafana (`grafana/grafana-oss:11.3.0`, 512 MB limit) starts with the default `docker compose up -d`. It reads the four Postgres live/health tables through the read-only role `grafana_ro` and is fully provisioned from `monitoring/grafana/`.

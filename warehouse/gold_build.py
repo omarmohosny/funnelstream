@@ -269,6 +269,12 @@ def _print_result(result):
         print("reported %s: %d" % (k, v))
 
 
+def record_heartbeat(result):
+    """Best-effort gold_build heartbeat (used by main() and scripts/run_batch.py; never raises)."""
+    from warehouse.heartbeat import beat
+    beat("gold_build", "steps: %s" % ",".join(n for n, r in result["steps"].items() if r["status"] == "ok"))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Recompute the Gold tables from the Silver mirror (Databricks).")
     ap.add_argument("--from-date", help="first Cairo date of the window (with --to-date), yyyy-mm-dd")
@@ -303,8 +309,7 @@ def main(argv=None):
             store.close()
     _print_result(result)
     if not args.dry_run:
-        from warehouse.heartbeat import beat
-        beat("gold_build", "steps: %s" % ",".join(n for n, r in result["steps"].items() if r["status"] == "ok"))
+        record_heartbeat(result)
     return 0
 
 

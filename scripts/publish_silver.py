@@ -20,7 +20,9 @@ def _get_spark():
     return get_spark("publish_silver")
 
 
-def main(argv=None):
+def run(argv=None):
+    """Parse, validate and publish. Returns (exit_code, result, args). Prints errors but no table lines and writes no
+    heartbeat: main() and scripts/run_batch.py both call report() afterwards (one code path)."""
     ap = argparse.ArgumentParser(description="Export Silver (allow-listed columns), upload to a Databricks "
                                              "volume, MERGE into the Silver mirror.")
     ap.add_argument("--lake", default="data/lake")
@@ -37,15 +39,15 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.export_only and args.upload_only:
         print("error: --export-only and --upload-only cannot be combined", file=sys.stderr)
-        return 2
+        return 2, None, args
     if args.reset and args.export_only:
         print("error: --reset and --export-only cannot be combined", file=sys.stderr)
-        return 2
+        return 2, None, args
     tables = [t.strip() for t in args.tables.split(",") if t.strip()] if args.tables else None
     if tables and any(t not in PUBLISH_ALLOWLIST for t in tables):
         print("error: unknown table(s): %s" % ", ".join(t for t in tables if t not in PUBLISH_ALLOWLIST),
               file=sys.stderr)
-        return 2
+        return 2, None, args
     store = uploader = spark = None
     try:
         catalog, volume = env_catalog(), env_volume()
@@ -58,7 +60,7 @@ def main(argv=None):
                 print("  plan: %s" % reset_statement(t, catalog))
             if not args.dry_run and not args.yes:
                 print("DRY RUN: nothing was truncated or uploaded. Repeat with --yes to execute.")
-                return 2
+                return 2, None, args
         if not (args.dry_run or args.export_only):  # these two never talk to Databricks
             store = get_store("databricks")
             uploader = make_uploader(os.environ["DATABRICKS_HOST"], os.environ["DATABRICKS_TOKEN"])
@@ -70,18 +72,23 @@ def main(argv=None):
                          reset=args.reset)
     except (StoreConfigError, ValueError) as e:
         print("error: %s" % e, file=sys.stderr)
-        return 2
+        return 2, None, args
     except Exception as e:
         token = os.environ.get("DATABRICKS_TOKEN") or ""
         text = " ".join(str(e).split())[:300]
         print("error: publish failed (%s): %s" % (type(e).__name__, text.replace(token, "***") if token else text),
               file=sys.stderr)
-        return 1
+        return 1, None, args
     finally:
         if spark is not None:
             spark.stop()
         if store is not None:
             store.close()
+    return 0, result, args
+
+
+def report(result, args):
+    """Print the per-table lines and write the publish heartbeat (best effort, never raises)."""
     for table, r in result.items():
         print("%-28s rows=%-8d files=%d merged=%s" % (table, r["rows"], r["files"], r["merged"]))
         for stmt in r.get("statements", []):
@@ -89,7 +96,13 @@ def main(argv=None):
     if not (args.dry_run or args.export_only):
         from warehouse.heartbeat import beat
         beat("publish", "tables: %s" % ",".join(result))
-    return 0
+
+
+def main(argv=None):
+    rc, result, args = run(argv)
+    if rc == 0:
+        report(result, args)
+    return rc
 
 
 if __name__ == "__main__":
