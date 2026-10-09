@@ -301,6 +301,38 @@ By default the generator runs with `--forever` (rounds of `--events` events; rou
 
 The same views by hand: `streaming.jobs.pipeline --show [N]`, or `bronze_ingest --show [N]` and `silver_clean --show [N]` as two jobs (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
 
+## Failure demo (G3)
+
+Story: kill the Spark job while data is flowing, watch Grafana and the alert notice, restart the job, and show that Silver has no duplicate events. Everything is a command the presenter types; nothing runs by itself. PowerShell may need `powershell -ExecutionPolicy Bypass -File .\scripts\failure_demo.ps1 <step>` if script execution is disabled on the machine.
+
+Before you start (once, and again if an earlier run left duplicates): the duplicate check reads the whole Silver table, so duplicates that are already in the lake are counted. The lake in this repo can hold old ones: Silver only matches a key inside the `event_date` partitions of the batch, so an `event_id` that is replayed with a different `event_time` (the same simulator seed used on two different days) is stored twice. That is a property of old data, not of a crash. For a clean demo start from an empty lake (step 0 above: delete `data\lake` and `data\checkpoints`, then `docker compose down` so Kafka forgets the old messages). If you do not reset, take a baseline: run `verify` before the kill and compare the numbers afterwards. The demo then proves the crash added no new duplicates (the `duplicate_keys` numbers are the same before and after).
+
+Commands in order:
+
+```powershell
+.\scripts\watch_demo.ps1                 # 1. start everything; wait about 2 minutes, open http://localhost:3000
+python scripts\alert_sink.py             #    (separate terminal) shows the alert messages
+.\scripts\failure_demo.ps1 status        # 2. optional: heartbeat age under 30 s, newest minute under about 90 s ago
+.\scripts\failure_demo.ps1 verify        #    optional baseline (about 1 minute, see below)
+.\scripts\failure_demo.ps1 kill          # 3. docker kill fs-pipeline: a real crash
+.\scripts\failure_demo.ps1 status        # 4. repeat every 30 s: heartbeat age grows, newest minute stops moving
+.\scripts\failure_demo.ps1 restart       # 5. new pipeline window, same command and checkpoints as watch_demo.ps1
+.\scripts\failure_demo.ps1 status        # 6. heartbeat age back under 30 s, newest minute is current
+.\scripts\failure_demo.ps1 verify        # 7. duplicate check on Silver
+```
+
+What to say and look at:
+
+1. Before the kill the events-per-minute line on the dashboard "FunnelStream: live pipeline" is moving and the "seconds since the Silver job last reported" panel stays under 30 s.
+2. Kill: say that the job died without warning (`docker kill`, no clean shutdown) while the generator keeps publishing to Kafka. Within one minute the heartbeat panel turns amber (30 s) and then red (120 s); the events line falls to zero once the last minute with data is more than two minutes old.
+3. Alert: the rule "No events for 2 minutes" (`fs-no-events`) runs every minute, has no extra pending time (`for: 0s`) and counts the events of the last 2 minutes. After the kill it fires between about 1 and 3 minutes later: the last minute with data leaves the 2 minute window between 1 and 2 minutes after the kill, and the next one-minute check sees it. The webhook message follows after the group wait of 10 s and shows in the alert sink as FIRING (on the dashboard, Alerting > Alert rules, log in as `admin`). So "within 2 to 3 minutes" is correct as a promise; the worst case is just over 3 minutes. The two other rules stay quiet.
+4. Restart: say that the same command and the same checkpoint folder are used, so Spark resumes from the last Kafka offsets it committed and reads what Kafka kept while it was down. The new window needs about 1 minute to start Spark, then `[bronze]` and `[silver]` lines show the backlog. The events line comes back (a catch-up bump is normal because the generator kept publishing) and the heartbeat turns green. The alert resolves at the next one-minute check after events are back, roughly 2 to 4 minutes after the restart command, and the sink prints RESOLVED (resolved notifications wait up to the group interval of 1 minute).
+5. Verify: `scripts\check_duplicates.py` runs in the 1.5 GB `sync` container next to the pipeline container and prints one line per Silver table (`silver_events` by `event_id`, `silver_orders` by `order_id`, `silver_order_status` by `event_id`, `silver_order_items` by `order_id` and `line_no`) and `NO DUPLICATES` or `DUPLICATES FOUND`. Exit code 0 is clean, 1 duplicates, 2 a missing table or a wrong `--lake` path. It starts Spark, so it takes about a minute. It writes nothing and never blocks the pipeline: Delta reads a snapshot, so a batch that is being written at that moment is read at its last committed version.
+
+What the check proves and what it does not: it proves that the Silver tables hold no duplicate key after the crash and the restart, that is, the replayed batches after the restart did not add a second copy. It does not prove anything about Bronze. Bronze is append-only and may contain re-delivered messages (after a restart Spark can read the same offsets again); Silver is the layer that removes them with its MERGE on the key. It also does not check that no event was lost, and it does not look at Gold.
+
+Repeat it: run the commands again from step 2. No cleanup is needed between runs: Postgres, Kafka and the checkpoints keep working, the generator keeps running (use a new `watch_demo.ps1` only if you stopped it), and the alert returns to normal by itself. Close the old `FS 2 Pipeline` window after each restart (its `docker run` ended with the kill). If `restart` finds a leftover `fs-pipeline` container it removes it first. Wait until the previous alert shows RESOLVED before the second kill, otherwise the alert is still firing and the second kill shows no new FIRING message.
+
 ## Publish to Databricks
 
 Pushes the allow-listed Silver columns to a Databricks Silver mirror. Verified against a real Databricks workspace (Free Edition, catalog `funnelstream`, SQL warehouse, volume `silver_upload`) with a 5000-event run: `check_databricks.py --upload-test`, `apply_ddl.py --backend databricks`, `publish_silver.py` (dry run, full run twice, `--upload-only`) all ran for real.
