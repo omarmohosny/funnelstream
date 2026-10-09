@@ -5,7 +5,7 @@ so every number is the full-day total and a rerun returns the same figures. If t
 snapshot for every campaign on that date, nothing is pulled and the stored report is returned
 (status "cached"). Otherwise the API is pulled, validated, stored (status "pulled").
 
-Writes go through get_store() into silver_campaign_snapshots; rows the validator rejects go to
+Writes go through get_store("databricks") into silver_campaign_snapshots; rows the validator rejects go to
 silver_quarantine (NEGATIVE_SPEND, CLICKS_GT_IMPRESSIONS) and never into the snapshots.
 Run by hand:  python -m batch.ads_report [--report-date YYYY-MM-DD] [--api-url URL] [--force]
 """
@@ -143,7 +143,7 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true", help="pull again even if the report is stored")
     a = ap.parse_args(argv)
     from warehouse.store import get_store
-    with get_store() as store:
+    with get_store("databricks") as store:
         result = run(store, a.api_url, report_date=a.report_date, force=a.force)
     print(format_report(result))
     print("file:", result["path"])

@@ -40,6 +40,7 @@ services:
     environment:
       _PIP_ADDITIONAL_REQUIREMENTS: "databricks-sql-connector requests pyarrow pyspark==3.5.1 psycopg[binary]==3.1.19"
       AD_API_URL: "http://host.docker.internal:8000"
+      GOLD_BACKEND: databricks   # the ad report lives in the Databricks Silver mirror; .env says postgres for the live tables
       PYTHONPATH: /opt/airflow
       PG_DSN: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
     extra_hosts:

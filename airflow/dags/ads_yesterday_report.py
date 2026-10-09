@@ -17,7 +17,7 @@ from warehouse.store import get_store
 def ads_report(**context):
     conf = (context.get("dag_run") and context["dag_run"].conf) or {}
     report_date = date.fromisoformat(conf["report_date"]) if conf.get("report_date") else None
-    with get_store() as store:
+    with get_store("databricks") as store:
         result = run(store, os.environ.get("AD_API_URL", "http://host.docker.internal:8000"),
                      now=datetime.now(timezone.utc), report_date=report_date, force=bool(conf.get("force")))
     print(format_report(result))

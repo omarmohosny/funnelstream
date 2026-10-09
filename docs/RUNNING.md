@@ -307,6 +307,8 @@ Story: kill the Spark job while data is flowing, watch Grafana and the alert not
 
 Before you start (once, and again if an earlier run left duplicates): the duplicate check reads the whole Silver table, so duplicates that are already in the lake are counted. The lake in this repo can hold old ones: Silver only matches a key inside the `event_date` partitions of the batch, so an `event_id` that is replayed with a different `event_time` (the same simulator seed used on two different days) is stored twice. That is a property of old data, not of a crash. For a clean demo start from an empty lake (step 0 above: delete `data\lake` and `data\checkpoints`, then `docker compose down` so Kafka forgets the old messages). If you do not reset, take a baseline: run `verify` before the kill and compare the numbers afterwards. The demo then proves the crash added no new duplicates (the `duplicate_keys` numbers are the same before and after).
 
+Alert precondition: the alert only notifies when its state changes, so it must be quiet before the kill. Start with a rate the pipeline can keep up with and without the Gold sync window competing for the CPU: `powershell -ExecutionPolicy Bypass -File .\scripts\watch_demo.ps1 -Rate 20 -SyncEvery 0`. Wait until `failure_demo.ps1 status` shows the newest minute under about 90 seconds ago, and keep the generator window running. If the pipeline falls behind (the `[silver]` lines show batches slower than the 10 second trigger), the newest minute gets older than 2 minutes, the alert fires on its own and stays firing, and a later kill changes nothing, so no new message reaches the alert sink. `failure_demo.ps1 kill` now warns about this and stops with exit code 3 unless you add `-Force`. Grafana also repeats a still-firing alert only once per hour (`repeat_interval: 1h`).
+
 Commands in order:
 
 ```powershell
@@ -383,13 +385,13 @@ Silver mirror tables not in the recreate list keep their old rows, because publi
 
 ## Yesterday's ad report (Airflow DAG `ads_yesterday_report`)
 
-Pulls the mock ad API for yesterday (UTC day), stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. The first run of a day pulls (`pulled`); any rerun the same day returns the stored report without calling the API (`cached`). The pull is final (as of 00:00 UTC today), so numbers never change on a rerun. Rows with negative spend or clicks above impressions go to `silver_quarantine`. Schedule: 03:00 UTC daily. Needs `GOLD_BACKEND=databricks` (the Silver mirror tables exist only there).
+Pulls the mock ad API for yesterday (UTC day), stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. The first run of a day pulls (`pulled`); any rerun the same day returns the stored report without calling the API (`cached`). The pull is final (as of 00:00 UTC today), so numbers never change on a rerun. Rows with negative spend or clicks above impressions go to `silver_quarantine`. Schedule: 03:00 UTC daily. It always writes to Databricks (the Silver mirror tables exist only there), whatever `GOLD_BACKEND` says in `.env`; the host command needs the `DATABRICKS_*` values, the Airflow container gets them from `.env`.
 
 ```powershell
 .venv\Scripts\python -m mock_apis.ad_api                        # terminal 1: mock ad API on :8000
 docker compose --profile airflow up -d airflow                  # terminal 2: Airflow UI on http://localhost:8080 (2 GB, off by default)
 docker compose --profile airflow logs airflow | Select-String password   # standalone admin password
-# Without Airflow, same logic from the host (the host does not read .env: export GOLD_BACKEND=databricks and the DATABRICKS_* values first):
+# Without Airflow, same logic from the host (the host does not read .env: export the DATABRICKS_* values first):
 .venv\Scripts\python -m batch.ads_report                        # --report-date YYYY-MM-DD, --force
 ```
 
