@@ -46,7 +46,7 @@ ORD = ["dim_customer", "dim_product", "fact_orders", "fact_order_lines", "agg_or
 MONTH = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
 REBUILD = ["fact_orders", "fact_order_lines", "agg_orders_daily"]  # dimensions unchanged: skip them
 GOLD_NEEDED = ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-               "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily")
+               "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily")
 
 
 class SparkStore(GoldStore):
@@ -199,7 +199,8 @@ def test_build_result_lists_every_step_in_order_with_counts(e2e):
         assert steps[name]["status"] == "ok" and steps[name]["rows"] > 0, name
     assert steps["agg_campaign_daily"]["status"] == "ok"  # no ad snapshots here: order-only rows
     assert steps["fact_attribution"]["rows"] == 2 * steps["fact_orders"]["rows"]
-    for name in ("agg_city_product_daily", "rec_product", "checks"):
+    assert steps["agg_city_product_daily"]["status"] == "ok"
+    for name in ("rec_product", "checks"):
         assert steps[name]["status"] == "empty", name
     assert steps["dim_date"]["rows"] == 1095  # 2025-01-01 .. 2027-12-31
     assert steps["dim_campaign"]["rows"] == 4  # three campaigns plus the unknown member
