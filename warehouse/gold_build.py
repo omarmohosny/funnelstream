@@ -5,7 +5,7 @@ python -m warehouse.gold_build [--from-date D --to-date D | --days N | --full] [
 Every step is a script of statements in warehouse/gold/NN_<step>.sql (NN is the position in STEPS), split by
 warehouse.ddl_render.split_statements and run through store.execute. The SQL is Databricks SQL / Spark SQL with
 Delta (MERGE); it is NOT portable to the Postgres fallback. Steps whose SQL file does not exist yet
-(agg_campaign_daily, agg_city_product_daily, rec_product, checks) are named empty slots: the
+(agg_city_product_daily, rec_product, checks) are named empty slots: the
 later tasks only drop their file in.
 
 Placeholders in the SQL (anything else is rejected): {silver} and {gold} schema prefixes (store.schema_prefix,

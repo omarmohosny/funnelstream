@@ -19,8 +19,8 @@ from warehouse.tables import gold_table
 GOLD_DIR = gb.GOLD_DIR
 SQL_FILES = sorted(f for f in os.listdir(GOLD_DIR) if f.endswith(".sql"))
 BUILT = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-         "fact_attribution", "agg_orders_daily", "agg_funnel_daily"]
-SLOTS = ["agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"]
+         "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily"]
+SLOTS = ["agg_city_product_daily", "rec_product", "checks"]
 
 
 class FakeStore(GoldStore):
@@ -97,15 +97,15 @@ def test_statements_run_in_step_order_and_slots_are_reported_empty():
 def test_a_step_file_dropped_into_a_slot_runs_at_its_position(tmp_path, monkeypatch):
     for f in SQL_FILES:
         (tmp_path / f).write_text(open(os.path.join(GOLD_DIR, f), encoding="utf-8").read(), encoding="utf-8")
-    (tmp_path / "10_agg_campaign_daily.sql").write_text("SELECT 'campaign {gold}';", encoding="utf-8")
+    (tmp_path / "11_agg_city_product_daily.sql").write_text("SELECT 'city {gold}';", encoding="utf-8")
     monkeypatch.setattr(gb, "GOLD_DIR", str(tmp_path))
     store = FakeStore()
     result = run_build(store, **WINDOW)
-    i = store.executed.index("SELECT 'campaign funnelstream.gold';")
+    i = store.executed.index("SELECT 'city funnelstream.gold';")
     assert store.executed[i - 1] == gb.TIME_ZONE_SQL
-    assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.agg_funnel_daily")
+    assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.agg_campaign_daily")
     assert i + 1 == len(store.executed)  # nothing after it: rec_product and the later slots are still empty
-    assert result["steps"]["agg_campaign_daily"]["status"] == "ok"
+    assert result["steps"]["agg_city_product_daily"]["status"] == "ok"
 
 
 def test_steps_subset_runs_in_fixed_order_and_unknown_step_is_rejected():
@@ -311,7 +311,7 @@ def test_every_gold_sql_file_passes_the_dialect_lint(fname):
 
 def test_merge_insert_and_update_lists_name_real_columns_of_the_target_table():
     for name in ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-                 "agg_orders_daily", "agg_funnel_daily"):
+                 "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily"):
         spec = gold_table(name)
         text = "\n".join(step_statements(name, placeholders("s", "g", "2026-10-01", "2026-10-01")))
         insert = re.search(r"INSERT\s*\(([^)]*)\)\s*VALUES", text)
@@ -331,7 +331,7 @@ def test_fact_orders_leaves_campaign_id_to_the_attribution_step():
 
 def test_window_predicates_are_in_the_expected_steps_and_summaries_delete_before_merge():
     values = placeholders("s", "g", "2026-10-01", "2026-10-03")
-    for name in ("agg_orders_daily", "agg_funnel_daily"):
+    for name in ("agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily"):
         stmts = step_statements(name, values)
         assert [s.split()[0] for s in stmts] == ["MERGE"], name  # one atomic statement, no separate DELETE
         m = stmts[0]
@@ -508,3 +508,17 @@ def test_every_merge_source_has_a_uniqueness_guard_and_no_standalone_delete():
                 continue
             source = stmt.split("USING", 1)[1].split(") AS s", 1)[0]
             assert re.search(r"ROW_NUMBER\(|GROUP BY|DISTINCT|FROM VALUES|LEAD\(", source), (fname, stmt[:80])
+
+
+def test_campaign_step_runs_right_after_funnel_and_is_one_windowed_merge():
+    store = FakeStore()
+    result = run_build(store, **WINDOW)
+    merges = [s for s in store.executed if s.startswith("MERGE INTO")]
+    names = [re.match(r"MERGE INTO funnelstream\.gold\.(\w+)", s).group(1) for s in merges]
+    assert names.index("agg_campaign_daily") == names.index("agg_funnel_daily") + 1
+    assert result["steps"]["agg_campaign_daily"]["status"] == "ok" and result["steps"]["agg_campaign_daily"]["statements"] == 1
+    dry = run_build(FakeStore(), dry_run=True, **WINDOW)
+    sql = dry["steps"]["agg_campaign_daily"]["sql"]
+    assert sql[0] == gb.TIME_ZONE_SQL and len(sql) == 2
+    assert "silver_campaign_snapshots" in sql[1] and "last_touch" in sql[1] and "current_timestamp()" in sql[1]
+    assert "t.report_date BETWEEN DATE'2026-10-01' AND DATE'2026-10-03' THEN DELETE" in sql[1]
