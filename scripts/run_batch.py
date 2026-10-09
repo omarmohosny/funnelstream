@@ -7,9 +7,11 @@ Phases, in order, each timed: publish (scripts/publish_silver.py code path), gol
 step except checks) and checks (run_build with steps=["checks"]). A failed phase stops the run.
 Exit codes: 0 success, 1 a phase failed, 2 bad arguments or missing store settings.
 
-Checks contract (T16): the checks step fails the batch when run_build raises GoldBuildError for it (a failed check
-raises, like any failing step), or when its step result has status "failed" or a non-empty "failed" entry. While the
-checks slot has no SQL file the step status is "empty": the batch prints "checks: not built yet (T16)" and succeeds.
+Checks contract (T16, warehouse/checks.py): the checks step returns {"status": "ok" | "failed", "failed": [names],
+"results": [...]} and does NOT raise for a failed check, so every check runs and the whole list is printed. The batch
+fails at the checks phase when run_build raises GoldBuildError (a query that cannot run) or when the step result has
+status "failed" or a non-empty "failed" entry; then Power BI must not be refreshed. --manifest PATH adds the noise
+manifest check (quarantine count within 2%); without it that check is reported as skipped.
 Heartbeats: publish_silver.report() writes "publish" and gold_build.record_heartbeat() writes "gold_build", each once,
 after its phase succeeded (never in a dry run); both swallow every error.
 """
@@ -27,7 +29,6 @@ from warehouse import gold_build
 from warehouse.store import StoreConfigError, get_store
 
 CHECKS_STEP = "checks"
-NOT_BUILT = "checks: not built yet (T16)"
 
 
 class PhaseFailed(Exception):
@@ -68,10 +69,20 @@ def _checks_failure(step):
     return None
 
 
+def _print_checks(step):
+    """Every check with its value (stdout), so a failed batch shows what failed and by how much."""
+    if step.get("results") is None:
+        return
+    from warehouse.checks import format_results
+    for line in format_results(step):
+        print(line)
+
+
 def run(args, store, phases, results):
     """Run the phases, appending to phases [(name, seconds)] and results as each finishes; raises PhaseFailed."""
     window = dict(from_date=args.from_date, to_date=args.to_date, full=args.full, days=args.days,
                   dry_run=args.dry_run)
+    manifest = getattr(args, "manifest", None)
     gold_steps = args.steps if args.steps else [s for s in gold_build.STEPS if s != CHECKS_STEP]
 
     # publish
@@ -107,7 +118,7 @@ def run(args, store, phases, results):
     # checks
     t0 = time.monotonic()
     try:
-        checks = gold_build.run_build(store, steps=[CHECKS_STEP], **window)
+        checks = gold_build.run_build(store, steps=[CHECKS_STEP], manifest_path=manifest, **window)
     except ValueError as e:
         raise PhaseFailed("checks", _clean(e), 2) from e
     except gold_build.GoldBuildError as e:
@@ -115,11 +126,10 @@ def run(args, store, phases, results):
     except Exception as e:
         raise PhaseFailed("checks", "%s: %s" % (type(e).__name__, _clean(e))) from e
     step = checks["steps"].get(CHECKS_STEP, {})
+    _print_checks(step)
     problem = _checks_failure(step)
     if problem:
         raise PhaseFailed("checks", _clean(problem))
-    if step.get("status") == "empty":
-        print(NOT_BUILT)
     phases.append(("checks", time.monotonic() - t0))
     results["checks"] = checks
 
@@ -140,6 +150,8 @@ def _summary(phases, results, total, dry_run):
         print("reported %s: %d" % (k, v))
     cs = results["checks"]["steps"].get(CHECKS_STEP, {})
     print("checks status: %s" % cs.get("status", "unknown"))
+    if cs.get("status") == "dry-run":
+        print("checks planned: %d query(ies), %s" % (cs.get("statements", 0), cs.get("manifest", "")))
     print("BATCH OK%s in %.1fs" % (" (dry run, nothing executed)" if dry_run else "", total))
 
 
@@ -152,6 +164,8 @@ def main(argv=None):
     ap.add_argument("--full", action="store_true", help="rebuild all of Gold")
     ap.add_argument("--steps", help="comma separated Gold steps (not checks), always run in fixed order")
     ap.add_argument("--dry-run", action="store_true", help="publish dry-run and Gold dry-run, execute nothing")
+    ap.add_argument("--manifest", help="noise manifest JSON for the manifest check (quarantine count within 2%%); "
+                    "only meaningful for a fresh single run that covers the whole Silver")
     ap.add_argument("--lake", default="data/lake", help="passed to publish")
     ap.add_argument("--export-dir", default="data/export", help="passed to publish")
     args = ap.parse_args(argv)
@@ -163,6 +177,9 @@ def main(argv=None):
         if args.steps and CHECKS_STEP in args.steps:
             raise ValueError("--steps takes Gold steps only; the checks phase always runs after them")
         gold_build.resolve_window(args.from_date, args.to_date, days=args.days, full=args.full)  # same rules
+        if args.manifest:  # an unusable manifest is a usage error: stop before publishing anything
+            from warehouse.checks import load_manifest
+            load_manifest(args.manifest)
         if args.steps:
             unknown = [s for s in args.steps if s not in gold_build.STEPS]
             if unknown:

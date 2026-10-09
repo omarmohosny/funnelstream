@@ -9,7 +9,7 @@ import re
 import pytest
 
 import warehouse.gold_build as gb
-from tests.test_gold_build import FakeStore, WINDOW, lint_sql
+from tests.test_gold_build import FakeStore, NO_CHECKS, WINDOW, lint_sql
 from warehouse.gold_build import GoldBuildError, STEPS, placeholders, run_build, step_file, step_statements
 from warehouse.tables import gold_table
 
@@ -28,7 +28,7 @@ def test_the_step_file_is_in_its_slot_between_order_lines_and_the_orders_summary
 
 def test_executed_statement_order_is_order_lines_then_attribution_then_orders_summary():
     store = FakeStore()
-    result = run_build(store, **WINDOW)
+    result = run_build(store, steps=NO_CHECKS, **WINDOW)
     merges = [s.split()[2] for s in store.executed if s.startswith("MERGE")]
     i = merges.index("funnelstream.gold.fact_attribution")
     assert merges[i - 1] == "funnelstream.gold.fact_order_lines"
@@ -118,7 +118,7 @@ def test_fact_orders_step_still_leaves_campaign_id_alone():
 
 def test_runner_reports_the_attribution_counts_after_the_step():
     store = FakeStore()
-    result = run_build(store, **WINDOW)
+    result = run_build(store, steps=NO_CHECKS, **WINDOW)
     assert {k: result["reported"][k] for k in ("orders_without_click", "orders_direct", "unresolved_clicks")} == {
         "orders_without_click": 3, "orders_direct": 3, "unresolved_clicks": 3}
     queries = [q for q in store.queries if "fact_attribution" in q]

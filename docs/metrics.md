@@ -101,6 +101,45 @@ Recommendations are labelled "co-view", not "purchase". The threshold counts dis
 
 Current order status is the status with the highest `status_rank` (see spec section 6). A tie at rank 5 (`out_for_delivery`, `delivery_failed`) or rank 7 (`order_completed`, `order_returned`) goes to the latest `status_time`. `order_cancelled` counts only if no `order_shipped` row is earlier than the cancel by `status_time`; a counted cancel is terminal and wins. Arrival order never matters.
 
+## Data quality checks
+
+Source: spec section 10 and section 17 rule 10. Code: `warehouse/checks.py`, the last step of the Gold build. A `fail` check returns a count of violations and the threshold is 0; a `report` check is printed and never fails. How to run them and what a failure means: `docs/RUNNING.md`, "Data quality checks".
+
+| Check name | Group | Severity | What it counts | Threshold |
+|---|---|---|---|---|
+| `dup_key.<table>` | keys | fail | key values that appear in more than one row; one check per Silver mirror table with a key (`silver_events`, `silver_orders`, `silver_order_status`, `silver_order_items`, `silver_products`, `silver_customers`, `silver_campaign_snapshots`) and per built Gold table (the three dimensions, `dim_date`, the three facts, the four summaries) | 0 |
+| `orphan.fact_orders.customer_key` | keys | fail | `fact_orders` rows whose `customer_key` is NULL or not in `dim_customer` (-1, the unknown member, is allowed) | 0 |
+| `orphan.fact_order_lines.customer_key`, `.product_key` | keys | fail | the same for the lines against `dim_customer` and `dim_product` | 0 |
+| `orphan.fact_order_lines.order_id`, `orphan.fact_attribution.order_id` | keys | fail | lines and attribution rows whose `order_id` is not in `fact_orders` | 0 |
+| `unknown_customer_share` | keys | report | share of `fact_orders` rows with `customer_key` -1 | none |
+| `recon.order_total_sum` | reconciliation | fail | 1 when `SUM(fact_orders.order_total)` differs from `SUM(fact_order_lines.line_total)` | 0 |
+| `recon.order_total_per_order` | reconciliation | fail | orders whose `order_total` differs from the sum of their lines (no lines count as 0) | 0 |
+| `recon.orders_count` | reconciliation | fail | difference between the `fact_orders` rows and the distinct `silver_orders` that have `order_created_at` and a status row (the orders the build includes) | 0 |
+| `recon.lines_count` | reconciliation | fail | difference between the `fact_order_lines` rows and the `silver_order_items` rows whose order is in `fact_orders` | 0 |
+| `recon.attribution_two_rows` | reconciliation | fail | orders without exactly one `last_touch` and one `first_touch` row | 0 |
+| `recon.attribution_order_total` | reconciliation | fail | attribution rows whose `order_total` differs from `fact_orders` | 0 |
+| `recon.campaign_is_last_touch` | reconciliation | fail | orders whose `campaign_id` differs from their `last_touch` campaign | 0 |
+| `silver.events_null_key_or_time` | silver_hygiene | fail | `silver_events` rows with NULL `event_id` or `event_time` | 0 |
+| `silver.events_future_time` | silver_hygiene | fail | `silver_events` rows with `event_time` more than 5 minutes after the check time (the clock skew the Silver validator allows, `contracts/validate.py`) | 0 |
+| `silver.events_unknown_product` | silver_hygiene | fail | events with a non-NULL `product_id` that is not in `silver_products` | 0 |
+| `silver.order_status_not_allowed` | silver_hygiene | fail | `silver_order_status` rows whose status is not one of the ten statuses of the Silver contract (`streaming/common/status.py`) | 0 |
+| `silver.order_items_line_total` | silver_hygiene | fail | items where `line_total` differs from `quantity * unit_price` by more than 0.01 EGP (a NULL in the formula is not counted) | 0 |
+| `silver.snapshots_clicks_gt_impressions`, `silver.snapshots_negative_spend` | silver_hygiene | fail | snapshot rows with more clicks than impressions, or negative spend | 0 |
+| `district.silver_customers`, `.silver_orders`, `.silver_events` | hierarchy_history | fail | rows whose district is not a district of their city. The rule is `contracts/geo.py` `district_violation`: a blank district, `unknown` (any case) and a NULL or unknown city are not violations; spelling variants and aliases are accepted. Tested for equality with the Python function | 0 |
+| `scd2.dim_customer.one_current`, `scd2.dim_product.one_current` | hierarchy_history | fail | business keys (`customer_id`, `product_id`) that do not have exactly one `is_current` row | 0 |
+| `scd2.dim_customer.no_overlap`, `scd2.dim_product.no_overlap` | hierarchy_history | fail | pairs of versions of one business key whose validity ranges overlap | 0 |
+| `report.late_rate` | reported | report | share of `silver_events` with `is_late` (spec: alert above 5%) | none |
+| `report.quarantine_share` | reported | report | `silver_quarantine` rows divided by quarantine, events, orders and order status rows (spec: alert above 2%; rough, see "Pipeline health") | none |
+| `report.negative_delivery_lead_hours` | reported | report | orders with a negative `delivery_lead_hours` | none |
+| `report.cancelled_with_shipment` | reported | report | orders that count as cancelled and also have an `order_shipped` row | none |
+| `report.open_over_14_days` | reported | report | orders not delivered, cancelled or returned that were placed more than 14 days ago (same rule as `orders_open`) | none |
+| `report.direct_attribution_share` | reported | report | share of orders with no campaign in `last_touch` | none |
+| `rows.<table>` | reported | report | row count of each built Gold table | none |
+| `manifest.quarantine_count` | manifest | fail, only with `--manifest` | `silver_quarantine` rows against the sum of the manifest kinds `malformed_json`, `missing_field`, `unknown_type`, `bad_version`, `negative_price`, `future_timestamp`, `null_product_id`, `unknown_product_id`, `cancel_after_ship` | within 2% of the manifest count (exactly 0 when the manifest count is 0) |
+| `manifest.duplicates` | manifest | report, only with `--manifest` | printed as `duplicates: not checkable on the mirror`: the Silver job drops duplicates and keeps no count | none |
+
+Notes: the reconciliation and key checks read whole tables, not the Gold window. The two count checks compare the whole Gold fact with the whole Silver mirror, so a Gold table built from a short window over a long Silver history fails `recon.orders_count` until `--full` has run. `silver_quarantine` has no key and no duplicate check. `rec_product` and `customer_360` get their checks when their build step exists.
+
 ## Filters that apply to every metric above
 
 - Bot sessions (`is_bot`) and quarantined rows are excluded from funnel, attribution and spend (attribution recomputes the bot rule itself, like the funnel).

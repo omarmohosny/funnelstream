@@ -53,7 +53,8 @@ def env(monkeypatch):
         e.calls.append(("build", list(steps), kw))
         if steps == ["checks"]:
             r = _build_result([], kw["dry_run"])
-            r["steps"]["checks"] = _step("empty") if e.checks is None else e.checks
+            r["steps"]["checks"] = _step("ok", failed=[], results=[]) if e.checks is None else e.checks
+            r["manifest_path"] = kw.get("manifest_path")
             return r
         r = _build_result(steps, kw["dry_run"])
         r["reported"] = {"orders_direct": 3}
@@ -71,7 +72,8 @@ def test_order_and_summary(env, capsys):
     assert env.calls[2][1] == ["checks"]
     out = capsys.readouterr().out
     assert "BATCH OK" in out and "rows=10" in out and "reported orders_direct: 3" in out
-    assert "phase publish" in out and "phase gold" in out and "checks: not built yet (T16)" in out
+    assert "phase publish" in out and "phase gold" in out and "checks status: ok" in out
+    assert "not built yet" not in out
     assert env.store.closed
 
 
@@ -173,15 +175,31 @@ def test_missing_store_settings_exit_2(monkeypatch, capsys):
     assert err.startswith("error: ") and "Traceback" not in err and called == []
 
 
-def test_checks_empty_ok_and_failing_exit_1(env, capsys):
+def test_checks_ok_and_failing_exit_1(env, capsys):
     assert run_batch.main(["--skip-publish"]) == 0
-    assert "checks: not built yet (T16)" in capsys.readouterr().out
+    assert "checks status: ok" in capsys.readouterr().out
     env.checks = _step("failed", failed=["orders_total"])
     assert run_batch.main(["--skip-publish"]) == 1
     err = capsys.readouterr().err
     assert "BATCH FAILED at checks" in err and "orders_total" in err
     env.checks = _step("ok", failed=["x"])
     assert run_batch.main(["--skip-publish"]) == 1
+
+
+def test_manifest_option_goes_to_the_checks_phase_only_and_a_bad_file_is_a_usage_error(env, tmp_path, capsys):
+    good = tmp_path / "m.json"
+    good.write_text('{"injected": {"duplicate": 1, "malformed_json": 1, "missing_field": 0, "unknown_type": 0, '
+                    '"bad_version": 0, "negative_price": 0, "future_timestamp": 0, "null_product_id": 0, '
+                    '"unknown_product_id": 0, "cancel_after_ship": 0}}', encoding="utf-8")
+    assert run_batch.main(["--skip-publish", "--manifest", str(good)]) == 0
+    gold_call, checks_call = env.calls
+    assert "manifest_path" not in gold_call[2] and checks_call[2]["manifest_path"] == str(good)
+    assert run_batch.main(["--skip-publish"]) == 0
+    assert env.calls[-1][2]["manifest_path"] is None
+    n = len(env.calls)
+    assert run_batch.main(["--manifest", str(tmp_path / "missing.json")]) == 2
+    assert len(env.calls) == n  # nothing ran, not even publish
+    assert "manifest file not found" in capsys.readouterr().err
 
 
 def test_checks_raising_exit_1(env, monkeypatch, capsys):

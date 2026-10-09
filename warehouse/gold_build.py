@@ -4,8 +4,10 @@ python -m warehouse.gold_build [--from-date D --to-date D | --days N | --full] [
 
 Every step is a script of statements in warehouse/gold/NN_<step>.sql (NN is the position in STEPS), split by
 warehouse.ddl_render.split_statements and run through store.execute. The SQL is Databricks SQL / Spark SQL with
-Delta (MERGE); it is NOT portable to the Postgres fallback. Steps whose SQL file does not exist yet
-(rec_product, checks) are named empty slots: the later tasks only drop their file in.
+Delta (MERGE); it is NOT portable to the Postgres fallback. A step whose SQL file does not exist yet
+(rec_product) is a named empty slot: the later task only drops its file in. The last step, checks, has no SQL file:
+it runs the read-only queries of warehouse/checks.py (python, not a script), never writes, and does not raise for a
+failed check (step status "failed", main() exits 1); see docs/RUNNING.md "Data quality checks".
 
 Placeholders in the SQL (anything else is rejected): {silver} and {gold} schema prefixes (store.schema_prefix,
 for example funnelstream.silver), {from_date} and {to_date} (validated ISO dates, written as DATE'{from_date}'),
@@ -36,7 +38,8 @@ STEPS = [
     "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily",
     "rec_product", "checks",
 ]
-_NO_TABLE = ("checks",)  # steps that have no target table to count
+CHECKS_STEP = "checks"  # runs warehouse/checks.py instead of a SQL file
+_NO_TABLE = (CHECKS_STEP,)  # steps that have no target table to count
 
 # Cairo dates are made with from_utc_timestamp(ts, 'Africa/Cairo') and then cast or formatted in the SESSION time
 # zone, which is only right when that zone is UTC. Every step starts with this statement (so it also holds after a
@@ -176,6 +179,19 @@ def step_statements(step, values):
         return split_statements(render_sql(fh.read(), values))
 
 
+def _checks_plan(values, manifest_path):
+    """(check names, rendered queries, manifest note) of the checks step. Renders every query and reads the manifest
+    now, so a bad placeholder or an unusable manifest (ValueError) fails before any statement of the run."""
+    from warehouse import checks
+    names, sql = checks.dry_run_plan(values, manifest_path)
+    if manifest_path:
+        checks.load_manifest(manifest_path)
+        note = "manifest: %s" % manifest_path
+    else:
+        note = checks.MANIFEST_SKIPPED
+    return names, sql, note
+
+
 def _schema_prefix(store, group):
     return store.schema_prefix(group)
 
@@ -186,13 +202,15 @@ def _count(store, gold, table):
 
 
 def run_build(store=None, from_date=None, to_date=None, full=False, dry_run=False, steps=None, days=None,
-              today=None) -> dict:
+              today=None, manifest_path=None) -> dict:
     """Run the steps in the fixed order. Returns
     {"window": {"from", "to", "full"}, "dry_run", "steps": {name: {"status", "statements", "rows"}}, "reported"}.
 
     status: ok, empty (no SQL file yet), skipped (not in `steps`), dry-run. dry_run executes and queries nothing and
     puts the rendered statements in steps[name]["sql"]. The first failing step raises GoldBuildError (the cause
-    is chained, .results holds the finished steps)."""
+    is chained, .results holds the finished steps). The checks step (warehouse/checks.py) is the exception for a
+    failed CHECK: it does not raise, its status is "failed" and steps["checks"]["failed"] lists the check names
+    (a query that cannot run still raises). manifest_path (a noise manifest JSON) turns the manifest check on."""
     if steps is not None:
         steps = list(steps)
         unknown = [s for s in steps if s not in STEPS]
@@ -208,7 +226,9 @@ def run_build(store=None, from_date=None, to_date=None, full=False, dry_run=Fals
         out = {"window": {"from": start.isoformat(), "to": end.isoformat(), "full": bool(full)},
                "dry_run": bool(dry_run), "steps": {}, "reported": {}}
         # render everything first: a bad placeholder fails before any statement runs
-        rendered = {name: step_statements(name, values) for name in STEPS if steps is None or name in steps}
+        rendered = {name: (_checks_plan(values, manifest_path) if name == CHECKS_STEP
+                           else step_statements(name, values))
+                    for name in STEPS if steps is None or name in steps}
         for name in STEPS:
             if name not in rendered:
                 out["steps"][name] = {"status": "skipped", "statements": 0, "rows": None}
@@ -216,6 +236,19 @@ def run_build(store=None, from_date=None, to_date=None, full=False, dry_run=Fals
             statements = rendered[name]
             if statements is None:
                 out["steps"][name] = {"status": "empty", "statements": 0, "rows": None}
+                continue
+            if name == CHECKS_STEP:
+                names, sql, manifest_note = statements
+                if dry_run:
+                    out["steps"][name] = {"status": "dry-run", "statements": len(sql), "rows": None, "sql": sql,
+                                          "names": names, "manifest": manifest_note}
+                    continue
+                from warehouse.checks import run_checks
+                try:
+                    out["steps"][name] = run_checks(store, values, manifest_path)
+                except GoldBuildError as e:
+                    e.results = dict(out["steps"])
+                    raise
                 continue
             if dry_run:
                 out["steps"][name] = {"status": "dry-run", "statements": len(statements), "rows": None,
@@ -257,6 +290,12 @@ def _print_result(result):
     w = result["window"]
     print("window: %s .. %s%s" % (w["from"], w["to"], " (full)" if w["full"] else ""))
     for name, r in result["steps"].items():
+        if r["status"] == "dry-run" and name == CHECKS_STEP:
+            print("-- step %s: %d check query(ies), nothing executed; %s" % (name, r["statements"], r["manifest"]))
+            for check_name, stmt in zip(r["names"], r["sql"]):
+                print("-- check %s" % check_name)
+                print(stmt)
+            continue
         if r["status"] == "dry-run":
             print("-- step %s: %d statement(s), nothing executed" % (name, r["statements"]))
             for i, stmt in enumerate(r["sql"], 1):
@@ -265,6 +304,10 @@ def _print_result(result):
             continue
         extra = "" if r["rows"] is None else " rows=%d" % r["rows"]
         print("%-24s %-8s statements=%d%s" % (name, r["status"], r["statements"], extra))
+        if name == CHECKS_STEP and r.get("results") is not None:
+            from warehouse.checks import format_results
+            for line in format_results(r):
+                print(line)
     for k, v in result["reported"].items():
         print("reported %s: %d" % (k, v))
 
@@ -272,7 +315,9 @@ def _print_result(result):
 def record_heartbeat(result):
     """Best-effort gold_build heartbeat (used by main() and scripts/run_batch.py; never raises)."""
     from warehouse.heartbeat import beat
-    beat("gold_build", "steps: %s" % ",".join(n for n, r in result["steps"].items() if r["status"] == "ok"))
+    done = [n for n, r in result["steps"].items() if r["status"] == "ok" and n != CHECKS_STEP]
+    if done:  # a checks-only run is not a Gold update (the checks write their own heartbeat)
+        beat("gold_build", "steps: %s" % ",".join(done))
 
 
 def main(argv=None):
@@ -283,6 +328,8 @@ def main(argv=None):
     ap.add_argument("--full", action="store_true", help="rebuild everything")
     ap.add_argument("--steps", help="comma separated subset of: " + ", ".join(STEPS) + " (always run in fixed order)")
     ap.add_argument("--dry-run", action="store_true", help="print the rendered statements, execute nothing")
+    ap.add_argument("--manifest", help="noise manifest JSON: the checks step also compares silver_quarantine with it "
+                    "(only meaningful for a fresh single run that covers the whole Silver)")
     args = ap.parse_args(argv)
     steps = [s.strip() for s in args.steps.split(",") if s.strip()] if args.steps else None
     store = None
@@ -295,7 +342,7 @@ def main(argv=None):
             from warehouse.store import env_catalog
             store = _OfflineStore(env_catalog() if os.environ.get("DATABRICKS_CATALOG") else CATALOG)
         result = run_build(store, from_date=args.from_date, to_date=args.to_date, full=args.full,
-                           dry_run=args.dry_run, steps=steps, days=args.days)
+                           dry_run=args.dry_run, steps=steps, days=args.days, manifest_path=args.manifest)
     except (StoreConfigError, ValueError) as e:
         print("error: %s" % e, file=sys.stderr)
         return 2
@@ -310,6 +357,12 @@ def main(argv=None):
     _print_result(result)
     if not args.dry_run:
         record_heartbeat(result)
+    checks_step = result["steps"].get(CHECKS_STEP, {})
+    if checks_step.get("status") == "failed" or checks_step.get("failed"):
+        print("error: %d check(s) failed:" % len(checks_step.get("failed", [])), file=sys.stderr)
+        for failed in checks_step.get("failed", []):
+            print("  failed check: %s" % failed, file=sys.stderr)
+        return 1
     return 0
 
 

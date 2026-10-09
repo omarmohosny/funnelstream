@@ -20,7 +20,8 @@ GOLD_DIR = gb.GOLD_DIR
 SQL_FILES = sorted(f for f in os.listdir(GOLD_DIR) if f.endswith(".sql"))
 BUILT = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
          "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily"]
-SLOTS = ["rec_product", "checks"]
+SLOTS = ["rec_product"]
+NO_CHECKS = [s for s in STEPS if s != "checks"]  # the checks step has its own tests (test_checks.py)
 
 
 class FakeStore(GoldStore):
@@ -37,6 +38,8 @@ class FakeStore(GoldStore):
 
     def query(self, sql, params=None, retry=True):
         self.queries.append(sql)
+        if sql.startswith("/* funnelstream check "):  # a data quality check: no violations
+            return [(0,)]
         m = re.match(r"SELECT count\(\*\) FROM funnelstream\.gold\.(\w+)$", sql)
         if m:
             return [(self.counts.get(m.group(1), 7),)]
@@ -73,7 +76,7 @@ def test_steps_are_the_fixed_order_of_spec_16_2():
 def test_sql_files_are_named_by_step_position_and_slots_have_no_file_yet():
     assert SQL_FILES == ["%02d_%s.sql" % (STEPS.index(n) + 1, n) for n in BUILT]
     assert SQL_FILES == [os.path.basename(step_file(n)) for n in BUILT]
-    for n in SLOTS:
+    for n in SLOTS + ["checks"]:  # checks has no file ever: its queries live in warehouse/checks.py
         assert not os.path.exists(step_file(n)), n
 
 
@@ -82,7 +85,7 @@ def test_statements_run_in_step_order_and_slots_are_reported_empty():
     result = run_build(store, **WINDOW)
     assert store.executed == expected_statements(**WINDOW)
     assert list(result["steps"]) == STEPS
-    assert [n for n in STEPS if result["steps"][n]["status"] == "ok"] == BUILT
+    assert [n for n in STEPS if result["steps"][n]["status"] == "ok"] == BUILT + ["checks"]
     assert [n for n in STEPS if result["steps"][n]["status"] == "empty"] == SLOTS
     for n in BUILT:
         assert result["steps"][n]["rows"] == 7  # SELECT count(*) after the step
@@ -104,7 +107,7 @@ def test_a_step_file_dropped_into_a_slot_runs_at_its_position(tmp_path, monkeypa
     i = store.executed.index("SELECT 'rec funnelstream.gold';")
     assert store.executed[i - 1] == gb.TIME_ZONE_SQL
     assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.agg_city_product_daily")
-    assert i + 1 == len(store.executed)  # nothing after it: the checks slot is still empty
+    assert i + 1 == len(store.executed)  # nothing after it: the checks only query
     assert result["steps"]["rec_product"]["status"] == "ok"
 
 
@@ -125,9 +128,10 @@ def test_dry_run_executes_and_queries_nothing_and_returns_the_rendered_statement
     result = run_build(store, dry_run=True, **WINDOW)
     assert store.executed == [] and store.queries == []
     assert result["dry_run"] is True
-    sql = [s for n in STEPS if result["steps"][n]["status"] == "dry-run" for s in result["steps"][n]["sql"]]
+    sql = [s for n in NO_CHECKS if result["steps"][n]["status"] == "dry-run" for s in result["steps"][n]["sql"]]
     assert sql == expected_statements(**WINDOW)
-    assert result["steps"]["checks"]["status"] == "empty"
+    assert len(result["steps"]["checks"]["sql"]) == len(result["steps"]["checks"]["names"])
+    assert result["steps"]["checks"]["status"] == "dry-run" and result["steps"]["checks"]["statements"] > 40
 
 
 def test_running_twice_issues_identical_statements():
@@ -532,7 +536,7 @@ def test_city_product_step_runs_right_after_campaign_and_is_one_windowed_merge()
     assert names.index("agg_city_product_daily") == names.index("agg_campaign_daily") + 1
     r = result["steps"]["agg_city_product_daily"]
     assert r["status"] == "ok" and r["statements"] == 1 and r["rows"] == 7
-    assert result["steps"]["rec_product"]["status"] == "empty" and result["steps"]["checks"]["status"] == "empty"
+    assert result["steps"]["rec_product"]["status"] == "empty" and result["steps"]["checks"]["status"] == "ok"
     dry = run_build(FakeStore(), dry_run=True, **WINDOW)
     sql = dry["steps"]["agg_city_product_daily"]["sql"]
     assert sql[0] == gb.TIME_ZONE_SQL and len(sql) == 2

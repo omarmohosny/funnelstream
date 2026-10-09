@@ -24,7 +24,7 @@ from streaming.gold.bots import mark_bot_sessions  # noqa: E402
 from streaming.gold.orders import build_fact_orders  # noqa: E402
 from streaming.jobs.silver_clean import process_batch  # noqa: E402
 from streaming.silver.writer import silver_path  # noqa: E402
-from tests.test_gold_build_spark import (SILVER_FACTS, compare, ev, load, make_env,  # noqa: E402
+from tests.test_gold_build_spark import (NO_CHECKS as NO_STEPS_CHECKS, SILVER_FACTS, compare, ev, load, make_env,  # noqa: E402
                                          small_shuffles)  # noqa: F401  (small_shuffles is an autouse fixture)
 from tests.test_gold_reference import CATALOG, CUSTOMERS, NOW, bronze_df, order_row, simulated, status_row, t  # noqa: E402
 from warehouse.gold_build import run_build  # noqa: E402
@@ -64,7 +64,7 @@ def e2e(spark, tmp_path_factory):
     store = make_env(spark, str(base / "wh"), "silver_att", "gold_att")
     for table in SILVER_FACTS:
         load(spark, "silver_att", table, df=spark.read.format("delta").load(silver_path(lake, table)))
-    result = run_build(store, full=True)
+    result = run_build(store, full=True, steps=NO_STEPS_CHECKS)
     return {"store": store, "result": result}
 
 
@@ -129,7 +129,7 @@ def test_second_full_build_and_a_wide_window_build_change_nothing(spark, e2e):
                 for n in ("fact_orders", "fact_attribution")}
 
     before = snap()
-    run_build(store, full=True)
+    run_build(store, full=True, steps=NO_STEPS_CHECKS)
     assert snap() == before
     run_build(store, from_date="2026-07-01", to_date="2026-12-31", steps=["fact_orders", "fact_attribution"])
     assert snap() == before

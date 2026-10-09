@@ -385,9 +385,10 @@ docker compose run --rm spark python -m warehouse.gold_build --days 30          
 docker compose run --rm spark python -m warehouse.gold_build --from-date 2026-10-01 --to-date 2026-10-05
 docker compose run --rm spark python -m warehouse.gold_build --full                         # rebuild everything
 docker compose run --rm spark python -m warehouse.gold_build --steps fact_orders,agg_orders_daily
+docker compose run --rm spark python -m warehouse.gold_build --steps checks --manifest noise_manifest.json   # only the checks (see "Data quality checks")
 ```
 
-Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, checks. The run stops at the first failing step and names it (exit 1); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does) and the three attribution counts.
+Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, checks. The run stops at the first failing step and names it (exit 1; a failed data quality check is the exception, see "Data quality checks"); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does) and the three attribution counts.
 
 The three window options are `--from-date/--to-date` (both, ISO dates, Cairo days), `--days N` and `--full`; with none of them the window is the last 7 days. The window selects what is recomputed:
 
@@ -404,7 +405,7 @@ The three window options are `--from-date/--to-date` (both, ISO dates, Cairo day
   - Limits: a click row that arrives late for an old session with an `event_date` and a `kafka_timestamp` both before the window is found only by a covering window or `--full`. Linking an anonymous pre-login session to a customer after login is out of scope (spec 17.11): such orders can show as direct, and a click only belongs to the customer id its own event carries.
 - `agg_campaign_daily` (`warehouse/gold/10_agg_campaign_daily.sql`, after `agg_funnel_daily`): one row per campaign, Cairo report date and attribution model (always `last_touch`), for every campaign-day that has ad data or attributed orders. Ad measures (`ad_platform`, `impressions`, `clicks`, `platform_conversions`, `spend`) come from `silver_campaign_snapshots`: only the pull with the latest `pulled_at` per campaign and day counts (earlier pulls stay in Silver and are never summed; on a tie in `pulled_at` the row with the greatest impressions, then clicks, platform_conversions, spend, ad_platform wins; rows with a NULL `campaign_id` or `report_date` are ignored). Order measures come from `fact_orders` joined to the `last_touch` rows of `fact_attribution` (direct orders and the `unknown` campaign are left out) and sit on the Cairo date the order was PLACED, so delivered revenue is counted on the order day. A day with ad data and no orders has order counts 0, revenue 0.00 and NULL order rates; a day with orders and no ad row has NULL ad measures and NULL ctr, conversion_rate, cpa, cost_per_delivered_order, roas_placed and roas_delivered. Rates are `DECIMAL(8,4)` (4 decimals), money ratios `DECIMAL(12,2)`, both from a double division and NULL when the denominator is 0 or NULL. `open_rate` uses `current_timestamp()`: an order counts as open when it is not delivered, cancelled or returned and was placed more than 14 days ago, so the value changes with the wall clock and only refreshes when the row is recomputed. Window: one atomic MERGE recomputes every campaign-day whose `report_date` is in the window plus the order days of every order the `fact_orders` step recomputed (a late status row for an old order moves its day), and deletes a campaign-day inside the window that has neither ad data nor orders any more. Limits: a vanished key on a day outside the window is not deleted, and a late snapshot pull for an old report day is picked up only when that day is in the window (or is the day of a recomputed order). `silver_campaign_snapshots` is empty in the local lake, so the local reference build (`streaming/gold/agg_campaign.py`) only has ad rows when a test supplies them.
 - `agg_city_product_daily` (`warehouse/gold/11_agg_city_product_daily.sql`, after `agg_campaign_daily`): one row per city, product and Cairo day (`date_key`, yyyyMMdd, the same day as `fact_order_lines.date_key`), at city grain (no district). `sessions_viewed` is the number of DISTINCT sessions with at least one `product_view` event for the product in that city that day, and `add_to_cart` the number of distinct sessions with at least one `add_to_cart` event for the product (the Silver `product_id` column is filled for both event types). Both count sessions, not events, so a session that views a product three times counts once; a session that has events in two cities on one day counts once in each. The event day is the Silver `event_date`; the city is the event's own `city`. Same exclusions as the funnel: bot sessions are recomputed over all events of the sessions involved (more than 100 events in 10 seconds, the stored `is_bot` is not read), events without `session_id` are left out, events without `product_id` are ignored, late events are included. `units` and `revenue` (EGP) are the sum of `quantity` and `line_total` of the lines in `fact_order_lines` by the line's `city`, `product_id` and `date_key`; all placed lines count whatever the order status, cancelled orders included (the same basis as `revenue_placed` of `agg_orders_daily`), so these two columns are placed units and placed revenue, not delivered. A NULL or empty city is stored as `unknown`; lines without `product_id` are ignored. The row set is the union of the event keys and the order-line keys: a missing side is 0 (`0.00` for revenue), not NULL, so a product that was only viewed has `units` 0 and `revenue` 0.00 and a product that was only ordered has `sessions_viewed` 0. Window: one atomic MERGE recomputes every `date_key` of the window, the dates of all events of a session that has an event in the window (a session that crosses midnight, or becomes a bot), the dates of late events (`event_date` before the window, `kafka_timestamp` Cairo date inside it), and the dates of the lines of every order the `fact_order_lines` step recomputed; it updates matching keys, inserts new ones and deletes a key inside the window that has neither events nor lines any more. Limits: a key that vanishes on a widened date outside the window is not deleted; an order whose lines moved to another day leaves the old day stale until a window covers it; a late status row older than the window is not seen (see "Late status rows" above), so its order day stays stale until a covering window or `--full`. Local reference: `streaming/gold/city_product.py`, also part of `streaming.gold.build`.
-- Empty slots: `rec_product` (not built yet) and the SQL checks (Task 16) have no SQL file; the build lists them as `empty` and skips them.
+- Empty slot: `rec_product` (not built yet) has no SQL file; the build lists it as `empty` and skips it. The `checks` step has no SQL file by design: it runs the queries of `warehouse/checks.py` (see "Data quality checks").
 
 The SQL was tested on local Spark with Delta only (`tests/test_gold_build_spark.py`); it has not been run against the real workspace yet.
 
@@ -428,15 +429,72 @@ docker compose run --rm spark python scripts/run_batch.py --dry-run          # p
 python scripts/run_batch.py --skip-publish --dry-run                         # host: prints the Gold plan, needs no settings
 ```
 
-Options: `--skip-publish`; the Gold window `--from-date/--to-date`, `--days N`, `--full` (same meaning and rules as `warehouse.gold_build`); `--steps a,b` (Gold steps only, `checks` is not accepted because it always runs last); `--dry-run`; `--lake` and `--export-dir` (passed to publish).
+Options: `--skip-publish`; the Gold window `--from-date/--to-date`, `--days N`, `--full` (same meaning and rules as `warehouse.gold_build`); `--steps a,b` (Gold steps only, `checks` is not accepted because it always runs last); `--manifest PATH` (adds the manifest check to the checks phase, see "Data quality checks"); `--dry-run`; `--lake` and `--export-dir` (passed to publish).
 
-Phases: `publish` (the same code as `scripts/publish_silver.py`), `gold` (`run_build` for every step except `checks`, or the steps from `--steps`) and `checks` (`run_build` with only the `checks` step). A phase that fails stops the run: stderr gets `BATCH FAILED at <phase>: <reason>` and the phases that had finished. The checks step fails the batch when it raises a Gold build error or reports failed checks. While the checks have no SQL file (Task 16) the run prints `checks: not built yet (T16)` and still succeeds.
+Phases: `publish` (the same code as `scripts/publish_silver.py`), `gold` (`run_build` for every step except `checks`, or the steps from `--steps`) and `checks` (`run_build` with only the `checks` step). A phase that fails stops the run: stderr gets `BATCH FAILED at <phase>: <reason>` and the phases that had finished. The checks step fails the batch when it raises a Gold build error (a check query cannot run) or reports failed checks; the whole check list is printed first, then `BATCH FAILED at checks: failed checks: <names>`.
 
 Exit codes: 0 success, 1 a phase failed, 2 bad arguments or missing store settings (the same convention as `gold_build`). The publish and `gold_build` heartbeats are written once each after their phase succeeded, never in a dry run, and a heartbeat problem never fails the batch.
 
-The summary shows the seconds per phase, the row counts publish returned per table, the Gold window, the status and row count of every Gold step, the reported figures (orders without `order_created_at` and the three attribution counts), the checks status and a last line `BATCH OK in <seconds>s`.
+The summary shows the seconds per phase, the row counts publish returned per table, the Gold window, the status and row count of every Gold step, the reported figures (orders without `order_created_at` and the three attribution counts), the value of every check and the checks status (in a dry run the number of planned check queries) and a last line `BATCH OK in <seconds>s`.
 
 `scripts/sync_gold.ps1` still runs the publish and the Gold build as two separate commands; it can call `run_batch.py` later.
+
+## Data quality checks
+
+The last step of the Gold build, `checks`, runs read-only SQL queries (`warehouse/checks.py`) against the Silver mirror and the Gold tables. Spec section 10 asks for them after every load; a failed check stops the batch, so the Power BI refresh must not run (see below).
+
+```powershell
+docker compose run --rm spark python -m warehouse.gold_build --steps checks                  # checks only, against whatever Gold holds now
+docker compose run --rm spark python -m warehouse.gold_build --steps checks --manifest noise_manifest.json
+docker compose run --rm spark python -m warehouse.gold_build --dry-run --steps checks        # print every check name and its SQL, execute nothing
+docker compose run --rm spark python scripts/run_batch.py --manifest noise_manifest.json     # the whole batch, checks included
+```
+
+Without `--steps`, `gold_build` runs every step and the checks come last. `run_batch.py` always runs them as its last phase.
+
+Severities. Each check is one query that returns one number.
+
+- `fail`: the number is a violation count (or a difference); anything but 0 fails the step. Every failing check is listed; the run does not stop at the first one.
+- `report`: the number is only printed (a rate, a count, a row count); it never fails the step.
+
+Output (per check: name, group, result, value), then one summary line:
+
+```
+check dup_key.silver_events                         keys              ok     value=0
+check report.late_rate                              reported          report value=0.0123
+check manifest: skipped (no --manifest)
+checks: 63 run, 0 failed
+```
+
+Result values: `ok`, `FAILED`, `report`, plus `skipped` and `not checkable` for the manifest lines. In the result dict the step has `status` (`ok` or `failed`), `failed` (the names) and `results` (every check with its value).
+
+Exit codes. `gold_build` exits 0 when every `fail` check is 0, 1 when a check failed (each failed check is printed on stderr, `failed check: <name>`) or a query could not run, and 2 for bad arguments, an unusable manifest or missing store settings. `run_batch.py` stops at the checks phase with `BATCH FAILED at checks: failed checks: <names>` and exit 1; the check list is printed above that line. A check that cannot run at all (for example a table is missing) is a technical error and also fails the phase, with the check name in the message.
+
+What a failure means. The Gold tables are already written when the checks run, so a failed check does not undo the build: the data is there but not trusted. Do not refresh the Power BI dataset until the cause is fixed and the checks pass. Read the failed names in the table below, fix the cause (usually Silver data, or an incomplete Gold window: the reconciliation checks compare the whole Gold fact with the whole Silver mirror, so after a first publish or a wide Silver change run the build with `--full` once, as a 7-day window leaves older orders out and `recon.orders_count` then reports the gap), and run the batch again.
+
+Heartbeat. After a checks run the step writes `pipeline_heartbeat` with component `checks` and details `ok` or `failed: <names>` (best effort, only when `PG_DSN` is set; an error there never fails the run, and a dry run writes nothing). The live Grafana dashboard reads the table by component, so no dashboard change is needed. A checks-only run does not touch the `gold_build` heartbeat.
+
+Where the SQL lives. In Python (`warehouse/checks.py`, a list of `Check(name, group, severity, sql, description)`), not in `warehouse/gold/*.sql`: the SQL files are write scripts split into statements, the checks are one-number queries with a severity, and the lint test for them is `tests/test_checks.py` (known placeholders only, one statement, read-only keywords absent). The only placeholders are `{silver}`, `{gold}` and `{district_pairs}` (allowed city and district pairs, rendered from `contracts/geo.py`). Every query is sent with a leading comment `/* funnelstream check <name> */`, which shows in the query history of the warehouse.
+
+The checks (full list with thresholds: `docs/metrics.md`, "Data quality checks"):
+
+| Group | Checks | Severity |
+|---|---|---|
+| keys | no duplicate primary key in every Silver mirror table that has a key and in the 11 built Gold tables; no orphan `customer_key`, `product_key`, `order_id` in the facts (-1 is the unknown member); share of -1 customers in `fact_orders` | fail; the share is report |
+| reconciliation | sum and per-order total of `fact_orders` against `fact_order_lines`; row counts against Silver; exactly two attribution rows per order; attribution total and campaign agree with `fact_orders` | fail |
+| silver_hygiene | null `event_id` / `event_time`, future `event_time`, unknown `product_id`, status outside the contract, `line_total` against `quantity * unit_price`, snapshots with clicks above impressions or negative spend | fail |
+| hierarchy_history | district outside its city in customers, orders and events; one `is_current` row and no overlapping validity per business key in `dim_customer` and `dim_product` | fail |
+| reported | late-event rate, quarantine share, negative `delivery_lead_hours`, cancelled orders that have a shipment status, orders open more than 14 days, share of direct orders, row count of every built Gold table | report |
+
+Manifest check. `--manifest PATH` (on `gold_build` and `run_batch`) compares the noise manifest of the simulator (`noise_manifest.json`, key `injected`) with the Silver mirror:
+
+- Quarantine: the expected count is the sum of the `injected` counts `malformed_json`, `missing_field`, `unknown_type`, `bad_version`, `negative_price`, `future_timestamp`, `null_product_id`, `unknown_product_id` and `cancel_after_ship`. The number of rows in `silver_quarantine` must be within 2% of it, relative to the manifest count (`abs(observed - expected) * 100 <= 2 * expected`, so exactly 2% passes). When the expected count is 0 only 0 passes. A mismatch fails the check `manifest.quarantine_count`.
+- Duplicates: the Silver job removes duplicate events before they reach the mirror and keeps no count of what it dropped, so the manifest `duplicate` figure cannot be compared with anything in the mirror. The check prints `duplicates: not checkable on the mirror` and does not invent a number.
+- Without `--manifest` the line `manifest: skipped (no --manifest)` is printed and nothing fails. A missing file, a file that is not JSON, or a manifest without the counts is a usage error: exit 2, and `run_batch` stops before it publishes anything.
+- Limit: the comparison is only meaningful when the manifest covers the whole Silver, that is one fresh run (publish after a single simulator run with the same data). A manifest from `--forever` or from a later run does not match a Silver that has accumulated several runs, and the check will fail for that reason alone. The quarantine also takes rows from sources the manifest does not count (for example ad snapshots with negative spend), which stay inside the 2% only while they are few.
+- The comparison was run on the local simulator build (30,000 events, seed 11, noise on): expected 433 quarantine rows, observed 433 (`tests/test_checks_spark.py`).
+
+Known limits of the checks: the district check cleans the text like `contracts/geo.py` (case, spaces, hyphens, aliases) and treats Unicode white space as blank like Python does (the one known difference: the control characters 0x1c to 0x1f count as blank in Python but not in the SQL); `rec_product` and `customer_360` are not checked because the Gold build does not fill them yet; the checks read the whole tables, so the cost grows with the data and is not bounded by the Gold window.
 
 ## Grafana (live monitoring)
 
@@ -454,7 +512,7 @@ Setup (once): put `GRAFANA_DB_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` in `.env` (
 
 ## What is not built yet
 
-- The Gold build runs the dimensions, facts, attribution and the four summaries (see "Gold build"); the recommendation table, the SQL checks and the Postgres loader are later tasks. The local `streaming.gold.build` output is a reference only.
+- The Gold build runs the dimensions, facts, attribution and the four summaries (see "Gold build"); the recommendation table (`rec_product`) and the Postgres loader are later tasks; the SQL checks are built (see "Data quality checks"). The local `streaming.gold.build` output is a reference only.
 - Power BI dashboards.
 - Postgres and Airflow containers exist in `docker-compose.yml` but are not part of this run; the Postgres loader and batch jobs are not exercised here.
 

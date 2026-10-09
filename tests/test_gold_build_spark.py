@@ -44,6 +44,9 @@ ORD = ["dim_customer", "dim_product", "fact_orders", "fact_order_lines", "agg_or
 # The hand-built datasets sit in October 2026. A build without a window means "the last 7 days up to today", which
 # moves with the calendar, so these tests name their window.
 MONTH = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
+NO_CHECKS = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
+             "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily",
+             "agg_city_product_daily", "rec_product"]  # every step but checks
 REBUILD = ["fact_orders", "fact_order_lines", "agg_orders_daily"]  # dimensions unchanged: skip them
 GOLD_NEEDED = ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
                "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily")
@@ -173,7 +176,7 @@ def e2e(spark, tmp_path_factory):
     store = make_env(spark, str(base / "wh"), "silver_e2e", "gold_e2e")
     for table in SILVER_FACTS:
         load(spark, "silver_e2e", table, df=spark.read.format("delta").load(silver_path(lake, table)))
-    result = run_build(store, full=True)
+    result = run_build(store, full=True, steps=NO_CHECKS)  # the checks have their own tests (test_checks_spark.py)
     return {"store": store, "result": result, "lake": lake, "base": base}
 
 
@@ -200,8 +203,7 @@ def test_build_result_lists_every_step_in_order_with_counts(e2e):
     assert steps["agg_campaign_daily"]["status"] == "ok"  # no ad snapshots here: order-only rows
     assert steps["fact_attribution"]["rows"] == 2 * steps["fact_orders"]["rows"]
     assert steps["agg_city_product_daily"]["status"] == "ok"
-    for name in ("rec_product", "checks"):
-        assert steps[name]["status"] == "empty", name
+    assert steps["rec_product"]["status"] == "empty" and steps["checks"]["status"] == "skipped"
     assert steps["dim_date"]["rows"] == 1095  # 2025-01-01 .. 2027-12-31
     assert steps["dim_campaign"]["rows"] == 4  # three campaigns plus the unknown member
 
@@ -300,7 +302,7 @@ def test_second_build_is_identical(spark, e2e):
     names = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
              "agg_orders_daily", "agg_funnel_daily"]
     before = {n: sorted(map(tuple, gold_df(spark, n).collect()), key=repr) for n in names}
-    result = run_build(store, full=True)
+    result = run_build(store, full=True, steps=NO_CHECKS)
     after = {n: sorted(map(tuple, gold_df(spark, n).collect()), key=repr) for n in names}
     print("\nIDEMPOTENCE rows: %s" % {n: len(v) for n, v in after.items()})
     assert before == after
