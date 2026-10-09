@@ -290,10 +290,14 @@ docker compose run --rm spark python -m streaming.jobs.pipeline --lake data/lake
 `scripts\watch_demo.ps1` starts Kafka (topics created), Postgres (waits for `pg_isready`, applies the live DDL) and Grafana, then opens three windows: a Kafka listener (every message with its topic), `FS 2 Pipeline` (one Spark job: a `[bronze]` line per batch with row counts and Kafka offsets plus the newest raw messages, a `[silver]` view per batch with counts, the newest cleaned rows and quarantine rows; it also writes the live and health tables) and the generator (one line per published event). Memory target for the whole stack: Kafka 1 GB, Postgres 0.5 GB, Grafana 0.5 GB, one Spark container 3 GB. It gives Spark about a minute to start, picks a new seed each run (kept in `data\state\next_seed.txt`) so ids never repeat, and prints the Grafana URL at the end: http://localhost:3000.
 
 ```powershell
-.\scripts\watch_demo.ps1                     # 3000 events at 50 per second
+.\scripts\watch_demo.ps1                     # rounds of 3000 events at 50 per second, until Ctrl+C in the generator window
 .\scripts\watch_demo.ps1 -Events 20000 -ShowEvery 20
-.\scripts\stop_demo.ps1                      # stops the pipeline container (fs-pipeline); then close the windows
+.\scripts\watch_demo.ps1 -Once               # stop after one round of -Events events
+.\scripts\watch_demo.ps1 -SyncEvery 120      # Gold sync every 2 minutes (default 300; 0 = no sync window)
+.\scripts\stop_demo.ps1                      # stops the pipeline and sync containers; then close the windows
 ```
+
+By default the generator runs with `--forever` (rounds of `--events` events; round i uses seed `seed*100000+i`, so ids never repeat). A fourth window, `FS 4 Gold sync` (`scripts\sync_gold.ps1`), runs `publish_silver.py` and then `warehouse.gold_build --days 7` every `-SyncEvery` seconds in the 1.5 GB `sync` container, so data reaches Gold without manual commands. A failed round is retried on the next one. The manual commands in the sections below still work unchanged. If `localhost:9092` or `localhost:3000` stop answering after Docker Desktop restarts (the port forwarding goes stale), run `docker compose restart kafka` or `docker compose up -d --force-recreate grafana`.
 
 The same views by hand: `streaming.jobs.pipeline --show [N]`, or `bronze_ingest --show [N]` and `silver_clean --show [N]` as two jobs (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
 

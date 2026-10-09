@@ -21,7 +21,7 @@ def spark_conf() -> dict:
     """Session settings. Everything runs in UTC: session zone, driver JVM, executor JVMs and the
     Python workers (executorEnv TZ), so Spark timestamps never depend on the machine's local zone."""
     return {
-        "spark.driver.memory": "3g",
+        "spark.driver.memory": os.environ.get("FS_SPARK_DRIVER_MEMORY", "3g"),
         "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
         "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         "spark.sql.shuffle.partitions": "8",

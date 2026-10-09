@@ -190,6 +190,9 @@ def build_parser():
     ap.add_argument("--start", default=None, help="ISO start time; default now-7d (history mode)")
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--rate", type=float, default=200.0, help="live: events per second")
+    ap.add_argument("--forever", action="store_true",
+                    help="live: keep generating rounds of --events events until Ctrl+C. Round i uses seed "
+                         "seed*100000+i, so every round has new ids and no other --seed collides with it")
     ap.add_argument("--time-scale", type=float, default=21600.0,
                     help="live: order lifecycle compression (21600: 6 hours become 1 second)")
     ap.add_argument("--session-scale", type=float, default=60.0,
@@ -275,15 +278,30 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
 
 def main():
     args = build_parser().parse_args()
-    now = datetime.now(timezone.utc)
-    start = resolve_start(args.start, args.live, now)
+    if args.forever and not args.live:
+        raise SystemExit("--forever needs --live")
     config = NoiseConfig.off() if args.noise_off else NoiseConfig().scaled(args.noise_scale)
     pub = Publisher(args.bootstrap)
-    counts = run_pipeline(seed=args.seed, universe_seed=args.universe_seed, events=args.events, start=start, now=now, live=args.live, pub=pub,
-                          config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale,
-                          session_scale=args.session_scale, max_tail=args.max_tail_seconds,
-                          show_every=max(1, args.show_every) if args.show else 0)
-    print(dict(counts), "total", sum(counts.values()))
+    total = Counter()
+    rounds = 0
+    try:
+        while True:
+            now = datetime.now(timezone.utc)
+            seed = args.seed * 100_000 + rounds if args.forever else args.seed
+            counts = run_pipeline(seed=seed, universe_seed=args.universe_seed, events=args.events,
+                                  start=resolve_start(args.start, args.live, now), now=now, live=args.live, pub=pub,
+                                  config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale,
+                                  session_scale=args.session_scale, max_tail=args.max_tail_seconds,
+                                  show_every=max(1, args.show_every) if args.show else 0)
+            total.update(counts)
+            rounds += 1
+            if not args.forever:
+                break
+            print("round %d done, %d events so far (Ctrl+C to stop)" % (rounds, sum(total.values())))
+    except KeyboardInterrupt:
+        pub.flush()
+        print("stopped by Ctrl+C after %d full rounds" % rounds)
+    print(dict(total), "total", sum(total.values()))
 
 
 if __name__ == "__main__":

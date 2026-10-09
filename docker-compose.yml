@@ -71,6 +71,23 @@ services:
       - ./:/app
       - ivycache:/root/.ivy2
 
+  sync:
+    # publish Silver to Databricks and build Gold, used by scripts/sync_gold.ps1 next to the pipeline container
+    build: infrastructure/docker/spark
+    profiles: ["spark"]
+    mem_limit: 1536m
+    working_dir: /app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FS_SPARK_DRIVER_MEMORY: 1g
+      SPARK_LOCAL_IP: 127.0.0.1
+      PG_DSN: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+    volumes:
+      - ./:/app
+      - ivycache:/root/.ivy2
+
   grafana:
     image: grafana/grafana-oss:11.3.0
     mem_limit: 512m
