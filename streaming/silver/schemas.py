@@ -20,12 +20,24 @@ SILVER_ORDER_ITEMS_COLUMNS = [
 SILVER_QUARANTINE_COLUMNS = [
     "quarantine_id", "raw_payload", "source_topic", "error_code", "error_detail", "received_at",
 ]
+SILVER_STOCK_MOVEMENTS_COLUMNS = [
+    "event_id", "store_id", "product_id", "qty_delta", "reason", "order_id", "requested_qty", "event_time",
+    "kafka_timestamp", "event_date",
+]
+SILVER_STOCK_SNAPSHOTS_COLUMNS = [
+    "event_id", "store_id", "product_id", "on_hand", "reserved_qty", "reorder_point", "event_time",
+    "kafka_timestamp", "event_date",
+]
+SILVER_EXPRESS_ORDERS_COLUMNS = ["order_id", "store_id", "promised_minutes", "created_at", "event_date"]
 TABLE_COLUMNS = {
     "silver_events": SILVER_EVENTS_COLUMNS,
     "silver_orders": SILVER_ORDERS_COLUMNS,
     "silver_order_status": SILVER_ORDER_STATUS_COLUMNS,
     "silver_order_items": SILVER_ORDER_ITEMS_COLUMNS,
     "silver_quarantine": SILVER_QUARANTINE_COLUMNS,
+    "silver_stock_movements": SILVER_STOCK_MOVEMENTS_COLUMNS,
+    "silver_stock_snapshots": SILVER_STOCK_SNAPSHOTS_COLUMNS,
+    "silver_express_orders": SILVER_EXPRESS_ORDERS_COLUMNS,
 }
 ERROR_CODES = [
     "BAD_JSON", "MISSING_FIELD", "UNKNOWN_EVENT_TYPE", "BAD_VERSION", "NEGATIVE_PRICE", "FUTURE_TIMESTAMP",

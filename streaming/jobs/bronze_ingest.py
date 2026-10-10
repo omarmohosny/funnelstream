@@ -14,6 +14,7 @@ BRONZE_TABLES = {
     "app.events": "bronze_app_events",
     "orders": "bronze_orders",
     "delivery.events": "bronze_delivery_events",
+    "inventory.events": "bronze_inventory_events",
 }
 
 

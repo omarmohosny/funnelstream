@@ -2,6 +2,7 @@ topics:
   app.events:      {partitions: 6, key: session_id, retention_hours: 72}
   orders:          {partitions: 3, key: order_id,   retention_hours: 168}
   delivery.events: {partitions: 3, key: order_id,   retention_hours: 168}
+  inventory.events: {partitions: 3, key: store_id, retention_hours: 72}
 
 app_event_types:
   - app_open
@@ -28,3 +29,7 @@ delivery_event_types:
   - out_for_delivery
   - delivered
   - delivery_failed
+
+inventory_event_types:
+  - stock_snapshot
+  - stock_movement

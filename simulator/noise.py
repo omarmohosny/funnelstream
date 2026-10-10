@@ -228,9 +228,10 @@ def _bot_events(first, rng, n=150, span=5.0):
     return out
 
 
-def _apply(stream, rng, config, catalog_ids, counter, now=None):
+def _apply(stream, rng, config, catalog_ids, counter, now=None, protect=None):
     """Core generator yielding (topic_hint, payload, pace_time). pace_time is the original
-    event_time of the source message (used for live pacing)."""
+    event_time of the source message (used for live pacing). protect(event) -> bool (optional): events for
+    which it is true bypass noise like the inventory events do."""
     rates = {k: getattr(config, k) for k in KINDS}
     side = random.Random(repr(rng.getstate()))  # does not consume the main rng
     seen_sessions = set()
@@ -254,6 +255,10 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
                 continue
             yield out(ph, pe, ppace)  # last event of its order: nothing to swap with
 
+        if hint == "inventory" or (protect is not None and protect(e)):
+            # stock events are never noised (inventory design, section 2); neither are the events protect() names
+            yield out(hint, e, pace)
+            continue
         new_session = False
         sid = e.get("session_id")
         if sid and sid not in seen_sessions:
@@ -304,7 +309,7 @@ def _apply(stream, rng, config, catalog_ids, counter, now=None):
         yield out(*pending)
 
 
-def apply_noise(stream, rng, config, catalog_ids, counter, now=None):
+def apply_noise(stream, rng, config, catalog_ids, counter, now=None, protect=None):
     """(topic_hint, event) stream in, (topic_hint, dict | broken-JSON str) stream out.
 
     out_of_order_status is simulated by swapping event_time between an order event and its
@@ -312,14 +317,15 @@ def apply_noise(stream, rng, config, catalog_ids, counter, now=None):
     time. The pair is counted once, when the successor arrives; if the held event was the last
     of its order it is released unchanged and not counted.
     `now` (optional) makes future_timestamp events land after the wall clock even in history mode.
+    `protect` (optional predicate on an event) exempts the events it accepts from every noise kind.
     """
-    for hint, payload, _ in _apply(stream, rng, config, catalog_ids, counter, now):
+    for hint, payload, _ in _apply(stream, rng, config, catalog_ids, counter, now, protect):
         yield hint, payload
 
 
-def apply_noise_timed(stream, rng, config, catalog_ids, counter, now=None):
+def apply_noise_timed(stream, rng, config, catalog_ids, counter, now=None, protect=None):
     """Like apply_noise but yields (hint, payload, pace_time) for live pacing."""
-    return _apply(stream, rng, config, catalog_ids, counter, now)
+    return _apply(stream, rng, config, catalog_ids, counter, now, protect)
 
 
 def noisy_export(rows, rng, dup_rate=0.02, null_city_rate=0.02):

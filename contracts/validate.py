@@ -8,7 +8,10 @@ _TOPICS = yaml.safe_load((Path(__file__).parent / "topics.yaml").read_text())
 APP_EVENT_TYPES = set(_TOPICS["app_event_types"])
 ORDER_EVENT_TYPES = set(_TOPICS["order_event_types"])
 DELIVERY_EVENT_TYPES = set(_TOPICS["delivery_event_types"])
-KNOWN_TYPES = APP_EVENT_TYPES | ORDER_EVENT_TYPES | DELIVERY_EVENT_TYPES
+INVENTORY_EVENT_TYPES = set(_TOPICS["inventory_event_types"])
+KNOWN_TYPES = APP_EVENT_TYPES | ORDER_EVENT_TYPES | DELIVERY_EVENT_TYPES | INVENTORY_EVENT_TYPES
+SERVICES = {"standard", "express"}
+STOCK_REASONS = {"received", "sold", "shrinkage", "adjustment"}
 
 REQUIRED_ALL = ["event_id", "event_type", "event_version", "event_time", "payload"]
 SUPPORTED_VERSIONS = {1}
@@ -79,6 +82,54 @@ def _check_numbers(payload):
     return ""
 
 
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_stock(event_type, payload):
+    """'' if the payload of a stock event is fine, else MISSING_FIELD or BAD_VALUE (integers only, no strings)."""
+    if event_type == "stock_snapshot":
+        if payload.get("on_hand") is None:
+            return "MISSING_FIELD"
+        for key in ("on_hand", "reserved_qty", "reorder_point"):
+            value = payload.get(key)
+            if value is not None and (not _is_int(value) or value < 0):
+                return "BAD_VALUE"
+        return ""
+    qty = payload.get("qty_delta")
+    if qty is None:
+        return "MISSING_FIELD"
+    if not _is_int(qty) or qty == 0:
+        return "BAD_VALUE"
+    reason = payload.get("reason")
+    if not isinstance(reason, str) or reason not in STOCK_REASONS:
+        return "BAD_VALUE"
+    if reason == "received" and qty < 0:
+        return "BAD_VALUE"
+    if reason in ("sold", "shrinkage") and qty > 0:
+        return "BAD_VALUE"
+    if reason == "sold" and payload.get("order_id") in (None, ""):
+        return "BAD_VALUE"
+    requested = payload.get("requested_qty")
+    if requested is not None and (not _is_int(requested) or requested < 1):
+        return "BAD_VALUE"
+    return ""
+
+
+def _check_service(payload):
+    """'' if the service fields of an order_created payload are fine, else BAD_VALUE."""
+    service = payload.get("service")
+    if service is None:
+        return ""
+    if not isinstance(service, str) or service not in SERVICES:
+        return "BAD_VALUE"
+    if service == "express":
+        minutes = payload.get("promised_minutes")
+        if not _is_int(minutes) or not 1 <= minutes <= 60:
+            return "BAD_VALUE"
+    return ""
+
+
 def validate_event(event: dict, now: datetime | None = None,
                    known_products: set | None = None) -> tuple[bool, str]:
     """Never raises. Returns (ok, code); code is '' when ok."""
@@ -107,6 +158,10 @@ def _validate(event, now, known_products):
     elif event_type in ORDER_EVENT_TYPES or event_type in DELIVERY_EVENT_TYPES:
         if event.get("order_id") in (None, ""):
             return False, "MISSING_FIELD"
+    elif event_type in INVENTORY_EVENT_TYPES:
+        for field in ("store_id", "product_id"):
+            if event.get(field) in (None, ""):
+                return False, "MISSING_FIELD"
 
     version = event["event_version"]
     if isinstance(version, bool) or not isinstance(version, int) or version not in SUPPORTED_VERSIONS:
@@ -128,6 +183,9 @@ def _validate(event, now, known_products):
     if event_type == "order_created" and payload.get("platform") is not None             and payload["platform"] not in ("app", "web"):
         return False, "BAD_VALUE"
 
+    if event_type == "order_created" and _check_service(payload):
+        return False, "BAD_VALUE"
+
     if event.get("district") is not None and not isinstance(event["district"], str):
         return False, "BAD_VALUE"
     for key in ("page_url", "utm_medium"):
@@ -137,6 +195,13 @@ def _validate(event, now, known_products):
     code = _check_numbers(payload)
     if code:
         return False, code
+
+    if event_type in INVENTORY_EVENT_TYPES:
+        code = _check_stock(event_type, payload)
+        if code:
+            return False, code
+        if known_products is not None and event["product_id"] not in known_products:
+            return False, "UNKNOWN_PRODUCT"
 
     if event_type in PRODUCT_EVENT_TYPES:
         pid = payload.get("product_id")

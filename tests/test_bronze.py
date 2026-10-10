@@ -56,6 +56,7 @@ def test_tables_and_paths():
         "app.events": "bronze_app_events",
         "orders": "bronze_orders",
         "delivery.events": "bronze_delivery_events",
+        "inventory.events": "bronze_inventory_events",
     }
     assert Path(bronze_path("lake", "orders")) == Path("lake").resolve() / "bronze" / "bronze_orders"  # absolute
     assert Path(checkpoint_path("ck", "delivery.events")) == Path("ck").resolve() / "bronze_delivery_events"

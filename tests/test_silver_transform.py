@@ -354,7 +354,8 @@ def test_column_sets_on_mixed_stream():
         for table, row in transform_message(raw, "mixed", START, RECEIVED, known_products=CATALOG_IDS, now=NOW):
             assert list(row) == TABLE_COLUMNS[table]
             tables.add(table)
-    assert tables == set(TABLE_COLUMNS)
+    # the order/app generator emits no stock events and no express orders, so those three tables stay empty here
+    assert tables == set(TABLE_COLUMNS) - {"silver_stock_movements", "silver_stock_snapshots", "silver_express_orders"}
 
 
 # ---- empty-items ruling ----

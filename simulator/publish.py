@@ -7,12 +7,16 @@ UNPARSABLE_KEY = "unparsable"
 
 
 def route(source: str, event) -> tuple[str, str]:
-    """source is 'app' for app/web events, 'order' for order and delivery events.
+    """source is 'app' for app/web events, 'order' for order and delivery events, 'inventory' for stock events.
 
     Noised messages are routed by their hint: a str (malformed JSON) or an event missing its
     key field gets the key "unparsable"; an event with a missing/unknown event_type on an
     order hint goes to "orders".
     """
+    if source == "inventory":
+        if isinstance(event, str):  # not produced today (no noise on inventory), kept for symmetry
+            return "inventory.events", UNPARSABLE_KEY
+        return "inventory.events", event.get("store_id") or UNPARSABLE_KEY
     if isinstance(event, str):
         return ("app.events" if source == "app" else "orders"), UNPARSABLE_KEY
     if source == "app":

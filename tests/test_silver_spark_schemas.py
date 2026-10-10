@@ -66,7 +66,9 @@ def test_coerce_row_converts_transform_output():
                     assert type(v) is bool
                 else:
                     assert isinstance(v, str)
-    assert seen == set(TABLE_COLUMNS) - {"silver_quarantine"}
+    # quarantine, stock and express rows come from other generators; they have their own tests
+    assert seen == set(TABLE_COLUMNS) - {"silver_quarantine", "silver_stock_movements", "silver_stock_snapshots",
+                                         "silver_express_orders"}
 
 
 def test_coerce_row_values():

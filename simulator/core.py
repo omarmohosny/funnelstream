@@ -40,7 +40,7 @@ def _event(event_type, t, session_id, customer_id, device, channel, country, cit
     return e
 
 
-def journey(rng, customer, catalog, campaign, start):
+def journey(rng, customer, catalog, campaign, start, hot=None):
     """Build one session of app events. Funnel drop-off happens at each step."""
     session_id = f"sess_{rng.getrandbits(64):016x}"
     customer_id = customer["customer_id"] if customer else None
@@ -68,6 +68,9 @@ def journey(rng, customer, catalog, campaign, start):
 
     n_views = rng.randint(1, 6)
     viewed = rng.sample(active_products, n_views)
+    if hot:  # inventory scenario: a hero product is the first thing the session looks at
+        hero = rng.choice(hot)
+        viewed = [hero] + [p for p in viewed if p is not hero][: n_views - 1]
     for i, product in enumerate(viewed):
         pv = {"product_id": product["product_id"], "price": product["price"], "category": product["category"],
               "page_url": tracking_url("p/" + product["product_id"], campaign if i == 0 else None)}
@@ -76,8 +79,8 @@ def journey(rng, customer, catalog, campaign, start):
             add("product_click", {"product_id": product["product_id"], "element": rng.choice(["image", "size", "color", "reviews"])})
         add("product_view_end", {"product_id": product["product_id"], "dwell_seconds": rng.randint(8, 240)})
 
-    if rng.random() < 0.35:
-        item = rng.choice(viewed)
+    if rng.random() < (0.6 if hot else 0.35):
+        item = viewed[0] if hot else rng.choice(viewed)
         cart_id = f"cart_{session_id[5:]}"
         add("add_to_cart", {"product_id": item["product_id"], "quantity": 1, "cart_id": cart_id})
         if rng.random() < 0.45:

@@ -7,12 +7,15 @@ from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 from contracts.geo import district_violation, normalize_district
+from contracts.stores import store_for
 from contracts.normalize import normalize_city, normalize_device, to_decimal, to_utc_iso
-from contracts.validate import APP_EVENT_TYPES, validate_raw
+from contracts.validate import APP_EVENT_TYPES, INVENTORY_EVENT_TYPES, validate_raw
 from streaming.common.status import STATUS_RANK
 from streaming.silver.schemas import (CURRENCY, ERROR_CODES, LATE_AFTER_SECONDS, SILVER_EVENTS_COLUMNS,
-                                      SILVER_ORDER_ITEMS_COLUMNS, SILVER_ORDER_STATUS_COLUMNS,
-                                      SILVER_ORDERS_COLUMNS, SILVER_QUARANTINE_COLUMNS)
+                                      SILVER_EXPRESS_ORDERS_COLUMNS, SILVER_ORDER_ITEMS_COLUMNS,
+                                      SILVER_ORDER_STATUS_COLUMNS,
+                                      SILVER_ORDERS_COLUMNS, SILVER_QUARANTINE_COLUMNS,
+                                      SILVER_STOCK_MOVEMENTS_COLUMNS, SILVER_STOCK_SNAPSHOTS_COLUMNS)
 
 CAIRO = ZoneInfo("Africa/Cairo")
 _CENT = Decimal("0.01")
@@ -152,6 +155,21 @@ def _app_event(e, p, kafka_timestamp):
         search_term=_text(p.get("search_term")), event_date=_cairo_date(et)))]
 
 
+def _stock_event(e, p, kafka_timestamp):
+    et = to_utc_iso(e["event_time"])
+    common = dict(event_id=_text(e["event_id"]), store_id=_text(e["store_id"]), product_id=_text(e["product_id"]),
+                  event_time=et, kafka_timestamp=kafka_timestamp, event_date=_cairo_date(et))
+    if e["event_type"] == "stock_snapshot":
+        return [("silver_stock_snapshots", _row(
+            SILVER_STOCK_SNAPSHOTS_COLUMNS, **common, on_hand=_int(p.get("on_hand"), "on_hand"),
+            reserved_qty=_int(p.get("reserved_qty") or 0, "reserved_qty"),
+            reorder_point=_int(p.get("reorder_point"), "reorder_point")))]
+    return [("silver_stock_movements", _row(
+        SILVER_STOCK_MOVEMENTS_COLUMNS, **common, qty_delta=_int(p.get("qty_delta"), "qty_delta"),
+        reason=_text(p.get("reason")), order_id=_text(p.get("order_id")),
+        requested_qty=_int(p.get("requested_qty"), "requested_qty")))]
+
+
 def _status_row(e, p, et):
     status = e["event_type"]
     return _row(
@@ -193,7 +211,15 @@ def _order_event(e, p):
         click_id=_text(p.get("click_id")), payment_method=_text(p.get("payment_method")),
         city=city, district=normalize_district(city, e.get("district")), country=_text(e.get("country")) or "EG",
         order_total=_money(p.get("order_total")), order_created_at=et, event_date=_cairo_date(et))
-    return [("silver_orders", order), ("silver_order_status", status)] + item_rows
+    express_rows = []
+    if p.get("service") == "express":
+        store_id = store_for(city, order["district"])
+        if store_id is None:
+            raise _Bad("express order outside a served district")
+        express_rows.append(("silver_express_orders", _row(
+            SILVER_EXPRESS_ORDERS_COLUMNS, order_id=order_id, store_id=store_id,
+            promised_minutes=_int(p.get("promised_minutes"), "promised_minutes"), created_at=et, event_date=_cairo_date(et))))
+    return [("silver_orders", order), ("silver_order_status", status)] + item_rows + express_rows
 
 
 def transform_message(raw, source_topic, kafka_timestamp, received_at, known_products=None, now=None):
@@ -212,6 +238,8 @@ def transform_message(raw, source_topic, kafka_timestamp, received_at, known_pro
         p = e["payload"]
         if e["event_type"] in APP_EVENT_TYPES:
             return _app_event(e, p, kafka_timestamp)
+        if e["event_type"] in INVENTORY_EVENT_TYPES:
+            return _stock_event(e, p, kafka_timestamp)
         return _order_event(e, p)
     except _Bad as ex:
         return _quarantine(raw, source_topic, "BAD_VALUE", ex.detail, received_at)

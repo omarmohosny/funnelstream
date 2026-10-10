@@ -218,7 +218,8 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
     If stats (a dict) is given, stats["district_violations"] is set to the number of events and orders of
     the batch whose district was outside their city (reported, not an error). With stats["collect_minutes"] true
     it also gets stats["event_minutes"] (minutes of event_time of the batch's Silver events), ["arrival_minutes"]
-    (minutes of kafka_timestamp) and ["quarantine_minutes"] (minutes of received_at), as epoch seconds."""
+    (minutes of kafka_timestamp) and ["quarantine_minutes"] (minutes of received_at), as epoch seconds,
+    and ["stock_pairs"] (the sorted (store_id, product_id) pairs of the batch's stock rows)."""
     now = now or datetime.now(timezone.utc)
     cols = ["raw_value", "kafka_topic", "kafka_timestamp", "ingest_time"]
     known_bc = spark.sparkContext.broadcast(set(known_products)) if known_products is not None else None
@@ -245,6 +246,7 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
             frames["silver_quarantine"] = frames["silver_quarantine"].unionByName(extra)
         want_minutes = stats is not None and stats.get("collect_minutes")
         to_merge = {}
+        stock_pairs = set()
         for table in SILVER_TABLES:
             df = frames[table].dropDuplicates(SILVER_KEYS[table]).persist(StorageLevel.MEMORY_AND_DISK)
             deduped.append(df)
@@ -255,9 +257,14 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
                 stats["arrival_minutes"] = _minutes(df, "kafka_timestamp")
             if want_minutes and n and table == "silver_quarantine":
                 stats["quarantine_minutes"] = _minutes(df, "received_at")
+            if want_minutes and n and table in ("silver_stock_movements", "silver_stock_snapshots"):
+                stock_pairs.update((r["store_id"], r["product_id"])
+                                   for r in df.select("store_id", "product_id").distinct().collect())
             if n:
                 to_merge[table] = (df, partitions)
         _merge_tables(spark, lake_root, to_merge)
+        if stats is not None and want_minutes:
+            stats["stock_pairs"] = sorted(stock_pairs)
         if stats is not None:
             stats["district_violations"] = int(violations.value)
     finally:

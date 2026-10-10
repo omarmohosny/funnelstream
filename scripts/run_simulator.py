@@ -11,17 +11,21 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from contracts.stores import store_for
 from simulator.campaigns import CAMPAIGNS
 from simulator.catalog import make_catalog, make_customers
 from simulator.core import journey
 from simulator.noise import NoiseConfig, NoiseCounter, apply_noise, apply_noise_timed
-from simulator.orders import make_order
+from simulator.orders import make_express_order, make_order
 from simulator.publish import Publisher, route
+from simulator.stock import DEFAULT_HERO_UNITS, StockLedger
 
 AVG_EVENTS_PER_SESSION = 12  # measured: 12.0 to 12.3 (app + order events) per session over seeds 3 and 11
 
 
-def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, mean_gap=None, starts=None):
+def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, mean_gap=None, starts=None,
+               ledger=None, scenario=None, express=None, express_ids=None, express_promise_minutes=20,
+               late_express_every=0):
     """Yield (topic_hint, event) pairs session by session without touching Kafka.
 
     topic_hint is 'app' or 'order'. Stops after `sessions` journeys or once `max_events`
@@ -29,21 +33,45 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
     approximate: output can exceed it by up to one journey plus its order events (a
     journey and its order lifecycle are never truncated). mean_gap (seconds) switches
     session spacing to exponential with that mean; default is 1-3 s uniform.
+    ledger (a StockLedger) makes the generator also yield ("inventory", event) items in time order (history mode);
+    scenario (a HeroScenario) makes most sessions come from the hero store and look at the hero products.
+    Neither argument changes the stream when it is None.
+    express (default: on exactly when a ledger is given) turns the order of every customer whose district has a store
+    into an express order (make_express_order, promised_minutes=express_promise_minutes); every late_express_every-th
+    express order is delivered late (0: never). express_ids, if a set, receives the order id of every express order
+    before its events are yielded (the noise step protects them).
     """
     if sessions is None and max_events is None:
         raise ValueError("sessions or max_events required")
+    if express is None:
+        express = ledger is not None
+    n_express = 0
     t = start
     n_sessions = 0
     n_events = 0
+    by_id = {p["product_id"]: p for p in catalog}
+    hero_customers = None
+    if scenario is not None:
+        hero_customers = [c for c in customers if store_for(c["city"], c.get("district")) == scenario.store_id]
+    if ledger is not None:
+        for ev in ledger.opening():
+            yield "inventory", ev
     while (sessions is None or n_sessions < sessions) and (max_events is None or n_events < max_events):
         n_sessions += 1
         if mean_gap is None:
             t += timedelta(seconds=rng.randint(1, 3))
         else:
             t += timedelta(seconds=rng.expovariate(1.0 / mean_gap))
-        cust = rng.choice(customers) if rng.random() < 0.85 else None
-        camp = rng.choice(CAMPAIGNS) if rng.random() < 0.4 else None
-        events = journey(rng, cust, catalog, camp, t)
+        hot = None
+        if hero_customers and rng.random() < scenario.share:
+            cust, camp, hot = rng.choice(hero_customers), CAMPAIGNS[0], scenario.products
+        else:
+            cust = rng.choice(customers) if rng.random() < 0.85 else None
+            camp = rng.choice(CAMPAIGNS) if rng.random() < 0.4 else None
+        events = journey(rng, cust, catalog, camp, t, hot=hot)
+        if ledger is not None:
+            for ev in ledger.due(t):
+                yield "inventory", ev
         if starts is not None:
             starts[events[0]["session_id"]] = t
         click_id = ("clk_" + events[0]["session_id"][5:]) if camp else None
@@ -55,8 +83,23 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
         purchase = next((e for e in events if e["event_type"] == "purchase"), None)
         if purchase is None or cust is None:
             continue
-        order = make_order(rng, cust, catalog, camp, datetime.fromisoformat(purchase["event_time"]),
-                           purchase["payload"]["order_id"])
+        first_item = None
+        if hot:
+            cart = next((e for e in events if e["event_type"] == "add_to_cart"), None)
+            first_item = by_id.get(cart["payload"]["product_id"]) if cart else None
+        placed = datetime.fromisoformat(purchase["event_time"])
+        order_id = purchase["payload"]["order_id"]
+        if express and store_for(cust["city"], cust.get("district")):
+            n_express += 1
+            late = None
+            if late_express_every and n_express % late_express_every == 0:
+                late = express_promise_minutes + rng.uniform(1, 8)
+            order = make_express_order(rng, cust, catalog, camp, placed, order_id, first_item=first_item,
+                                       promised_minutes=express_promise_minutes, late_minutes=late)
+            if express_ids is not None:
+                express_ids.add(order_id)
+        else:
+            order = make_order(rng, cust, catalog, camp, placed, order_id, first_item=first_item)
         for _, oe in order:
             if oe["event_type"] == "order_created":
                 oe["payload"]["session_id"] = purchase["session_id"]
@@ -65,6 +108,14 @@ def iter_batch(rng, customers, catalog, start, sessions=None, max_events=None, m
                     oe["payload"]["platform"] = purchase["platform"]
             n_events += 1
             yield "order", oe
+        if ledger is not None:
+            created = next(oe for _, oe in order if oe["event_type"] == "order_created")
+            store_id = store_for(cust["city"], cust.get("district"))
+            if store_id:
+                ledger.order(created, store_id)
+    if ledger is not None:
+        for ev in ledger.finish():
+            yield "inventory", ev
 
 
 def build_batch(rng, customers, catalog, start, sessions=None, max_events=None, mean_gap=None):
@@ -102,10 +153,17 @@ def pace_live(batch, emit, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=t
         emit(hint, e)
 
 
+def express_order_ids(batch):
+    """Order ids of the express orders in a batch (their timeline is in real minutes, live mode never rescales it)."""
+    return {e["order_id"] for hint, e in batch
+            if e["event_type"] == "order_created" and e["payload"].get("service") == "express"}
+
+
 def compress_orders(batch, time_scale):
-    """Live mode: shrink every order lifecycle offset from order_created by time_scale."""
+    """Live mode: shrink every standard order lifecycle offset from order_created by time_scale."""
+    skip = express_order_ids(batch)
     starts = {e["order_id"]: datetime.fromisoformat(e["event_time"])
-              for hint, e in batch if e["event_type"] == "order_created"}
+              for hint, e in batch if e["event_type"] == "order_created" and e["order_id"] not in skip}
     for hint, e in batch:
         if hint == "order" and e["order_id"] in starts:
             s = starts[e["order_id"]]
@@ -138,8 +196,9 @@ def compress_sessions(batch, session_scale, starts=None):
         return a + (t - a) / session_scale
 
     shift = {}
+    skip = express_order_ids(batch)
     for hint, e in batch:
-        if hint == "order" and e["event_type"] == "order_created":
+        if hint == "order" and e["event_type"] == "order_created" and e["order_id"] not in skip:
             sid = e["payload"].get("session_id")
             if sid in anchors:
                 t = datetime.fromisoformat(e["event_time"])
@@ -154,9 +213,10 @@ def compress_sessions(batch, session_scale, starts=None):
 
 
 def cap_order_tail(batch, max_tail):
-    """Live mode: scale every order's offset from order_created so the longest is at most max_tail seconds."""
+    """Live mode: scale every standard order's offset from order_created so the longest is at most max_tail seconds."""
+    skip = express_order_ids(batch)
     starts = {e["order_id"]: datetime.fromisoformat(e["event_time"])
-              for hint, e in batch if e["event_type"] == "order_created"}
+              for hint, e in batch if e["event_type"] == "order_created" and e["order_id"] not in skip}
     longest = max((datetime.fromisoformat(e["event_time"]) - starts[e["order_id"]]).total_seconds()
                   for hint, e in batch if hint == "order" and e["order_id"] in starts) if starts else 0
     if not max_tail or longest <= max_tail:
@@ -167,6 +227,25 @@ def cap_order_tail(batch, max_tail):
             s = starts[e["order_id"]]
             e["event_time"] = (s + (datetime.fromisoformat(e["event_time"]) - s) * f).isoformat()
     return batch
+
+
+def add_inventory(batch, ledger):
+    """Live mode: stock events computed from the FINAL (compressed) timeline, merged into the batch in time order.
+
+    Run after compress_sessions, compress_orders and cap_order_tail and before noise: the sales then sit at the real
+    order times and every snapshot matches the stock at its own time."""
+    out = [("inventory", ev) for ev in ledger.opening()]
+    for hint, e in batch:
+        t = datetime.fromisoformat(e["event_time"])
+        out.extend(("inventory", ev) for ev in ledger.due(t))
+        out.append((hint, e))
+        if hint == "order" and e["event_type"] == "order_created":
+            store_id = store_for(e.get("city"), e.get("district"))
+            if store_id:
+                ledger.order(e, store_id)
+    out.extend(("inventory", ev) for ev in ledger.finish())
+    out.sort(key=lambda he: datetime.fromisoformat(he[1]["event_time"]))
+    return out
 
 
 def pace_stream(timed, emit, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
@@ -205,6 +284,18 @@ def build_parser():
     ap.add_argument("--show", action="store_true", help="print every published event as one line in the terminal")
     ap.add_argument("--show-every", type=int, default=1, metavar="N",
                     help="with --show: print every Nth event only (e.g. 10 in a fast live run)")
+    ap.add_argument("--inventory", action="store_true",
+                    help="also publish simulated dark-store stock events to inventory.events (opt-in)")
+    ap.add_argument("--scenario", choices=["hero-stockout"], default=None,
+                    help="with stock events: three hero products at the busiest store run out and are restocked "
+                         "(implies --inventory)")
+    ap.add_argument("--hero-units", type=int, default=None,
+                    help="opening stock of each hero product (default %d)" % DEFAULT_HERO_UNITS)
+    ap.add_argument("--express-promise-minutes", type=int, default=20, metavar="N",
+                    help="with stock events: the delivery promise of an express order in minutes (default 20); "
+                         "a smaller N scales the express timeline by N/20 (fast rehearsals)")
+    ap.add_argument("--late-express-every", type=int, default=0, metavar="K",
+                    help="with stock events: deliver every K-th express order late, so a breach exists (0: never)")
     return ap
 
 
@@ -215,16 +306,18 @@ def format_event(topic, payload, width=170) -> str:
     body = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
     when = str(payload.get("event_time", ""))[11:19]
     parts = []
-    for name in ("session_id", "order_id", "customer_id"):
+    for name in ("session_id", "order_id", "customer_id", "store_id"):
         if payload.get(name):
             parts.append("%s=%s" % (name.replace("_id", ""), str(payload[name])[-8:]))
     where = "/".join(str(payload[k]) for k in ("city", "district") if payload.get(k))
     if where:
         parts.append(where)
+    if payload.get("product_id"):
+        parts.append(str(payload["product_id"]))
     for name in ("platform", "device", "channel"):
         if payload.get(name):
             parts.append(str(payload[name]))
-    for name in ("product_id", "page", "payment_method", "order_total", "total", "reason", "carrier"):
+    for name in ("product_id", "page", "payment_method", "order_total", "total", "reason", "carrier", "qty_delta", "on_hand"):
         if body.get(name) is not None:
             parts.append("%s=%s" % (name, body[name]))
     if body.get("page_url"):
@@ -233,7 +326,8 @@ def format_event(topic, payload, width=170) -> str:
 
 
 def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, rate=200.0, universe_seed=None, show_every=0, show_fn=print,
-                 time_scale=21600.0, session_scale=60.0, max_tail=60.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep):
+                 time_scale=21600.0, session_scale=60.0, max_tail=60.0, now_fn=lambda: datetime.now(timezone.utc), sleep_fn=time.sleep,
+                 inventory=False, scenario=None, hero_units=None, express_promise_minutes=20, late_express_every=0):
     """iter_batch -> (history guard) -> apply_noise -> publish; writes the noise manifest.
 
     The history guard runs BEFORE noise, so future_timestamp noise events (intentionally in
@@ -247,6 +341,17 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
     catalog_ids = {p["product_id"] for p in catalog}
     counter = NoiseCounter()
     counts = Counter()
+    ledger = None
+    if inventory or scenario:
+        ledger = StockLedger(seed, catalog, start, scenario=scenario == "hero-stockout",
+                             hero_units=hero_units or DEFAULT_HERO_UNITS)
+    hero = ledger.scenario if ledger else None
+    express_ids = set()
+    xargs = dict(express=ledger is not None, express_ids=express_ids, express_promise_minutes=express_promise_minutes,
+                 late_express_every=late_express_every)
+
+    def protect(event):  # noise never touches an express order: its timeline is the promise under test
+        return isinstance(event, dict) and event.get("order_id") in express_ids
 
     def emit(hint, payload):
         topic, key = route(hint, payload)
@@ -259,16 +364,18 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
         mean_gap = AVG_EVENTS_PER_SESSION / rate
         starts = {}
         batch = list(iter_batch(rng, customers, catalog, start, max_events=events, mean_gap=mean_gap,
-                                starts=starts))
+                                starts=starts, scenario=hero, **xargs))
         compress_sessions(batch, session_scale, starts)
         compress_orders(batch, time_scale)
         cap_order_tail(batch, max_tail)
         batch.sort(key=lambda he: datetime.fromisoformat(he[1]["event_time"]))
-        timed = apply_noise_timed(iter(batch), noise_rng, config, catalog_ids, counter, now=now)
+        if ledger is not None:
+            batch = add_inventory(batch, ledger)
+        timed = apply_noise_timed(iter(batch), noise_rng, config, catalog_ids, counter, now=now, protect=protect)
         pace_stream(timed, emit, now_fn, sleep_fn)
     else:
-        stream = guard_past(iter_batch(rng, customers, catalog, start, max_events=events), now)
-        for hint, payload in apply_noise(stream, noise_rng, config, catalog_ids, counter, now=now):
+        stream = guard_past(iter_batch(rng, customers, catalog, start, max_events=events, ledger=ledger, scenario=hero, **xargs), now)
+        for hint, payload in apply_noise(stream, noise_rng, config, catalog_ids, counter, now=now, protect=protect):
             emit(hint, payload)
     pub.flush()
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -292,7 +399,10 @@ def main():
                                   start=resolve_start(args.start, args.live, now), now=now, live=args.live, pub=pub,
                                   config=config, manifest_path=args.manifest, rate=args.rate, time_scale=args.time_scale,
                                   session_scale=args.session_scale, max_tail=args.max_tail_seconds,
-                                  show_every=max(1, args.show_every) if args.show else 0)
+                                  show_every=max(1, args.show_every) if args.show else 0,
+                                  inventory=args.inventory, scenario=args.scenario, hero_units=args.hero_units,
+                                  express_promise_minutes=args.express_promise_minutes,
+                                  late_express_every=args.late_express_every)
             total.update(counts)
             rounds += 1
             if not args.forever:

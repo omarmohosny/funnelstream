@@ -30,6 +30,11 @@ _TYPES = {
     "silver_order_items": {"line_no": _INT, "quantity": _INT, "unit_price": _MONEY, "line_total": _MONEY,
                            "order_time": _TS},
     "silver_quarantine": {"received_at": _TS},
+    "silver_stock_movements": {"qty_delta": _INT, "requested_qty": _INT, "event_time": _TS, "kafka_timestamp": _TS,
+                               "event_date": _DATE},
+    "silver_stock_snapshots": {"on_hand": _INT, "reserved_qty": _INT, "reorder_point": _INT, "event_time": _TS,
+                               "kafka_timestamp": _TS, "event_date": _DATE},
+    "silver_express_orders": {"promised_minutes": _INT, "created_at": _TS, "event_date": _DATE},
     "silver_products": {"updated_at": _TS, "price": DecimalType(10, 2), "is_active": _BOOL},
     "silver_customers": {"updated_at": _TS, "signup_date": _DATE, "marketing_consent": _BOOL},
 }

@@ -115,8 +115,11 @@ def test_silver_mirror_matches_spark_schemas():
     names = [t.name for t in SILVER_MIRROR_TABLES]
     assert names == ["silver_events", "silver_orders", "silver_order_status", "silver_order_items",
                      "silver_quarantine", "silver_products", "silver_customers", "silver_campaign_snapshots"]
-    assert len(SCHEMAS) == 7
+    from streaming.silver.schemas import TABLE_COLUMNS
+    assert len(SCHEMAS) == len(TABLE_COLUMNS) + 2  # + products and customers
     for name, schema in SCHEMAS.items():
+        if "stock" in name or name == "silver_express_orders":  # not mirrored to Databricks
+            continue
         t = next(x for x in SILVER_MIRROR_TABLES if x.name == name)
         assert t.column_names() == [f.name for f in schema.fields], name
     snap = next(x for x in SILVER_MIRROR_TABLES if x.name == "silver_campaign_snapshots")

@@ -5,7 +5,7 @@ Opens three windows so you can watch data move through every stage, live:
                         the Silver job also fills the live and health tables in Postgres
   3. Generator        : the simulator in live mode, printing the events it publishes
 Postgres and Grafana are started first (Grafana: http://localhost:3000).
-Run from anywhere:  .\scripts\watch_demo.ps1   [-Events 3000 (per round)] [-Once] [-Rate 50] [-Seed N] [-ShowEvery 5] [-Sample 3]
+Run from anywhere:  .\scripts\watch_demo.ps1   [-Events 3000 (per round)] [-Once] [-Rate 50] [-Seed N] [-ShowEvery 5] [-Sample 3] [-Inventory]
 Stop:               .\scripts\stop_demo.ps1   (then close the windows)
 #>
 param(
@@ -17,6 +17,7 @@ param(
     [int]$Sample = 3,        # Bronze and Silver print the newest N rows per batch
     [int]$StartDelay = 75,   # seconds Spark gets to start before the generator begins
     [int]$SyncEvery = 300,   # seconds between Silver -> Databricks -> Gold rounds; 0 = no Gold sync window
+    [switch]$Inventory,      # also publish simulated stock events and run the hero stock-out scenario
     [switch]$Once            # stop after -Events events; without it the generator runs until Ctrl+C
 )
 $ErrorActionPreference = 'Continue'   # docker writes progress to stderr; Stop would turn that into a fatal error in PowerShell 5.1. Failures are caught by the exit-code checks below.
@@ -77,7 +78,8 @@ Open-Window 'FS 2 Pipeline' "docker compose run --rm --name fs-pipeline -e 'FS_S
 Write-Host "Waiting $StartDelay s for Spark to start, then the generator starts ..."
 Start-Sleep $StartDelay
 $foreverFlag = if ($Once) { '' } else { ' --forever' }
-Open-Window 'FS 3 Generator' ".venv\Scripts\python scripts/run_simulator.py --live --rate $Rate --events $Events --seed $Seed --universe-seed $UniverseSeed --bootstrap localhost:9092 --show --show-every $ShowEvery$foreverFlag"
+$inventoryArgs = if ($Inventory) { ' --inventory --scenario hero-stockout' } else { '' }
+Open-Window 'FS 3 Generator' ".venv\Scripts\python scripts/run_simulator.py --live --rate $Rate --events $Events --seed $Seed --universe-seed $UniverseSeed --bootstrap localhost:9092 --show --show-every $ShowEvery$foreverFlag$inventoryArgs"
 if ($SyncEvery -gt 0) {
     Open-Window 'FS 4 Gold sync' ".\scripts\sync_gold.ps1 -Every $SyncEvery"
 }

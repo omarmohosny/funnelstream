@@ -19,11 +19,17 @@ SILVER_KEYS = {
     "silver_quarantine": ["quarantine_id"],
     "silver_products": ["product_id", "updated_at"],
     "silver_customers": ["customer_id", "updated_at"],
+    "silver_stock_movements": ["event_id"],
+    "silver_stock_snapshots": ["event_id"],
+    "silver_express_orders": ["order_id"],
 }
 PARTITION_COLS = {
     "silver_events": "event_date",
     "silver_orders": "event_date",
     "silver_order_status": "event_date",
+    "silver_stock_movements": "event_date",
+    "silver_stock_snapshots": "event_date",
+    "silver_express_orders": "event_date",
 }
 
 
