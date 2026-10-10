@@ -299,6 +299,18 @@ docker compose run --rm spark python -m streaming.jobs.pipeline --lake data/lake
 
 By default the generator runs with `--forever` (rounds of `--events` events; round i uses seed `seed*100000+i`, so ids never repeat). A fourth window, `FS 4 Gold sync` (`scripts\sync_gold.ps1`), runs `publish_silver.py` and then `warehouse.gold_build --days 7` every `-SyncEvery` seconds in the 1.5 GB `sync` container, so data reaches Gold without manual commands. A failed round is retried on the next one. The manual commands in the sections below still work unchanged. If `localhost:9092` or `localhost:3000` stop answering after Docker Desktop restarts (the port forwarding goes stale), run `docker compose restart kafka` or `docker compose up -d --force-recreate grafana`.
 
+### When the demo stack dies without a code error (10 October 2026)
+
+Seen on the development PC: the Docker WSL2 engine restarted twice in 15 minutes (the Docker log says `wsl-bootstrap stopped with exit code 1, did wsl shutdown?`). Every container started with `--rm`, such as `fs-pipeline`, died with it (`error waiting for container: unexpected EOF` in the pipeline window). Kafka, Postgres and Grafana came back by themselves, but after every engine restart do this before anything else:
+
+```powershell
+docker compose up -d --force-recreate grafana    # Grafana shows "Failed to fetch" until you do
+docker compose restart kafka                      # the host Kafka client is disconnected at once until you do (rdkafka: Disconnected while requesting ApiVersion)
+.\scriptsailure_demo.ps1 restart                # starts only the pipeline again; it resumes from its checkpoint
+```
+
+The same PC also had a wrong clock: after sleep and resume the hardware clock returned dates days off (the Windows log shows jumps to 12 and 13 October and to December), which makes Silver quarantine events as FUTURE_TIMESTAMP and shifts every alert. Before a demo: `w32tm /resync /force` (administrator), then `w32tm /query /status` must show `Leap Indicator: 0` and a real source such as `time.google.com`; do not let the PC sleep; compare `docker info --format '{{.SystemTime}}'` with `(Get-Date).ToUniversalTime()`: they must match to the second.
+
 The same views by hand: `streaming.jobs.pipeline --show [N]`, or `bronze_ingest --show [N]` and `silver_clean --show [N]` as two jobs (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
 
 ## Failure demo (G3)

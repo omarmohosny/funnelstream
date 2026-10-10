@@ -4,15 +4,15 @@
 
 **Goal:** Add simulated dark-store inventory to FunnelStream so one platform serves two users: an operations user who watches live traffic and real stock in Grafana, and a marketing user who reads yesterday's campaign numbers including the estimated ad spend exposed to out-of-stock products.
 
-**Architecture:** Two new event types (`stock_snapshot`, `stock_movement`) travel on a new Kafka topic `inventory.events` through the existing Bronze and Silver path (two new Silver tables). The live sink recomputes `live_stock_now` and `live_oos_demand_minute` in Postgres for the touched store and product pairs. Grafana reads those tables for an operations dashboard and one new alert. A daily job joins the Databricks `agg_campaign_daily` spend with the out-of-stock landing clicks into a Postgres mart that a second Grafana dashboard shows.
+**Architecture:** Two new event types (`stock_snapshot`, `stock_movement`) travel on a new Kafka topic `inventory.events` through the existing Bronze and Silver path (two new Silver tables). The live sink recomputes `live_stock_now` and `live_oos_demand_minute` in Postgres for the touched store and product pairs. Grafana reads those tables for an operations dashboard and one new alert. A daily job rolls the Silver stock tables and the minute demand table into two Postgres marts (`inventory_daily`, `oos_demand_daily`) that a second Grafana dashboard and Power BI both read. A daily job joins the Databricks `agg_campaign_daily` spend with the out-of-stock landing clicks into a Postgres mart that a second Grafana dashboard shows.
 
-**Tech Stack:** Python 3.11, PySpark 3.5 with Delta (in Docker), Kafka (confluent-kafka), Postgres 16 (psycopg 3), Grafana 11.3 provisioning, pytest.
+**Tech Stack:** Python 3.11, PySpark 3.5 with Delta (in Docker), Kafka (confluent-kafka), Postgres 16 (psycopg 3), Grafana 11.3 provisioning, Power BI Desktop (reads the same Postgres marts), pytest.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md` (read it first; this plan implements it).
 
 ## Global Constraints
 
-- Defense date is 13 October 2026. The D-1 mart (Task 9) is the first thing to cut if time runs out; Tasks 1 to 8 and 10 are the core.
+- Defense date is 13 October 2026. The marketing D-1 mart (Task 9B) is the first thing to cut if time runs out; Tasks 1 to 8, 9A and 10 are the core. Task 9A (the daily inventory mart, the Grafana inventory-insights page and the tables Power BI reads) is core because the product owner asked for inventory insights in both Grafana and Power BI.
 - The inventory is simulated and is labeled as simulated wherever a number is shown (dashboard descriptions, README).
 - Eight dark stores exactly: Cairo 3 (Nasr City, Maadi, New Cairo), Giza 1, Alexandria 2, Mansoura 1, Tanta 1. Assiut and "Other" are "not served" and excluded from out-of-stock metrics.
 - Stock event envelope: `event_id, event_type, event_version (1), event_time, store_id, product_id, payload`. A flat event without `payload` is quarantined.
@@ -20,6 +20,7 @@
 - No noise injection on inventory events. Inventory is opt-in (`--inventory`, `--scenario hero-stockout`); with the flags off the simulator stream and every existing count must stay byte for byte identical.
 - Stock now is a full recompute per touched `(store_id, product_id)`: the latest snapshot (by `event_time`, ties by `event_id`) plus the sum of `qty_delta` of movements with `event_time` strictly after that snapshot. A replay or a late event never double counts.
 - The marketing metric is titled "estimated spend exposed to out-of-stock". Spend is allocated per click: `exposed_spend = spend * oos_clicks / clicks`.
+- The live-inventory section is an **express** service with a hard **20-minute** delivery promise (`promised_minutes`, default 20, carried by every express order). Normal express orders take 8 to 17.5 minutes and never more than 19.5 in the simulator; the platform monitors the promise live and alerts on ANY breach (Task 8B). Express timing is never time-compressed in live mode.
 - Never commit `data/`, `.venv`, `.env` or secrets. Destructive Databricks actions and lake resets need the user's explicit say-so.
 - Run only ONE Spark container at a time (Docker has 8 GB). Spark tests run in Docker per file: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/<file>.py -q -p no:cacheprovider`. Host tests: `.venv\Scripts\python -m pytest -q`. Two host tests fail before this work and are not yours: `tests/test_checks.py::test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest` and `::test_the_repo_manifest_loads` (they expect `duplicate=25` in the git-ignored `noise_manifest.json`).
 - Windows PowerShell 5.1 strips inner double quotes when it passes arguments to native programs. Send SQL through stdin: `"SELECT 1;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'`.
@@ -45,10 +46,13 @@ Failure modes the spec implies but no happy-path test exercises, most likely fir
 | INV3 Bronze and Silver tables | 2 (tables part), 4 |
 | INV4 live tables and sink | 7 |
 | INV5 Grafana operations dashboard and alert | 8 |
-| INV6 D-1 mart and page | 9 |
+| INV6 D-1 mart and page | 9B |
+| INV7 daily inventory mart, Grafana insights page, Power BI tables (added 10 Oct evening) | 9A |
+| INV8 express delivery and the 20-minute promise (added 10 Oct night) | 6B, 8B, and the express table in 9A |
+| SMK end-to-end smoke test of the whole project (added 10 Oct night) | 11 |
 | documentation and rehearsal | 10 |
 
-Order: 1, 3 (independent), 2, 4, 5, 6, 7, 8, then 9 and 10. Tasks 1 and 3 can run in parallel.
+Order: 1, 3 (independent), 2, 4, 5, 6, 6B, 7, 8, 8B, 9A, 9B, 10, then 11 (the end-to-end smoke test of the whole project). Tasks 1 and 3 can run in parallel.
 
 ## File structure
 
@@ -1407,6 +1411,35 @@ git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m 
 
 ---
 
+### Task 6B: Express orders and the 20-minute promise (contract, Silver table, simulator)
+
+The live-inventory section of the app is an **express** service: an order placed from it carries a promise of delivery within **20 minutes**, and the promise must never be exceeded. The platform cannot enforce delivery, so it does three things: the simulator makes a normal express order take 8 to 17.5 minutes (never more than 19.5); the pipeline records every express order with its own promise; and Task 8B watches the promise live and alerts on any breach.
+
+**Files:**
+- Modify: `contracts/validate.py`, `streaming/silver/schemas.py`, `streaming/silver/spark_schemas.py`, `streaming/silver/writer.py`, `streaming/silver/transform.py`, `simulator/orders.py`, `scripts/run_simulator.py`
+- Create: `tests/test_express_contract.py`, `tests/test_express_orders.py`, `tests/test_express_silver_spark.py`
+
+**Interfaces:**
+- Consumes: Task 1 (validator), Task 2 (transform and Silver table pattern), Task 3 (`store_for`), Task 5 (`StockLedger`, `iter_batch`), Task 6 (runner).
+- Produces:
+  - `order_created.payload.service` (`"express"` or `"standard"`, default standard) and `order_created.payload.promised_minutes` (integer 1 to 60, required when the service is express).
+  - Silver table `silver_express_orders(order_id, store_id, promised_minutes, created_at, event_date)`, key `order_id`, partition `event_date`. One row per express order, written by the transform of its `order_created` event; `store_id` comes from `store_for(city, district)`.
+  - `make_express_order(rng, customer, catalog, campaign, t, order_id, first_item=None, promised_minutes=20, late_minutes=None) -> list[(topic, event)]`: the same event kinds and topics as `make_order`, in minutes.
+  - Runner flags `--express-promise-minutes N` (default 20) and `--late-express-every K` (default 0: never).
+
+Behaviour to implement, test first (write each test, watch it fail for the right reason, then implement):
+
+- **Contract.** `service` outside `express` or `standard` is `BAD_VALUE`; an express order without an integer `promised_minutes` between 1 and 60 is `BAD_VALUE` (a boolean is not an integer); a standard order may omit both. An order event without these fields (every existing event) still validates exactly as before.
+- **Silver.** An express `order_created` produces the usual rows (`silver_orders`, `silver_order_status`, `silver_order_items`) plus one `silver_express_orders` row; a standard one produces no express row. An express order whose city and district have no store (`store_for` is None) is quarantined as `BAD_VALUE` with the detail "express order outside a served district". Replaying the batch changes nothing (key `order_id`). Add the table to `TABLE_COLUMNS`, the Spark schemas, `SILVER_KEYS` and `PARTITION_COLS`, and update the count-pinned tests as in Task 2.
+- **Simulator, normal case.** With the ledger on (`--inventory`), an order of a customer whose district has a store is an express order made by `make_express_order`; every other order stays a standard `make_order` order. Timeline in minutes after `order_created`: payment authorised (non-COD only) after 10 to 40 seconds, packed after 2 to 4 minutes, shipped about 1 minute later, out for delivery 30 to 60 seconds after that, **delivered after 8 to 17.5 minutes in total, never above `promised_minutes - 0.5`**, completed 30 seconds after delivery. No cancellations, no failed attempts, no returns. The sale lines still reach the stock ledger (Task 5/6).
+- **Simulator, late case.** With `late_minutes` set (the runner passes it for every K-th express order when `--late-express-every K` is given) the order is delivered after `late_minutes` (default `promised_minutes + 1` to `promised_minutes + 8`) instead, so a breach exists to be detected. Without the flag no order is ever late: a test generates 5,000 events with the ledger on and asserts that the maximum delivered-minus-created time of every express order is below 19.5 minutes.
+- **Live mode keeps real minutes.** `compress_orders`, `compress_sessions`' order shift and `cap_order_tail` must not rescale express orders (their timeline is already in minutes); standard orders compress as before. A rehearsal that needs a faster clock passes `--express-promise-minutes 2`: the generator then scales the express timeline by `promised_minutes / 20` and carries the shorter promise in the event, so the SLA logic (which always reads the order's own promise) behaves the same. Test: with promise 2 the maximum express duration is below 1.9 minutes and the event carries `promised_minutes == 2`.
+- **Nothing changes when the flags are off.** The digest test of Task 5 (`test_the_stream_without_inventory_is_unchanged`) still passes, and a stream with `--inventory` but no express-capable customer is identical to the Task 5 stream.
+
+Run the host suite, the new Spark file and the existing Silver Spark files one at a time. Commit only when told to commit: `Add express orders and the 20-minute promise to the contract, Silver and the simulator`.
+
+---
+
 ### Task 7: Live Postgres tables and the sink recompute
 
 **Files:**
@@ -1550,6 +1583,40 @@ from warehouse.live_common import _read, _utc
 DEMAND_KEYS = ["minute_start", "store_id", "product_id", "utm_campaign"]
 
 
+def _stock_levels(spark, silver_root, pairs=None, as_of=None):
+    """DataFrame (store_id, product_id, on_hand, reserved_qty, reorder_point): the latest snapshot plus the movements
+    strictly after it, both taken before `as_of` (exclusive; None means no limit).
+
+    pairs None means every store and product pair. Returns None when no snapshot table exists. A pair without any
+    snapshot has no row. Used by the live sink (no as_of) and by the daily inventory mart (as_of = end of the day)."""
+    snaps = _read(spark, silver_root, "silver_stock_snapshots")
+    if snaps is None:
+        return None
+    moves = _read(spark, silver_root, "silver_stock_movements")
+    cols = ["store_id", "product_id"]
+    keys = (F.broadcast(spark.createDataFrame(sorted(set(pairs)), "store_id string, product_id string"))
+            if pairs is not None else None)
+
+    def narrow(df):
+        if keys is not None:
+            df = df.join(keys, cols, "left_semi")
+        if as_of is not None:
+            df = df.where(F.col("event_time") < F.lit(as_of))
+        return df
+
+    window = Window.partitionBy(*cols).orderBy(F.col("event_time").desc(), F.col("event_id").desc())
+    latest = (narrow(snaps).withColumn("_rn", F.row_number().over(window)).where("_rn = 1")
+              .select(*cols, "on_hand", "reserved_qty", "reorder_point", F.col("event_time").alias("snap_time")))
+    if moves is None:
+        return latest.select(*cols, "on_hand", "reserved_qty", "reorder_point")
+    m = narrow(moves).select(*cols, "qty_delta", "event_time")
+    after = F.col("event_time") > F.col("snap_time")
+    agg = (latest.join(m, cols, "left")
+           .groupBy(*cols, "on_hand", "reserved_qty", "reorder_point")
+           .agg(F.coalesce(F.sum(F.when(after, F.col("qty_delta"))), F.lit(0)).alias("delta")))
+    return agg.select(*cols, (F.col("on_hand") + F.col("delta")).alias("on_hand"), "reserved_qty", "reorder_point")
+
+
 def compute_stock_rows(spark, silver_root, pairs, now):
     """live_stock_now rows for the (store_id, product_id) pairs: the latest snapshot plus the movements strictly after it.
 
@@ -1558,28 +1625,12 @@ def compute_stock_rows(spark, silver_root, pairs, now):
     pairs = sorted(set(pairs))
     if not pairs:
         return []
-    snaps = _read(spark, silver_root, "silver_stock_snapshots")
-    if snaps is None:
+    levels = _stock_levels(spark, silver_root, pairs=pairs)
+    if levels is None:
         return []
-    moves = _read(spark, silver_root, "silver_stock_movements")
-    keys = F.broadcast(spark.createDataFrame(pairs, "store_id string, product_id string"))
-    cols = ["store_id", "product_id"]
-    window = Window.partitionBy(*cols).orderBy(F.col("event_time").desc(), F.col("event_id").desc())
-    latest = (snaps.join(keys, cols, "left_semi")
-              .withColumn("_rn", F.row_number().over(window)).where("_rn = 1")
-              .select(*cols, "on_hand", "reserved_qty", "reorder_point", F.col("event_time").alias("snap_time")))
-    if moves is None:
-        agg = latest.withColumn("delta", F.lit(0))
-    else:
-        m = moves.join(keys, cols, "left_semi").select(*cols, "qty_delta", "event_time")
-        after = F.col("event_time") > F.col("snap_time")
-        agg = (latest.join(m, cols, "left")
-               .groupBy(*cols, "on_hand", "reserved_qty", "reorder_point")
-               .agg(F.coalesce(F.sum(F.when(after, F.col("qty_delta"))), F.lit(0)).alias("delta")))
     out = []
-    for r in agg.collect():
-        on_hand = int(r["on_hand"]) + int(r["delta"])
-        reserved = int(r["reserved_qty"] or 0)
+    for r in levels.collect():
+        on_hand, reserved = int(r["on_hand"]), int(r["reserved_qty"] or 0)
         out.append(dict(store_id=r["store_id"], product_id=r["product_id"], on_hand=on_hand, reserved_qty=reserved,
                         available=max(on_hand - reserved, 0), reorder_point=int(r["reorder_point"] or 0),
                         updated_at=now))
@@ -2195,7 +2246,418 @@ git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m 
 
 ---
 
-### Task 9: Marketing D-1 mart and its Grafana page (stretch: cut first)
+### Task 8B: Live express SLA table, panels and the "any breach" alert
+
+**Files:**
+- Create: `warehouse/live_express.py`, `tests/test_live_express_spark.py`, `tests/test_live_express_sink.py`
+- Modify: `warehouse/live_tables.py`, `warehouse/live_ddl.sql`, `warehouse/live_store.py`, `monitoring/dashboards.py` (extend `build_inventory_ops`), `monitoring/grafana/dashboards/inventory-ops.json` (regenerate), `monitoring/grafana/provisioning/alerting/alerting.yaml`, `tests/test_inventory_dashboards.py`, `tests/test_grafana_provisioning.py`, `tests/test_live_stock_sink.py` (table counts)
+
+**Interfaces:**
+- Consumes: Task 6B (`silver_express_orders`), Task 7 (the sink and its thread pool), Task 8 (the dashboard builder and the alert file).
+- Produces:
+  - Postgres table `live_express_orders(order_id, store_id, promised_minutes, created_at, delivered_at)`, key `order_id`; `delivered_at` is NULL until the order's first `delivered` status. Grafana computes elapsed time and state from these columns with `now()`, so the state moves even between Silver batches.
+  - `compute_express_rows(spark, silver_root, since) -> list[dict]`: every express order created at or after `since`, joined to its first `delivered` status time (`silver_order_status`), as `live_express_orders` rows. The sink calls it each batch with `since = now - 3 hours` (so an order that is still open is refreshed until it is delivered or older than three hours).
+  - Grafana: a row "Express delivery, 20-minute promise" on the Operations dashboard and the alert rule `fs-express-sla`.
+
+Definitions used everywhere (the dashboard prints them): an express order is **on time** if `delivered_at - created_at <= promised_minutes`; it is **breached** if it was delivered later than its promise, or if it is still undelivered and `now() - created_at > promised_minutes`; it is **at risk** if undelivered and `now() - created_at >= 0.75 x promised_minutes` (15 minutes for the standard promise). The promise is always the order's own `promised_minutes`.
+
+Behaviour to implement, test first:
+
+- **Table and DDL.** `live_express_orders` in `live_tables.py`, `live_ddl.sql` (primary key `order_id`, `delivered_at` nullable) and the `GRANT SELECT` list; table counts in the pinned tests move accordingly.
+- **Compute (Spark test).** Orders created before `since` are excluded; an order with a `delivered` status gets the earliest delivered time (a replayed or duplicated status row does not change it); an order without one has `delivered_at` NULL; two stores and a promise of 2 minutes are carried unchanged. Without the `silver_express_orders` table the result is `[]`.
+- **Sink (host test, same stub style as Task 7).** With stock or express activity seen, the express compute runs in the sink's thread pool with the others and its rows are upserted; a failing express compute makes `on_batch` return None without raising and the work stays pending (the Task 7 failure test pattern); when no express order was ever seen the express compute is skipped (no extra Spark job per batch).
+- **Panels** (extend `build_inventory_ops`; every query reads only `live_express_orders` and `dim_store`):
+  - stat "Express orders at risk now": `SELECT count(*) AS "orders" FROM live_express_orders WHERE delivered_at IS NULL AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute'`, thresholds orange at 1, red at 3.
+  - stat "Express breaches, last hour": delivered later than the promise, or undelivered past the promise, among orders created in the last hour; thresholds red at 1 (any breach is red).
+  - stat "On-time rate, last hour": on-time orders divided by orders that are either delivered or past their promise, as a percentage, unit percent, red below 100.
+  - stat "Slowest express delivery, last hour (minutes)": the maximum of elapsed minutes (delivery time for delivered orders, age for open ones), thresholds orange at 15, red at 20.
+  - table "Slowest express orders, last hour": store, order id, promise, elapsed minutes, state, ten rows ordered by elapsed minutes descending.
+  The dashboard test of Task 8 extends: the new panels exist, use the allowed tables, and the stat thresholds are as above.
+- **Alert `fs-express-sla`** (severity critical, evaluated every minute, `for: 0s`, `noDataState: OK`): fires when at least one express order created in the last 60 minutes is breached. Summary "An express order missed its delivery promise"; runbook "Open 'Operations, live inventory', table 'Slowest express orders': find the store, check its stock and riders, call the customer, and record the cause." The provisioning test pins the rule's uid, threshold (`gt 0`), severity and that its SQL contains `promised_minutes` and `live_express_orders`.
+- **Rehearsal.** `.\scripts\watch_demo.ps1 -Inventory -ExpressPromiseMinutes 2 -LateExpressEvery 15` runs the whole path with a 2-minute promise and every 15th express order late, so the alert fires within about 3 minutes; the same command without the two options shows no breach in the normal case. Add both switches to the demo script (they pass `--express-promise-minutes` and `--late-express-every` to the runner) and extend the script test of Task 6.
+
+Run the host suite and the Spark files one at a time. Commit only when told to commit: `Add the live express delivery SLA table, panels and the any-breach alert`.
+
+---
+
+### Task 9A: Daily inventory mart and the Grafana inventory-insights page (core)
+
+**Files:**
+- Create: `warehouse/inventory_daily.py`, `scripts/build_inventory_daily.py`, `tests/test_inventory_daily.py`, `tests/test_inventory_daily_spark.py`, `monitoring/grafana/dashboards/inventory-daily.json` (generated)
+- Modify: `warehouse/live_tables.py`, `warehouse/live_ddl.sql`, `monitoring/dashboards.py`, `scripts/gen_dashboards.py`, `tests/test_inventory_dashboards.py`, `tests/test_live_stock_sink.py` (table counts)
+
+**Interfaces:**
+- Consumes: Task 7 (`_stock_levels(spark, silver_root, pairs=None, as_of=None)`, the Silver stock tables, `live_oos_demand_minute`, `dim_store`).
+- Produces:
+  - Postgres tables `inventory_daily(report_date, store_id, product_id, closing_on_hand, units_sold, units_received, units_shrunk, units_adjusted, oversold_units, ended_out_of_stock)`, key `(report_date, store_id, product_id)`, and `oos_demand_daily(report_date, store_id, product_id, utm_campaign, views, add_to_cart, landing_clicks)`, key `(report_date, store_id, product_id, utm_campaign)`. Power BI reads both (`Inventory Daily` and `OOS Demand Daily`).
+  - `cairo_day_bounds(report_date) -> (start, end)` aware UTC datetimes, end exclusive.
+  - `compute_inventory_daily(spark, silver_root, report_date) -> list[dict]`.
+  - `rollup_oos_demand_daily(pg_store, report_date) -> None`.
+  - `scripts/build_inventory_daily.py [--date today|yesterday|YYYY-MM-DD] [--days N]` (needs Spark and Postgres only, no Databricks).
+  - `monitoring.dashboards.build_inventory_daily()` and the dashboard uid `fs-inventory-daily`.
+
+**Express addition (the 20-minute promise).** Task 9A also builds a third Postgres table, `express_daily(report_date, store_id, orders, delivered, on_time, breached, avg_delivery_minutes, max_delivery_minutes)`, key `(report_date, store_id)`, with `compute_express_daily(spark, silver_root, report_date) -> list[dict]` in `warehouse/inventory_daily.py` and a call in `scripts/build_inventory_daily.py`. Per Cairo day of `silver_express_orders.created_at` and store: `orders` counts express orders; `delivered` those with a `delivered` status (earliest per order); `on_time` the delivered ones with `delivered_at - created_at <= promised_minutes`; `breached` the delivered-late ones plus the undelivered ones whose age at the end of the day exceeds their promise; the two minute columns are the average and maximum of `delivered_at - created_at` in minutes over delivered orders (NULL when none). Spark tests (write them first): a mix of on-time, late and open orders over two stores and a Cairo midnight split; the maximum is the slowest delivered order; a replayed status row changes nothing; a day without express orders gives `[]`. DDL, `LIVE_TABLES` entry and `GRANT` as for the other two tables (the table count becomes 11 in Task 9A's pinned tests). The Grafana daily page gets two more panels: stat "Express on-time rate, latest day" (`SELECT coalesce(round(100.0 * sum(on_time) / nullif(sum(on_time) + sum(breached), 0), 1), 100) AS "percent" FROM express_daily WHERE report_date = (SELECT max(report_date) FROM express_daily)`, unit percent, red below 100) and timeseries "Slowest express delivery per day (minutes)" (`SELECT report_date::timestamp AS "time", max(max_delivery_minutes) AS "slowest", 20 AS "promise" FROM express_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`). Power BI reads the table as `Express Daily`.
+
+Definitions (also printed on the dashboard): `closing_on_hand` is the stock at the end of the Cairo day (latest snapshot plus the movements after it, before midnight, never below zero); `units_sold`, `units_received`, `units_shrunk` and `units_adjusted` sum the movements of that day by reason; `oversold_units` is the sum over sold movements of `requested_qty` minus the units taken (a sale of zero units emits no movement, so fully oversold lines are not counted: a lower bound); `ended_out_of_stock` is `closing_on_hand - reserved <= 0`.
+
+- [ ] **Step 1: Write the failing host test**
+
+`tests/test_inventory_daily.py`:
+
+```python
+import re
+from datetime import date, datetime, timezone
+from pathlib import Path
+
+from warehouse.inventory_daily import cairo_day_bounds, rollup_oos_demand_daily
+from warehouse.live_tables import LIVE_TABLE_NAMES, LIVE_TABLES
+
+DDL = (Path(__file__).parent.parent / "warehouse" / "live_ddl.sql").read_text(encoding="utf-8")
+
+
+def test_the_cairo_day_in_utc_follows_the_clock_of_egypt():
+    start, end = cairo_day_bounds(date(2026, 10, 10))  # Egypt is on summer time (UTC+3) until the end of October
+    assert start == datetime(2026, 10, 9, 21, 0, tzinfo=timezone.utc)
+    assert end == datetime(2026, 10, 10, 21, 0, tzinfo=timezone.utc)
+    start, end = cairo_day_bounds(date(2026, 12, 1))  # winter time, UTC+2
+    assert start == datetime(2026, 11, 30, 22, 0, tzinfo=timezone.utc)
+    assert (end - start).total_seconds() == 24 * 3600
+
+
+def test_the_new_tables_are_specified_created_and_granted():
+    spec = {t.name: t for t in LIVE_TABLES}
+    assert {"inventory_daily", "oos_demand_daily"} <= set(LIVE_TABLE_NAMES)
+    assert spec["inventory_daily"].keys == ("report_date", "store_id", "product_id")
+    assert spec["oos_demand_daily"].keys == ("report_date", "store_id", "product_id", "utm_campaign")
+    for name in ("inventory_daily", "oos_demand_daily"):
+        assert re.search(r"CREATE TABLE IF NOT EXISTS %s \(" % name, DDL), name
+        assert name in DDL.split("GRANT SELECT ON")[1].split("TO grafana_ro")[0], name
+
+
+class RecordingStore:
+    def __init__(self):
+        self.executed = []
+
+    def execute(self, sql, retry=True):
+        self.executed.append(sql)
+
+
+def test_the_rollup_sums_the_minutes_of_one_cairo_day_and_is_idempotent():
+    store = RecordingStore()
+    rollup_oos_demand_daily(store, date(2026, 10, 10))
+    [sql] = store.executed
+    assert "FROM live_oos_demand_minute" in sql and "ON CONFLICT (report_date, store_id, product_id, utm_campaign)" in sql
+    assert "AT TIME ZONE 'Africa/Cairo'" in sql and "DATE'2026-10-10'" in sql
+    assert "DO UPDATE SET views = EXCLUDED.views" in sql  # a total is replaced, never incremented
+    rollup_oos_demand_daily(store, date(2026, 10, 10))
+    assert store.executed[0] == store.executed[1]
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `.venv\Scripts\python -m pytest tests\test_inventory_daily.py -q`
+Expected: collection error (`warehouse.inventory_daily` missing).
+
+- [ ] **Step 3: Implement the module, the tables and the DDL**
+
+`warehouse/live_tables.py`: add
+
+```python
+_INV_DAILY = ("report_date:date store_id:string product_id:string closing_on_hand:int units_sold:int "
+              "units_received:int units_shrunk:int units_adjusted:int oversold_units:int ended_out_of_stock:boolean")
+_OOS_DAILY = ("report_date:date store_id:string product_id:string utm_campaign:string views:bigint "
+              "add_to_cart:bigint landing_clicks:bigint")
+```
+
+and append to `LIVE_TABLES`:
+
+```python
+    Table("inventory_daily", "gold", _parse(_INV_DAILY, ["report_date", "store_id", "product_id"]),
+          ("report_date", "store_id", "product_id")),
+    Table("oos_demand_daily", "gold",
+          _parse(_OOS_DAILY, ["report_date", "store_id", "product_id", "utm_campaign"]),
+          ("report_date", "store_id", "product_id", "utm_campaign")),
+```
+
+`warehouse/live_ddl.sql`: add before the `-- BEGIN grafana_ro` line
+
+```sql
+CREATE TABLE IF NOT EXISTS inventory_daily (          -- one row per store, product and Cairo day (simulated stock)
+    report_date        date    NOT NULL,
+    store_id           text    NOT NULL,
+    product_id         text    NOT NULL,
+    closing_on_hand    integer NOT NULL,              -- stock at the end of the day, never below zero
+    units_sold         integer NOT NULL DEFAULT 0,
+    units_received     integer NOT NULL DEFAULT 0,
+    units_shrunk       integer NOT NULL DEFAULT 0,
+    units_adjusted     integer NOT NULL DEFAULT 0,
+    oversold_units     integer NOT NULL DEFAULT 0,    -- asked for beyond the shelf: a lower bound
+    ended_out_of_stock boolean NOT NULL,
+    PRIMARY KEY (report_date, store_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS oos_demand_daily (         -- live_oos_demand_minute summed per Cairo day
+    report_date    date   NOT NULL,
+    store_id       text   NOT NULL,
+    product_id     text   NOT NULL,
+    utm_campaign   text   NOT NULL DEFAULT '',
+    views          bigint NOT NULL DEFAULT 0,
+    add_to_cart    bigint NOT NULL DEFAULT 0,
+    landing_clicks bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (report_date, store_id, product_id, utm_campaign)
+);
+```
+
+and add `inventory_daily, oos_demand_daily` to the GRANT list (the line already lists the Task 7 tables).
+
+`warehouse/inventory_daily.py`:
+
+```python
+"""Daily inventory mart (inventory design, section 9, and the Power BI and Grafana inventory pages).
+
+inventory_daily: one row per store, product and Cairo day, computed from the Silver stock tables.
+oos_demand_daily: live_oos_demand_minute summed per Cairo day (plain SQL in Postgres).
+"""
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from pyspark.sql import functions as F
+
+from warehouse.live_common import _read
+from warehouse.live_stock import _stock_levels
+
+CAIRO, UTC = ZoneInfo("Africa/Cairo"), ZoneInfo("UTC")
+
+
+def cairo_day_bounds(report_date):
+    """(start, end) of the Cairo calendar day as aware UTC datetimes; end is exclusive."""
+    start = datetime.combine(report_date, time(0), tzinfo=CAIRO).astimezone(UTC)
+    end = datetime.combine(report_date + timedelta(days=1), time(0), tzinfo=CAIRO).astimezone(UTC)
+    return start, end
+
+
+def compute_inventory_daily(spark, silver_root, report_date):
+    """inventory_daily rows for the Cairo day: end-of-day stock plus the day's flows, for every store and product pair
+    that has a snapshot before the end of the day. [] when the Silver stock tables do not exist."""
+    _, end = cairo_day_bounds(report_date)
+    levels = _stock_levels(spark, silver_root, as_of=end)
+    if levels is None:
+        return []
+    keys = ["store_id", "product_id"]
+    moves = _read(spark, silver_root, "silver_stock_movements")
+    flows = None
+    if moves is not None:
+        day = moves.where(F.col("event_date") == F.lit(report_date.isoformat()).cast("date"))
+
+        def total(reason, value):
+            return F.coalesce(F.sum(F.when(F.col("reason") == reason, value)), F.lit(0))
+
+        flows = day.groupBy(*keys).agg(
+            total("sold", -F.col("qty_delta")).alias("units_sold"),
+            total("received", F.col("qty_delta")).alias("units_received"),
+            total("shrinkage", -F.col("qty_delta")).alias("units_shrunk"),
+            total("adjustment", F.col("qty_delta")).alias("units_adjusted"),
+            total("sold", F.col("requested_qty") + F.col("qty_delta")).alias("oversold_units"))
+    joined = levels.join(flows, keys, "left") if flows is not None else levels
+    rows = []
+    for r in joined.collect():
+        on_hand, reserved = int(r["on_hand"]), int(r["reserved_qty"] or 0)
+
+        def flow(name):
+            return int(r[name] or 0) if flows is not None else 0
+
+        rows.append(dict(report_date=report_date, store_id=r["store_id"], product_id=r["product_id"],
+                         closing_on_hand=max(on_hand, 0), units_sold=flow("units_sold"),
+                         units_received=flow("units_received"), units_shrunk=flow("units_shrunk"),
+                         units_adjusted=flow("units_adjusted"), oversold_units=flow("oversold_units"),
+                         ended_out_of_stock=(on_hand - reserved) <= 0))
+    return rows
+
+
+def rollup_oos_demand_daily(pg_store, report_date):
+    """Replace the oos_demand_daily rows of one Cairo day with the sums of live_oos_demand_minute (idempotent)."""
+    day = report_date.isoformat()  # a date object: nothing else can reach the SQL text
+    pg_store.execute(
+        "INSERT INTO oos_demand_daily (report_date, store_id, product_id, utm_campaign, views, add_to_cart, landing_clicks) "
+        "SELECT (minute_start AT TIME ZONE 'Africa/Cairo')::date, store_id, product_id, utm_campaign, "
+        "sum(views), sum(add_to_cart), sum(landing_clicks) FROM live_oos_demand_minute "
+        "WHERE (minute_start AT TIME ZONE 'Africa/Cairo')::date = DATE'%s' GROUP BY 1, 2, 3, 4 "
+        "ON CONFLICT (report_date, store_id, product_id, utm_campaign) DO UPDATE SET views = EXCLUDED.views, "
+        "add_to_cart = EXCLUDED.add_to_cart, landing_clicks = EXCLUDED.landing_clicks" % day)
+```
+
+`scripts/build_inventory_daily.py`:
+
+```python
+"""Build inventory_daily and oos_demand_daily in Postgres for one or more Cairo days.
+
+Needs Spark (the Silver stock tables) and PG_DSN, not Databricks: run it in the spark container:
+  docker compose run --rm spark python scripts/build_inventory_daily.py [--date today] [--days 1]
+"""
+import argparse
+import os
+import sys
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from streaming.common.spark import get_spark
+from warehouse.inventory_daily import compute_inventory_daily, rollup_oos_demand_daily
+from warehouse.store import get_store
+
+
+def parse_day(text, today):
+    if text == "today":
+        return today
+    if text == "yesterday":
+        return today - timedelta(days=1)
+    return date.fromisoformat(text)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--date", default="yesterday", help="last Cairo day to build: today, yesterday or YYYY-MM-DD")
+    ap.add_argument("--days", type=int, default=1, help="how many days to build, ending at --date")
+    ap.add_argument("--lake", default="data/lake")
+    args = ap.parse_args(argv)
+    if args.days < 1:
+        print("error: --days must be at least 1", file=sys.stderr)
+        return 2
+    today = datetime.now(ZoneInfo("Africa/Cairo")).date()
+    last = parse_day(args.date, today)
+    lake = os.path.abspath(args.lake)
+    pg = get_store("postgres")
+    try:
+        spark = get_spark("inventory_daily")
+        for back in range(args.days - 1, -1, -1):
+            day = last - timedelta(days=back)
+            rows = compute_inventory_daily(spark, lake, day)
+            if rows:
+                pg.upsert("inventory_daily", rows, ["report_date", "store_id", "product_id"])
+            rollup_oos_demand_daily(pg, day)
+            print("%s: %d inventory rows" % (day, len(rows)))
+    finally:
+        pg.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 4: Run the host tests**
+
+Run: `.venv\Scripts\python -m pytest tests\test_inventory_daily.py -q`, then the full host suite (update the table counts in `tests/test_live_stock_sink.py` to 10). Expected: PASS.
+
+- [ ] **Step 5: Write the failing Spark test and run it**
+
+`tests/test_inventory_daily_spark.py`:
+
+```python
+"""Spark tests (Docker, RUN_SPARK_TESTS=1) for the daily inventory mart."""
+from datetime import date
+
+import pytest
+
+pytestmark = pytest.mark.spark
+
+from test_live_stock_spark import K, move, snap, write  # noqa: E402
+from test_g1_live_spark import T0  # noqa: E402
+from warehouse import inventory_daily  # noqa: E402
+
+DAY = date(2026, 10, 8)  # T0 is 2026-10-08 12:00 UTC, which is 15:00 on the 8th in Cairo
+
+
+def row_of(rows, key=K):
+    [r] = [r for r in rows if (r["store_id"], r["product_id"]) == key]
+    return r
+
+
+def test_flows_and_closing_stock_of_one_day(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    write(spark, lake, "silver_stock_snapshots", [snap(1, K, 40, 0)])
+    sold = move(1, K, -5, 3)
+    sold["requested_qty"] = 7  # asked for 7, only 5 were there: 2 oversold
+    write(spark, lake, "silver_stock_movements",
+          [sold, move(2, K, -3, 4), move(3, K, 60, 5, "received"), move(4, K, -2, 6, "shrinkage"),
+           move(5, K, 4, 7, "adjustment")])
+    r = row_of(inventory_daily.compute_inventory_daily(spark, lake, DAY))
+    assert (r["units_sold"], r["units_received"], r["units_shrunk"], r["units_adjusted"]) == (8, 60, 2, 4)
+    assert r["oversold_units"] == 2
+    assert r["closing_on_hand"] == 40 - 5 - 3 + 60 - 2 + 4 and r["ended_out_of_stock"] is False
+
+
+def test_a_product_that_runs_out_ends_the_day_out_of_stock_and_never_negative(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    write(spark, lake, "silver_stock_snapshots", [snap(1, K, 4, 0)])
+    write(spark, lake, "silver_stock_movements", [move(1, K, -4, 3)])
+    r = row_of(inventory_daily.compute_inventory_daily(spark, lake, DAY))
+    assert r["closing_on_hand"] == 0 and r["ended_out_of_stock"] is True
+    write(spark, lake, "silver_stock_movements", [move(2, K, -6, 4)])  # a stock error: the raw level would be -6
+    r = row_of(inventory_daily.compute_inventory_daily(spark, lake, DAY))
+    assert r["closing_on_hand"] == 0
+
+
+def test_cairo_midnight_splits_the_days_and_closing_stock_stops_at_the_cut(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    late = T0.replace(hour=22, minute=30)  # 01:30 on the 9th in Cairo
+    write(spark, lake, "silver_stock_snapshots", [snap(1, K, 40, 0)])
+    write(spark, lake, "silver_stock_movements", [move(1, K, -5, 3)])
+    after_midnight = dict(move(2, K, -7, 0), event_time=late, kafka_timestamp=late, event_date=date(2026, 10, 9))
+    write(spark, lake, "silver_stock_movements", [after_midnight])
+    day8 = row_of(inventory_daily.compute_inventory_daily(spark, lake, DAY))
+    day9 = row_of(inventory_daily.compute_inventory_daily(spark, lake, date(2026, 10, 9)))
+    assert (day8["units_sold"], day8["closing_on_hand"]) == (5, 35)
+    assert (day9["units_sold"], day9["closing_on_hand"]) == (7, 28)
+
+
+def test_a_day_without_movements_still_reports_the_closing_stock(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+    write(spark, lake, "silver_stock_snapshots", [snap(1, K, 40, 0)])
+    r = row_of(inventory_daily.compute_inventory_daily(spark, lake, date(2026, 10, 9)))
+    assert (r["closing_on_hand"], r["units_sold"], r["oversold_units"]) == (40, 0, 0)
+
+
+def test_without_the_stock_tables_nothing_is_computed(spark, tmp_path):
+    assert inventory_daily.compute_inventory_daily(spark, str(tmp_path / "empty"), DAY) == []
+```
+
+Run: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/test_inventory_daily_spark.py tests/test_live_stock_spark.py -q -p no:cacheprovider` (one file after the other if memory is short).
+Expected before Step 3 is complete: FAIL (`compute_inventory_daily` missing); after: 5 plus 7 passed. If `test_live_stock_spark.py` fails after the `_stock_levels` refactor, the refactor changed the live behaviour: fix the refactor, not the test.
+
+- [ ] **Step 6: The Grafana inventory-insights page**
+
+In `monitoring/dashboards.py` add `build_inventory_daily()` returning `dashboard("fs-inventory-daily", "FunnelStream: Inventory insights, daily", panels)` with these panels (grid 24 wide; stats on the top row at height 5):
+
+1. stat "Closing stock, latest day (units)": `SELECT coalesce(sum(closing_on_hand), 0) AS "units" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)`
+2. stat "Products out of stock at day end": `SELECT count(*) AS "products" FROM inventory_daily WHERE ended_out_of_stock AND report_date = (SELECT max(report_date) FROM inventory_daily)` with thresholds `_steps(None, 1, 5)`.
+3. stat "Oversold units, latest day": `SELECT coalesce(sum(oversold_units), 0) AS "units" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)` with thresholds `_steps(None, 1, 20)`.
+4. stat "Shrinkage share of units out, latest day": `SELECT coalesce(round(100.0 * sum(units_shrunk) / nullif(sum(units_sold) + sum(units_shrunk), 0), 1), 0) AS "percent" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)`, unit `"percent"`, thresholds `_steps(None, 3, 6)`.
+5. timeseries "Closing stock by store (units)": `SELECT i.report_date::timestamp AS "time", s.store_name AS "metric", sum(i.closing_on_hand) AS "units" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id WHERE $__timeFilter(i.report_date::timestamp) GROUP BY 1, 2 ORDER BY 1`
+6. timeseries "Units sold, received and shrunk per day": `SELECT report_date::timestamp AS "time", sum(units_sold) AS "sold", sum(units_received) AS "received", sum(units_shrunk) AS "shrunk" FROM inventory_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`
+7. table "Lowest days of cover, latest day (20 products)": `SELECT s.store_name AS "store", i.product_id AS "product", i.closing_on_hand AS "closing stock", round(a.per_day, 1) AS "sold per day", round(i.closing_on_hand / nullif(a.per_day, 0), 1) AS "days of cover" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id JOIN (SELECT store_id, product_id, sum(units_sold)::numeric / 7 AS per_day FROM inventory_daily WHERE report_date > (SELECT max(report_date) FROM inventory_daily) - 7 GROUP BY 1, 2) a ON a.store_id = i.store_id AND a.product_id = i.product_id WHERE i.report_date = (SELECT max(report_date) FROM inventory_daily) AND a.per_day > 0 ORDER BY 5 ASC NULLS LAST LIMIT 20`
+8. timeseries "Demand on empty shelves per day": `SELECT report_date::timestamp AS "time", sum(views) AS "views", sum(add_to_cart) AS "add to cart" FROM oos_demand_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`
+9. text note: "Simulated stock. Closing stock is the end of the Cairo day; oversold units are a lower bound; demand on empty shelves is decided by the stock the live sink saw."
+
+Add `"inventory-daily.json": dashboards.build_inventory_daily` to `FILES` in `scripts/gen_dashboards.py`, run it, and extend `tests/test_inventory_dashboards.py`: the file equals the builder; unique panel ids; every panel on `fs-postgres`; the tables found after `from` or `join` are within `{inventory_daily, oos_demand_daily, dim_store}`; the four stat titles above exist with the threshold lists above; each time series query contains `$__timeFilter(`.
+
+- [ ] **Step 7: Run everything and check by eye**
+
+Host suite; the Spark files of Step 5; then `.venv\Scripts\python scripts\gen_dashboards.py`, `docker compose up -d --force-recreate grafana`, `docker compose run --rm spark python scripts/apply_live_ddl.py` (expect 10 tables ready), and after a demo run with `-Inventory`: `docker compose run --rm spark python scripts/build_inventory_daily.py --date today` (expect `<date>: N inventory rows`). Open the dashboard "FunnelStream: Inventory insights, daily": no red triangle on any panel.
+
+- [ ] **Step 8: Commit** (only when told to commit)
+
+```bash
+git add warehouse scripts monitoring tests
+git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m "Add the daily inventory mart and the Grafana inventory-insights page"
+```
+
+---
+
+### Task 9B: Marketing D-1 mart and its Grafana page (stretch: cut first)
 
 **Files:**
 - Create: `warehouse/d1_marketing.py`, `scripts/build_d1_marketing.py`, `tests/test_d1_marketing.py`, `tests/test_d1_marketing_spark.py`, `monitoring/grafana/dashboards/marketing-d1.json` (generated)
@@ -2540,6 +3002,48 @@ git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m 
 ```
 
 ---
+
+---
+
+### Task 11: Complete end-to-end smoke test of the whole project
+
+The product owner wants one command that assesses the full project, not only the inventory work: every layer from the simulator to Grafana, Power BI's source tables and Databricks. The result is a report, `docs/smoke-test.md`, with one row per stage (pass, fail or skipped, the evidence number, the seconds) and an overall verdict. A smoke test finds out what is broken; it never hides a failure, never retries a stage until it passes, and never edits data to make a check green.
+
+**Files:**
+- Create: `scripts/smoke_test.py`, `tests/test_smoke_test.py`, `docs/smoke-test.md` (written by a real run only)
+- Modify: `tests/test_checks.py` (the two known failures), `docs/RUNNING.md` (a "Smoke test" section)
+
+**Interfaces:**
+- Consumes: everything above and the existing scripts: `scripts/run_simulator.py`, `streaming.jobs.bronze_ingest --once`, `scripts/seed_silver_reference.py`, `streaming.jobs.silver_clean --once`, `scripts/apply_live_ddl.py`, `scripts/build_inventory_daily.py`, `scripts/check_duplicates.py`, `scripts/run_batch.py`, `scripts/apply_ddl.py`, `scripts/publish_silver.py`, `monitoring/grafana/**`, `scripts/benchmark.py` (its reset and isolation approach).
+- Produces: `python scripts/smoke_test.py [--events 20000] [--catalog workspace] [--skip-spark-tests] [--skip-gold] [--dry-run] [--yes]` with the same safety model as `scripts/benchmark.py`: `--dry-run` prints the numbered plan and exits 0; without `--yes` it exits 2 (it recreates the Kafka container, so all messages in Kafka are lost); it refuses (exit 3) when a demo container is running, when a path is outside `data/smoke`, or when the catalog is `funnelstream`. It writes only below `data/smoke`, into a separate Postgres database `funnelstream_smoke` (created if missing) and into the scratch catalog; the demo lake, the demo Postgres tables and the real catalog are never touched.
+
+First make the host suite fully green: the two failures `tests/test_checks.py::test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest` and `::test_the_repo_manifest_loads` read the git-ignored `noise_manifest.json`, which any simulator run rewrites. Change both to read a fixed fixture (a small manifest dict or file inside `tests/` with the numbers they expect, `duplicate=25`), so they no longer depend on the last run. Test first: show them failing when `noise_manifest.json` says 31, then passing with the fixture.
+
+Stages (each is a function returning `Result(name, status, evidence, seconds)`; the runner continues after a failure and marks the stages that depend on it "skipped: <prerequisite> failed"):
+
+1. **Preflight.** Docker engine answers; host UTC clock and `docker info` SystemTime agree within 2 seconds; `w32tm`-style NTP status is reported (informational); host free memory and the Docker memory limit are reported; a real Kafka client handshake from the host works (`kafka/create_topics.py` style, not just a TCP connect); Grafana `/api/health` answers 200 and the data source `fs-postgres` reports OK; Postgres answers; no `fs-` demo container is running.
+2. **Host tests.** `pytest -q` on the host: zero failures and zero errors (skips allowed). Evidence: counts.
+3. **Spark tests** (skippable). Every `tests/test_*spark*.py` file, one container at a time (`docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest <file> -q -p no:cacheprovider`), each its own result row with passed and failed counts.
+4. **Static checks.** `scripts/gen_ddl.py --check` exit 0; every provisioned dashboard JSON is valid JSON with unique panel ids; every alert rule in `alerting.yaml` has `condition: C` and a runbook; `monitoring/dashboards.py` builders equal the files on disk (the drift test).
+5. **Reset and generate.** Delete `data/smoke`; recreate Kafka; create the topics (all four); create database `funnelstream_smoke`; apply the live DDL to it (`PG_DSN` pointed at it); run the simulator in history mode with `--inventory`, noise on, `--events N`, a unique seed. Evidence: messages per topic; the `inventory.events` count is above zero.
+6. **Bronze and Silver.** `bronze_ingest --once`, `seed_silver_reference.py`, `silver_clean --once` against the isolated lake with `PG_DSN` pointing at the smoke database. Evidence: Bronze rows equal the simulator total; every Silver table exists and is non-empty, including `silver_stock_movements`, `silver_stock_snapshots` and `silver_express_orders`.
+7. **Data invariants** (SQL and Spark reads on the smoke lake and database):
+   - no duplicate key in any Silver table (`scripts/check_duplicates.py` exit 0);
+   - quarantine equals the manifest's expected count for the kinds the validator can see (the rule of `docs/RUNNING.md` step 5);
+   - stock: replaying all events never goes below zero; `live_stock_now.available >= 0`; for every pair the live rule (latest snapshot plus later movements) equals the Python ledger replay of the same events;
+   - express: every express order has `promised_minutes`; the maximum delivered-minus-created time is below `promised_minutes`; zero breaches in the clean run;
+   - live tables populated: `live_metrics_minute`, `pipeline_health_minute`, `live_stock_now`, `live_express_orders`; `pipeline_heartbeat` has `silver_job`.
+8. **Daily marts.** `build_inventory_daily.py --date <the Cairo day of the data> --days 2` fills `inventory_daily`, `oos_demand_daily` and `express_daily`; evidence: row counts; the closing stock of the day equals the sum of `live_stock_now.on_hand` for the same pairs when the day is today.
+9. **Dashboards run.** For every panel of every provisioned dashboard, take its `rawSql`, expand the Grafana macros (`$__timeFilter(col)` becomes `col >= now() - interval '1 day'`, `$__timeGroupAlias(col, '1m', 0)` becomes `date_trunc('minute', col) AS "time"`, `$__timeGroup` likewise) and execute it against the smoke database with the read-only role; every query must run without an error (zero rows is fine). Evidence: panels run, panels failed with the panel title and the error.
+10. **Alert logic.** For every rule of `alerting.yaml`, take query A, run it against the smoke database and apply the rule's threshold: the clean run must leave `fs-express-sla` and `fs-oos-demand` not firing (or firing only when the data truly holds a hero stock-out, which the test states); then a second tiny simulation with `--express-promise-minutes 2 --late-express-every 1` and `--scenario hero-stockout` into the same smoke lake makes `fs-express-sla` fire on the breach and `fs-oos-demand` fire on the hero stock-out. Evidence: each rule, its value, firing or not.
+11. **Replay safety.** Re-run `silver_clean --once` after deleting its checkpoint (a full replay of Bronze): table counts and the duplicate check are unchanged. This is the batch-level cousin of the failure demo.
+12. **Databricks batch** (skippable with `--skip-gold`). `apply_ddl.py --backend databricks --catalog <scratch>`, `publish_silver.py`, `run_batch.py --skip-publish --full --manifest` against the scratch catalog: `BATCH OK` and every data quality check passes. If Databricks is unreachable the stage fails with the connector's message; it is not retried.
+13. **Power BI source check.** For every Postgres table `dashboards/powerbi/MODEL.md` lists as a source and every Gold table it lists, assert the table exists with the columns the DAX in `dashboards/powerbi/measures.dax` references (parse `'Table'[column]` references and check them against `information_schema` on the smoke database or the Gold column list of `warehouse/tables.py`). A measure that names a missing column fails the stage with the measure's name.
+14. **Report.** Write `docs/smoke-test.md`: the date, the command, the git commit, the environment (OS, Docker memory, clock offset, Python), one row per stage and per Spark file, the evidence, the failures in full, and a verdict line `SMOKE TEST PASSED` or `SMOKE TEST FAILED: <n> stages failed`. Exit code 0 only when nothing failed.
+
+Tests (host, fake runner and fake clock, no Docker): the plan lists the stages in order; `--dry-run` runs nothing; the three refusals; a failing stage does not stop the later independent stages but skips its dependants with the reason; the macro expander gives the expected SQL for each Grafana macro used in `monitoring/dashboards.py`; the DAX reference parser finds `'Table'[column]` pairs in a sample and in `measures.dax` itself (every referenced table is one of the model's friendly names); the report renderer writes the verdict line and never a pass for a failed or skipped stage; the report contains no placeholder text.
+
+Run the real smoke test only after Tasks 1 to 10 (and 9B) are verified and the product owner confirms the Kafka recreate. Commit only when told to commit: `Add the end-to-end smoke test`.
 
 ## Self-review
 

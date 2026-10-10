@@ -133,3 +133,15 @@ Risks: the defense is on 13 October and G3, the Silver fix commit and T17 are st
 - Out of stock means `available <= 0`; low stock means below the reorder point.
 - The D-1 mart may use hourly stock state, not exact per-event stock.
 - An unmapped or "unknown" district is not counted as out-of-stock demand.
+
+## 13. Update of 10 October, late evening: Power BI, Grafana insights and the express promise
+
+The product owner asked for three changes. They are part of the same design and are built in the plan `docs/superpowers/plans/2026-10-10-inventory-two-users.md`.
+
+**Inventory in Power BI.** Power BI reads two sources: the Databricks Gold tables and the Postgres inventory marts. Four dimensions (`Date`, `Campaign`, `Store`, `Product`), ten fact-like tables, Import mode, all relationships many-to-one and single direction. The model, relationships, five pages and the measures are in `dashboards/powerbi/MODEL.md` and `dashboards/powerbi/measures.dax`. New Postgres tables for Power BI and Grafana: `inventory_daily`, `oos_demand_daily`, `express_daily` (Task 9A) next to the live and D-1 tables of the earlier sections.
+
+**Inventory insights in Grafana.** Besides the live operations dashboard (section 8) there is a second dashboard, "Inventory insights, daily" (closing stock by store, units sold, received and shrunk, oversold units, products that ended the day out of stock, lowest days of cover, demand on empty shelves, express on-time rate). The marketing D-1 mart (section 9) is still the stretch; the daily inventory mart is core.
+
+**The live-inventory section is an express service with a 20-minute promise.** Orders placed from it carry `service = express` and their own `promised_minutes` (20). The simulator makes a normal express order take 8 to 17.5 minutes and never more than 19.5. The pipeline records each express order in `silver_express_orders`, the live sink writes `live_express_orders`, and Grafana shows at-risk and breached orders and the on-time rate. The alert `fs-express-sla` fires on ANY breach (a delivery later than the promise, or an undelivered order past it). The platform cannot enforce delivery; it makes every breach visible within a minute. Express timing is never time-compressed in live mode; a rehearsal can shorten the promise (`--express-promise-minutes 2`) and make every K-th order late (`--late-express-every K`) to show the alert in about three minutes.
+
+Cuts that stay: reservations, the Databricks mirror of the stock tables and a Gold table for inventory, noise injection on inventory events.

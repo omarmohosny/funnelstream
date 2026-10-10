@@ -10,3 +10,7 @@ checkpoints/
 .claude/
 noise_manifest.json
 logs/
+
+# Power BI local cache
+dashboards/powerbi/**/.pbi/
+*.pbix

@@ -1,49 +1,37 @@
-# Handoff: state of FunnelStream on 10 October 2026
+# Handoff: state of FunnelStream on the evening of 10 October 2026
 
-Defense is on 13 October 2026. Branch `funnelstream-build` holds all work; `main` is still at the original spec commit `dd44fbd`. The working tree was clean at commit `55887fd` plus this file.
+Defense is on Tuesday 13 October 2026. Branch `funnelstream-build` holds all work; `main` is still at the original spec commit `dd44fbd`. This file replaces the handoff written earlier on 10 October. Working rules of the owner: they present the project themself and type the commands in the demo; work is planned in briefs, built by implementer agents, checked independently, and committed or pushed only when the owner says. Git author is passed per command: `git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit ...`, with the line `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` ending the message.
 
-## What is done
+## What was done on 10 October
 
-- Pipeline: simulator, Kafka, Bronze and Silver Delta (local), `publish_silver` to the Databricks Silver mirror, Gold build (SQL MERGE steps), live tables in Postgres read by Grafana.
-- Gold steps built: `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution` (T13), `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily` (T12), `agg_city_product_daily` (T14). `rec_product` is the only empty slot and is cut first.
-- One command for the batch (T15): `docker compose run --rm spark python scripts/run_batch.py`. It runs publish, Gold build and the checks, and prints `BATCH OK` or `BATCH FAILED at <phase>`.
-- Checks (T16): 63 checks, 0 failed on the last full run (`--skip-publish --full`, `BATCH OK`). Checks `recon.orders_count` and `recon.lines_count` compare whole tables, so run `--full` once after new data older than the 7-day window arrives. A default-window run failed this check by 72 orders until a `--full` run.
-- Ad report: the Airflow DAG `ads_yesterday_report` now works. It always writes to Databricks (`get_store("databricks")` in the DAG and in `batch/ads_report.py`, and `GOLD_BACKEND: databricks` on the `airflow` service), whatever `.env` says. Verified for real: `silver_campaign_snapshots` has rows for 2026-10-08 and 2026-10-05, and `agg_campaign_daily` carries the same spend and clicks with correct CTR, CPA and ROAS.
-- Failure demo tooling (G3): `scripts/failure_demo.ps1` (`status`, `kill`, `restart`, `verify`) and `scripts/check_duplicates.py`. `kill` refuses with exit 3 when the events line is already stale; `-Force` overrides.
-- Sprint sheet v3: T12 to T16 are Done, G3 is In progress. The workbook is set to recalculate when opened.
+Already pushed to origin before the last session part (head `42cdea3`): Silver and live-sink speed-up (a warm batch went from 50 to 70 s down to about 11 s on `local[4]`), the redesigned Grafana alert rules (`fs-silver-silent`, wider `fs-no-events`), the inventory specification and sprint sheet, the sample export with 21 CSV files, the benchmark script with `bronze_ingest --once`, and the implementation plan for the inventory work.
 
-## What is not done
+Committed after that, in the commit that follows this file:
 
-1. **G3 live demo has not passed twice in a row.** The code is verified. The runs so far failed because the alert was already firing (the pipeline lagged at 50 events per second, or no generator was running). The procedure below is the one to follow.
-2. T17: samples, a 1 to 2 million event benchmark, README (Member 5).
-3. T18: Power BI model and pages, Campaign and Funnel first (Member 1). Use `agg_campaign_daily` with `attribution_model = 'last_touch'`.
-4. DOC: refresh the PDF, deck and README screenshots (Member 5).
-5. T19 customer 360 is a stretch task. `rec_product` is cut first.
-6. The old duplicates in the local lake (silver_events 20, silver_orders 23, silver_order_status 146, silver_order_items 0) come from reused simulator seeds. They are not caused by a crash. The demo proof is that these counts stay the same after the kill and restart. Cleaning them needs a lake reset, which needs the user's explicit approval. A `verify` mode that saves a baseline and prints UNCHANGED or NEW DUPLICATES was offered and not built.
-7. Open the pull request from `funnelstream-build` into `main`. The user has not agreed to it yet.
-8. Two host tests fail when the repo's `noise_manifest.json` has been rewritten by a simulator run: `test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest` and `test_the_repo_manifest_loads` expect `duplicate=25`. The file is not tracked by git. Restore it to 25 or change the tests to use a fixed fixture.
+- **Documents.** `docs/RUNNING.md` has a new section on Docker engine, clock and port problems. The inventory spec has a section 13 (express service with a 20-minute promise, Grafana inventory insights, Power BI). The plan was amended. The sprint sheet `docs/FunnelStream-Sprint-Plan-v3.xlsx` holds the current statuses.
+- **Power BI.** `dashboards/powerbi/MODEL.md` and `measures.dax` describe model version 2 (two end users, Operations and Marketing, one star schema, five pages). A generated Power BI project is in `dashboards/powerbi/FunnelStream.pbip`: seven Databricks Gold tables, six relationships, 49 measures, a marked date table and three empty pages. `scripts/make_pbip.py` regenerates it from `samples/` and `measures.dax`. It has never been opened in Power BI Desktop, so the first open can show a parse error; fix the generator and regenerate. Credentials are not in the file; Desktop asks for a read-only Databricks token. The Postgres and inventory tables are added after the inventory data exists.
+- **Inventory work (plan `docs/superpowers/plans/2026-10-10-inventory-two-users.md`).** Done and reviewed: Task 1 (topic `inventory.events` and its validator), Task 2 (Silver tables `silver_stock_movements` and `silver_stock_snapshots`, transform, `stock_pairs` statistic), Task 3 (`contracts/stores.py`, eight dark stores), Task 4 (routing to the topic, Bronze table `bronze_inventory_events`, noise bypass), Task 5 (`simulator/stock.py` stock ledger and the hero stock-out scenario), Task 6 (runner flags `--inventory`, `--scenario hero-stockout`, `--hero-units`, `watch_demo.ps1 -Inventory`).
+- **Task 6B (express orders and the 20-minute promise) was still being built by an agent when this file was written.** Whatever is in the tree for it (`tests/test_express_contract.py`, `tests/test_express_orders.py`, parts of `contracts/validate.py`, `simulator/orders.py`, `simulator/noise.py`) may be incomplete or failing. Check `git status` and run the host suite before relying on it. Its brief is `.superpowers/sdd/2026-10-10-inventory-two-users/task-6B-brief.md`.
 
-## How to run the G3 demo
+## Not verified: Spark tests
 
-All steps start in the project folder. Allow scripts in each PowerShell window with `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`, or prefix calls with `powershell -ExecutionPolicy Bypass -File`.
+Docker's WSL engine crashed several times on 10 October (the restart cause is unknown; low free RAM is the suspect). Starting a Spark container made it drop again at 22:47. All Spark tests for the inventory work are therefore unrun. Run them one container at a time, after closing heavy programs so that at least 6 GB of RAM is free: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest <file> -q -p no:cacheprovider`. Files and expected counts: `tests/test_inventory_silver_spark.py` (3), `tests/test_silver_clean_spark.py` (16), `tests/test_silver_parallel_spark.py` (4), `tests/test_g1_live_spark.py` (10, also with `-k ensure_bronze` for Task 4), `tests/test_live_sink_parallel_spark.py` (4), and later `tests/test_express_silver_spark.py`. After any Docker engine restart run `docker compose up -d`, `docker compose up -d --force-recreate grafana`, `docker compose restart kafka`, then `.\scripts\failure_demo.ps1 restart`.
 
-1. `docker compose up -d postgres kafka grafana`, wait until Postgres is healthy, then `.venv\Scripts\python scripts\apply_live_ddl.py`.
-2. Window 2: `.venv\Scripts\python scripts\alert_sink.py`. Start it before the demo.
-3. Window 1: `.\scripts\watch_demo.ps1 -Rate 10 -SyncEvery 0`. Use a low rate and no Gold sync window, because the pipeline falls behind at 50 events per second. Stop the Airflow container first if memory is short: `docker compose --profile airflow stop airflow`.
-4. Window 3: `.\scripts\failure_demo.ps1 status` every 30 seconds. Continue when the heartbeat is under 30 seconds, the newest minute is under about 90 seconds ago, and the sink printed RESOLVED.
-5. `verify` for the baseline, then `kill`. FIRING should appear in the sink within 1 to 3 minutes. Then `restart`, wait for RESOLVED (2 to 4 minutes after events return), then `verify` again. The duplicate counts must equal the baseline.
-6. Repeat step 5 once. When both runs pass, set G3 to Done in the sprint sheet and commit.
+## Host test state
 
-The alert only notifies on a state change, so it must be Normal before the kill. A stale `status` line means it is already firing, and the `kill` guard says so.
+`.venv\Scripts\python -m pytest tests -q -p no:cacheprovider` gave 819 passed, 176 skipped and 2 failed before Task 6B started. The two failures are known: `tests/test_checks.py::test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest` and `::test_the_repo_manifest_loads` (the untracked `noise_manifest.json` says duplicate=31, the tests expect 25). Task 11 fixes them with a fixed fixture.
 
-## Useful facts
+## What is left of the inventory plan, in order
 
-- Seeds: every simulator run needs a new `--seed`. `watch_demo.ps1` takes the next one from `data/state/next_seed.txt` (36 at the end of this session). `--universe-seed 7` fixes customers and products.
-- Docker has about 8 GB. The Airflow container needs 2 GB and reinstalls its pip packages on every start, so wait about 5 minutes after `up`. Its admin password is in `/opt/airflow/standalone_admin_password.txt` inside the container.
-- The `skipping silver_campaign_snapshots: no local Delta table` line in the publish output is normal. The DAG writes that table in Databricks directly.
-- Host tests: 729 passed, 164 skipped, 2 failed (the manifest tests above). Spark tests skip on the host and run in Docker per file with `RUN_SPARK_TESTS=1`.
-- Never commit `data/`, `.venv` or secrets. Destructive Databricks actions and lake resets need the user's explicit approval.
+Task 6B (finish and review), Task 7 (live sink: `live_stock_now`, demand join), Task 8 (Grafana live inventory dashboard and alerts), Task 8B (live express SLA table `live_express_orders` and alert `fs-express-sla`), Task 9A (daily marts, the Grafana dashboard `fs-inventory-daily`, `express_daily`), Task 9B (marketing D-1 mart, "estimated spend exposed to out-of-stock"), Task 10 (documents and rehearsal), Task 11 (complete end-to-end smoke test `scripts/smoke_test.py` with its own database `funnelstream_smoke`, lake `data/smoke` and the scratch Databricks catalog `workspace`; report in `docs/smoke-test.md`; it also fixes the two manifest tests; its real run recreates the Kafka container and needs the owner's confirmation). Then a final whole-branch review. Rulings made along the way (recorded in the ledger, not in git): the controller transcribes tasks whose plan text is complete code (Tasks 3 and 4); implementers never commit; table counts in pinned tests are derived, not copied from the plan (LIVE_TABLES 8 after Task 7, 9 after Task 8B, 12 after Task 9A); noise gets a `protect` predicate so express orders are never noised.
 
-## Commits of this session
+The working ledger and all briefs, reports and review diffs are in `.superpowers/sdd/2026-10-10-inventory-two-users/` (git-ignored scratch; `progress.md` is the record). A data-modeling review of the whole project, requested by the owner, is at `docs/data-model-review.md` (25 findings: 3 Critical, 12 Important, 10 Minor; none acted on yet). Critical: C1 ad spend is a UTC day but orders are a Cairo day and both join on one `report_date`, and the spec, plan and `docs/metrics.md` give three different D-1 days; C2 the out-of-stock demand table is decided against the stock seen at sink-write time, so it is not replay-safe; C3 "exposed spend" divides a Postgres numerator by a Silver denominator on a third click definition, so the "upper bound" claim does not hold. The next step is to rank these with the owner and fix the plan text for the not-yet-built marts (Tasks 7 to 9B) before building them. `/ultrareview` could not run (it said the branch had no commits; it is a cloud command only the owner can start).
 
-`b11999b` sprint note, `260d960` demo runs until Ctrl+C plus Gold sync window, `903ad39` T12, `88d6551` T14, `c7fe3a6` T15, `6f74c3c` T16, `6ee3389` G3, `c0f4019` kill guard, `60623f6` ad report pinned to Databricks, `55887fd` sprint sheet statuses.
+## Other open items
+
+- **G3 live failure demo** is parked and moved to Monday 12 October. Fallback: the recorded run plus the Spark replay tests. Monday checklist: at least 4 GB free host RAM, `w32tm /resync /force`, no sleep, check Docker Resource Saver, replace the CMOS battery after the defense if the BIOS clock is wrong (the PC clock jumped by days on 10 October; NTP now uses `time.google.com`).
+- **Real benchmark** (`scripts/benchmark.py`, writes `docs/benchmark.md`) is not run; it recreates Kafka and needs the owner's say-so. Suggest 20,000 events first, then 1,000,000. T17 stays "In progress" until then.
+- **Stand-in report** (not Power BI): artifact "FunnelStream Report", https://claude.ai/artifact/G21YwZmeREmVyLu7jK9KMX, three pages from the Gold samples, private. It has no inventory page yet.
+- DOC (PDF, deck, README screenshots), rehearsals for members 2 and 3, and the pull request into `main` (not agreed yet) are open.
+- Sprint sheet statuses must be updated as tasks finish (check for the lock file `docs/~$FunnelStream-Sprint-Plan-v3.xlsx` first).
+- Never commit `data/`, `.venv`, `.env`, `.superpowers/` or secrets. Destructive Databricks actions and lake resets need the owner's explicit approval.
