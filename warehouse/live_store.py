@@ -13,11 +13,13 @@ import os
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
+from streaming.common.spark import inherit_job_group
 from streaming.gold.live import live_metrics_for_minutes, minute_epochs
 from streaming.silver.writer import silver_path
 from warehouse.live_tables import HEALTH_COLUMNS, LIVE_METRIC_COLUMNS
@@ -39,20 +41,26 @@ def _read(spark, silver_root, table):
     return spark.read.format("delta").load(path) if DeltaTable.isDeltaTable(spark, path) else None
 
 
-def refresh_live_metrics(spark, silver_root, minutes, store, bot_lookback_hours=6) -> int:
-    """Recompute live_metrics_minute for `minutes` from silver_events and upsert the totals. Returns rows written.
+def compute_live_metric_rows(spark, silver_root, minutes, bot_lookback_hours=6) -> list:
+    """The Spark part of refresh_live_metrics: the live_metrics_minute rows for `minutes`, recomputed from
+    silver_events (full totals, never increments). No database is touched, so it can run beside other Spark work.
 
     silver_root is the lake root (Silver tables live in <silver_root>/silver/<table>)."""
     epochs = minute_epochs(minutes)
     if not epochs:
-        return 0
+        return []
     events = _read(spark, silver_root, "silver_events")
     if events is None:
-        return 0
+        return []
     df = live_metrics_for_minutes(events, epochs, bot_lookback_hours)
     df = df.select(F.unix_timestamp("minute_start").alias("m"), "country", *LIVE_METRIC_COLUMNS)
-    rows = [dict(minute_start=_utc(r["m"]), country=r["country"], **{c: int(r[c] or 0) for c in LIVE_METRIC_COLUMNS})
+    return [dict(minute_start=_utc(r["m"]), country=r["country"], **{c: int(r[c] or 0) for c in LIVE_METRIC_COLUMNS})
             for r in df.collect()]
+
+
+def refresh_live_metrics(spark, silver_root, minutes, store, bot_lookback_hours=6) -> int:
+    """Recompute live_metrics_minute for `minutes` from silver_events and upsert the totals. Returns rows written."""
+    rows = compute_live_metric_rows(spark, silver_root, minutes, bot_lookback_hours)
     return store.upsert("live_metrics_minute", rows, LIVE_KEYS) if rows else 0
 
 
@@ -61,16 +69,16 @@ def _by_minute(df, ts_col, aggs):
     return df.groupBy((sec - (sec % 60)).alias("m")).agg(*aggs)
 
 
-def refresh_health(spark, silver_root, minutes, store) -> int:
-    """Recompute pipeline_health_minute for `minutes` and upsert it. Returns rows written (one per minute).
+def compute_health_counts(spark, silver_root, minutes) -> dict:
+    """The Spark part of refresh_health: {minute epoch: {events, late_events, quarantined}} for `minutes`.
 
     events and late_events: silver_events by the minute of kafka_timestamp (arrival). quarantined: silver_quarantine
-    by received_at. silver_batches: pipeline_batch_log rows whose finished_at is in the minute."""
+    by received_at. No database is touched, so it can run beside other Spark work."""
     epochs = minute_epochs(minutes)
+    counts = {m: dict(events=0, late_events=0, quarantined=0) for m in epochs}
     if not epochs:
-        return 0
+        return counts
     lo, hi = epochs[0], epochs[-1] + 60
-    totals = {m: dict.fromkeys(HEALTH_COLUMNS, 0) for m in epochs}
 
     def inside(ts_col):
         sec = F.unix_timestamp(ts_col)
@@ -81,12 +89,25 @@ def refresh_health(spark, silver_root, minutes, store) -> int:
         for r in _by_minute(ev.where(inside("kafka_timestamp")), "kafka_timestamp", [
                 F.count(F.lit(1)).alias("n"),
                 F.sum(F.coalesce(F.col("is_late"), F.lit(False)).cast("int")).alias("late")]).collect():
-            totals[r["m"]]["events"] = int(r["n"])
-            totals[r["m"]]["late_events"] = int(r["late"] or 0)
+            counts[r["m"]]["events"] = int(r["n"])
+            counts[r["m"]]["late_events"] = int(r["late"] or 0)
     q = _read(spark, silver_root, "silver_quarantine")
     if q is not None:
         for r in _by_minute(q.where(inside("received_at")), "received_at", [F.count(F.lit(1)).alias("n")]).collect():
-            totals[r["m"]]["quarantined"] = int(r["n"])
+            counts[r["m"]]["quarantined"] = int(r["n"])
+    return counts
+
+
+def write_health(store, minutes, counts) -> int:
+    """The Postgres part of refresh_health: add silver_batches (pipeline_batch_log rows finished in the minute) to
+    the Spark counts and upsert pipeline_health_minute. Returns rows written (one per minute)."""
+    epochs = minute_epochs(minutes)
+    if not epochs:
+        return 0
+    lo, hi = epochs[0], epochs[-1] + 60
+    totals = {m: dict.fromkeys(HEALTH_COLUMNS, 0) for m in epochs}
+    for m in epochs:
+        totals[m].update(counts.get(m, {}))
     for (finished,) in store.query("SELECT finished_at FROM pipeline_batch_log WHERE finished_at >= %s AND "
                                    "finished_at < %s", (_utc(lo), _utc(hi))):
         m = int(finished.timestamp()) // 60 * 60
@@ -94,6 +115,14 @@ def refresh_health(spark, silver_root, minutes, store) -> int:
             totals[m]["silver_batches"] += 1
     rows = [dict(minute_start=_utc(m), **totals[m]) for m in epochs]
     return store.upsert("pipeline_health_minute", rows, ["minute_start"])
+
+
+def refresh_health(spark, silver_root, minutes, store) -> int:
+    """Recompute pipeline_health_minute for `minutes` and upsert it. Returns rows written (one per minute)."""
+    epochs = minute_epochs(minutes)
+    if not epochs:
+        return 0
+    return write_health(store, epochs, compute_health_counts(spark, silver_root, epochs))
 
 
 def log_batch(store, job_run_id, batch_id, finished_at=None):
@@ -189,9 +218,20 @@ class LiveSink:
             return None
         try:
             store = self._get_store()
-            refresh_live_metrics(spark, self.silver_root, self._pending_metrics, store)
+            metric_minutes, health_minutes = set(self._pending_metrics), set(self._pending_health)
+            # The two recomputes only read Silver and meet at Postgres, so their Spark work runs side by side; the
+            # writes below stay one after the other on the single connection.
+            in_job_group = inherit_job_group(spark)  # so query.stop() also cancels the sink's Spark jobs
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-sink") as pool:
+                metric_job = pool.submit(in_job_group(compute_live_metric_rows), spark, self.silver_root,
+                                         metric_minutes)
+                health_job = pool.submit(in_job_group(compute_health_counts), spark, self.silver_root,
+                                         health_minutes)
+            metric_rows, health_counts = metric_job.result(), health_job.result()  # raises the first failure
+            if metric_rows:
+                store.upsert("live_metrics_minute", metric_rows, LIVE_KEYS)
             log_batch(store, self.job_run_id, batch_id, now)
-            refresh_health(spark, self.silver_root, self._pending_health, store)
+            write_health(store, health_minutes, health_counts)
             heartbeat(store, "silver_job", "batch %s" % batch_id, now)
         except Exception as e:  # Silver is the source of truth; the next batch repairs these minutes
             text = " ".join(str(e).split())[:200]

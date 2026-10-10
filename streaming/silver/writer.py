@@ -52,13 +52,14 @@ def partition_condition(col, values):
     return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
 
 
-def merge_insert(spark, path, df, key_cols, partition_col=None):
+def merge_insert(spark, path, df, key_cols, partition_col=None, partition_values=None):
     """MERGE df into the Delta table at path, inserting only unmatched keys (replays change nothing).
 
     The table is created from df.schema on the first write (partitioned by partition_col if given).
     df is de-duplicated on key_cols first so a single MERGE never sees two source rows with one key.
     With partition_col, the batch's distinct values of that column are added to the MERGE condition so
-    Delta prunes partitions.
+    Delta prunes partitions. A caller that already knows them passes partition_values (None in the list means
+    a NULL partition) and saves one Spark job; without it they are read from df.
     """
     path = os.path.abspath(path)  # Delta treats a relative location as a table name
     df = df.dropDuplicates(list(key_cols))
@@ -69,7 +70,8 @@ def merge_insert(spark, path, df, key_cols, partition_col=None):
         b.execute()
     cond = " AND ".join("t.`%s` = s.`%s`" % (c, c) for c in key_cols)
     if partition_col:
-        values = [r[0] for r in df.select(partition_col).distinct().collect()]
+        values = (partition_values if partition_values is not None
+                  else [r[0] for r in df.select(partition_col).distinct().collect()])
         extra = partition_condition(partition_col, values)
         if extra:
             cond += " AND " + extra

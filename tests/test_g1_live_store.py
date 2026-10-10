@@ -263,23 +263,22 @@ def test_live_store_heartbeat_swallows_store_errors(caplog):
     assert "not written" in caplog.text
 
 
-# ---------------------------------------------------------------- 4. LiveSink (refresh functions stubbed; Spark tests cover them)
+# ---------------------------------------------------------------- 4. LiveSink (Spark computes stubbed; Spark tests cover them)
 @pytest.fixture
 def stubbed(monkeypatch):
+    """The two Spark computes are stubbed; the Postgres writes (upsert, batch log, heartbeat) are the real code."""
     calls = {"metrics": [], "health": []}
 
-    def fake_metrics(spark, root, minutes, store, bot_lookback_hours=6):
+    def fake_metrics(spark, root, minutes, bot_lookback_hours=6):
         calls["metrics"].append(sorted(minutes))
-        return store.upsert("live_metrics_minute", [dict(minute_start=NOW, country="EG", events=len(minutes))],
-                            live_store.LIVE_KEYS)
+        return [dict(minute_start=NOW, country="EG", events=len(minutes))]
 
-    def fake_health(spark, root, minutes, store):
+    def fake_health(spark, root, minutes):
         calls["health"].append(sorted(minutes))
-        return store.upsert("pipeline_health_minute", [dict(minute_start=NOW, events=1, late_events=0, quarantined=0,
-                                                            silver_batches=1)], ["minute_start"])
+        return {m: dict(events=1, late_events=0, quarantined=0) for m in live_store.minute_epochs(minutes)}
 
-    monkeypatch.setattr(live_store, "refresh_live_metrics", fake_metrics)
-    monkeypatch.setattr(live_store, "refresh_health", fake_health)
+    monkeypatch.setattr(live_store, "compute_live_metric_rows", fake_metrics)
+    monkeypatch.setattr(live_store, "compute_health_counts", fake_health)
     return calls
 
 

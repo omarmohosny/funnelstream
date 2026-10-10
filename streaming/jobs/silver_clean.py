@@ -33,6 +33,7 @@ the batch log line as district_violations (process_batch fills stats["district_v
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 
@@ -41,7 +42,7 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
-from streaming.common.spark import get_spark
+from streaming.common.spark import get_spark, inherit_job_group
 from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path
 from streaming.silver.orders import split_cancel_after_ship
 from streaming.silver.schemas import TABLE_COLUMNS
@@ -178,6 +179,39 @@ def _minutes(df, col):
                   .distinct().collect())
 
 
+def _count_and_partitions(df, partition_col):
+    """(row count, distinct values of partition_col) in one Spark job; the values are None for an unpartitioned table.
+
+    A NULL partition value is kept as None in the list (collect_set drops it), as merge_insert expects."""
+    if not partition_col:
+        return df.count(), None
+    col = F.col(partition_col)
+    row = df.agg(F.count(F.lit(1)).alias("n"), F.collect_set(col).alias("parts"),
+                 F.max(col.isNull().cast("int")).alias("has_null")).first()
+    parts = list(row["parts"] or [])
+    if row["has_null"]:
+        parts.append(None)
+    return int(row["n"]), parts
+
+
+def _merge_tables(spark, lake_root, to_merge):
+    """MERGE every table of to_merge ({table: (frame, partition values)}) at the same time.
+
+    The five MERGEs are independent (one Delta table each) and each one is a chain of small Spark jobs that mostly
+    wait on each other, so running them side by side cuts the batch time. All of them finish before this returns,
+    so the caller can release the cached frames; the first error is then raised (a replay of the batch repairs
+    the tables that did succeed, because the MERGE only inserts keys that are missing)."""
+    if not to_merge:
+        return
+    in_job_group = inherit_job_group(spark)  # so query.stop() also cancels the MERGE jobs of the pool threads
+    with ThreadPoolExecutor(max_workers=len(to_merge), thread_name_prefix="silver-merge") as pool:
+        futures = {table: pool.submit(in_job_group(merge_insert), spark, silver_path(lake_root, table), df,
+                                      SILVER_KEYS[table], PARTITION_COLS.get(table), partitions)
+                   for table, (df, partitions) in to_merge.items()}
+    for future in futures.values():
+        future.result()  # raises the first failure, after every MERGE has finished
+
+
 def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=None):
     """Bronze rows to the Silver tables (MERGE insert). Returns {table: rows in batch after key dedupe}.
 
@@ -193,6 +227,7 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
              .mapPartitions(partial(_transform_partition, known_bc=known_bc, now=now, violations=violations))
              .persist(StorageLevel.MEMORY_AND_DISK))
     counts = {t: 0 for t in SILVER_TABLES}
+    deduped = []
     try:
         frames = {}
         for table in SILVER_TABLES:
@@ -209,9 +244,11 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
                 .select(*TABLE_COLUMNS["silver_quarantine"]))
             frames["silver_quarantine"] = frames["silver_quarantine"].unionByName(extra)
         want_minutes = stats is not None and stats.get("collect_minutes")
+        to_merge = {}
         for table in SILVER_TABLES:
-            df = frames[table].dropDuplicates(SILVER_KEYS[table])
-            n = df.count()
+            df = frames[table].dropDuplicates(SILVER_KEYS[table]).persist(StorageLevel.MEMORY_AND_DISK)
+            deduped.append(df)
+            n, partitions = _count_and_partitions(df, PARTITION_COLS.get(table))
             counts[table] = n
             if want_minutes and n and table == "silver_events":
                 stats["event_minutes"] = _minutes(df, "event_time")
@@ -219,11 +256,13 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
             if want_minutes and n and table == "silver_quarantine":
                 stats["quarantine_minutes"] = _minutes(df, "received_at")
             if n:
-                merge_insert(spark, silver_path(lake_root, table), df, SILVER_KEYS[table],
-                             PARTITION_COLS.get(table))
+                to_merge[table] = (df, partitions)
+        _merge_tables(spark, lake_root, to_merge)
         if stats is not None:
             stats["district_violations"] = int(violations.value)
     finally:
+        for df in deduped:
+            df.unpersist()
         pairs.unpersist()
         if known_bc is not None:
             known_bc.unpersist()
