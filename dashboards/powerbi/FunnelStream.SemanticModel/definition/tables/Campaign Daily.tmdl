@@ -1,0 +1,166 @@
+table 'Campaign Daily'
+
+	column campaign_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: campaign_id
+
+	column report_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: report_date
+
+	column ad_platform
+		dataType: string
+		summarizeBy: none
+		sourceColumn: ad_platform
+
+	column impressions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: impressions
+
+	column clicks
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: clicks
+
+	column platform_conversions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: platform_conversions
+
+	column spend
+		dataType: double
+		summarizeBy: none
+		sourceColumn: spend
+
+	column orders_placed
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_placed
+
+	column orders_delivered
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_delivered
+
+	column orders_cancelled
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_cancelled
+
+	column orders_returned
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_returned
+
+	column orders_with_failed_attempt
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_with_failed_attempt
+
+	column revenue_placed
+		dataType: double
+		summarizeBy: none
+		sourceColumn: revenue_placed
+
+	column revenue_delivered
+		dataType: double
+		summarizeBy: none
+		sourceColumn: revenue_delivered
+
+	column cancel_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: cancel_rate
+
+	column failed_attempt_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: failed_attempt_rate
+
+	column return_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: return_rate
+
+	column open_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: open_rate
+
+	column new_customer_orders
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: new_customer_orders
+
+	column aov
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: aov
+
+	column ctr
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: ctr
+
+	column conversion_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: conversion_rate
+
+	column cpa
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: cpa
+
+	column cost_per_delivered_order
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: cost_per_delivered_order
+
+	column roas_placed
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: roas_placed
+
+	column roas_delivered
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: roas_delivered
+
+	partition 'Campaign Daily' = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "agg_campaign_daily", Kind = "Table"]}[Data],
+				Filtered = Table.SelectRows(Raw, each [attribution_model] = "last_touch"),
+				Selected = Table.SelectColumns(Filtered, {"campaign_id", "report_date", "ad_platform", "impressions", "clicks", "platform_conversions", "spend", "orders_placed", "orders_delivered", "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed", "revenue_delivered", "cancel_rate", "failed_attempt_rate", "return_rate", "open_rate", "new_customer_orders", "aov", "ctr", "conversion_rate", "cpa", "cost_per_delivered_order", "roas_placed", "roas_delivered"})
+			in
+				Selected

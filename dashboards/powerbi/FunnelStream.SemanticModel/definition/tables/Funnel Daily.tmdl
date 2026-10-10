@@ -1,0 +1,76 @@
+table 'Funnel Daily'
+
+	column event_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: event_date
+
+	column country
+		dataType: string
+		summarizeBy: none
+		sourceColumn: country
+
+	column channel
+		dataType: string
+		summarizeBy: none
+		sourceColumn: channel
+
+	column platform
+		dataType: string
+		summarizeBy: none
+		sourceColumn: platform
+
+	column sessions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: sessions
+
+	column product_views
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: product_views
+
+	column cart_sessions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: cart_sessions
+
+	column checkout_sessions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: checkout_sessions
+
+	column orders
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders
+
+	column cart_abandon_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: cart_abandon_rate
+
+	column checkout_abandon_rate
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: checkout_abandon_rate
+
+	partition 'Funnel Daily' = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "agg_funnel_daily", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"event_date", "country", "channel", "platform", "sessions", "product_views", "cart_sessions", "checkout_sessions", "orders", "cart_abandon_rate", "checkout_abandon_rate"})
+			in
+				Selected

@@ -1,0 +1,23 @@
+relationship bf8d7f6b-fa55-4843-9ee1-9cbb6d612fbd
+	fromColumn: 'Campaign Daily'.report_date
+	toColumn: Date.date
+
+relationship 04058f05-c559-49fd-9182-1b3b999a6c2a
+	fromColumn: 'Funnel Daily'.event_date
+	toColumn: Date.date
+
+relationship 934207aa-3ad8-43b4-81e2-a7414a9e0ca7
+	fromColumn: 'Orders Daily'.date_key
+	toColumn: Date.date_key
+
+relationship 5a453092-5436-4be6-ae55-5f49df237527
+	fromColumn: Orders.date_key
+	toColumn: Date.date_key
+
+relationship 2d30f539-6c6f-4a15-bdcf-a14d01cbdb84
+	fromColumn: 'Campaign Daily'.campaign_id
+	toColumn: Campaign.campaign_id
+
+relationship 1b9efa3f-c55f-45fb-84b3-15b5ef6b8130
+	fromColumn: Orders.campaign_id
+	toColumn: Campaign.campaign_id

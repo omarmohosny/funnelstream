@@ -1,0 +1,64 @@
+table Date
+	dataCategory: Time
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: date_key
+
+	column date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		isKey
+		summarizeBy: none
+		sourceColumn: date
+
+	column week
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: week
+
+	column month
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: month
+
+	column is_weekend
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_weekend
+
+	column is_friday_saturday
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_friday_saturday
+
+	column is_ramadan
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_ramadan
+
+	column is_eid
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_eid
+
+	column is_holiday
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_holiday
+
+	partition Date = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_date", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"date_key", "date", "week", "month", "is_weekend", "is_friday_saturday", "is_ramadan", "is_eid", "is_holiday"})
+			in
+				Selected

@@ -1,0 +1,272 @@
+table _Measures
+
+	measure Spend =
+			SUM ( 'Campaign Daily'[spend] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure Impressions =
+			SUM ( 'Campaign Daily'[impressions] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Ad Clicks' =
+			SUM ( 'Campaign Daily'[clicks] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Platform Conversions' =
+			SUM ( 'Campaign Daily'[platform_conversions] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Attributed Orders' =
+			SUM ( 'Campaign Daily'[orders_placed] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Attributed Revenue Placed' =
+			SUM ( 'Campaign Daily'[revenue_placed] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Attributed Revenue Delivered' =
+			SUM ( 'Campaign Daily'[revenue_delivered] )
+		formatString: "#,0"
+		displayFolder: Campaign\Base
+
+	measure 'Orders on Spend Days' =
+			CALCULATE ( [Attributed Orders], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: "#,0"
+		displayFolder: Campaign\Spend days only
+
+	measure 'Delivered Orders on Spend Days' =
+			CALCULATE ( SUM ( 'Campaign Daily'[orders_delivered] ), KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: "#,0"
+		displayFolder: Campaign\Spend days only
+
+	measure 'Revenue Placed on Spend Days' =
+			CALCULATE ( [Attributed Revenue Placed], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: "#,0"
+		displayFolder: Campaign\Spend days only
+
+	measure 'Revenue Delivered on Spend Days' =
+			CALCULATE ( [Attributed Revenue Delivered], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: "#,0"
+		displayFolder: Campaign\Spend days only
+
+	measure CTR =
+			DIVIDE ( [Ad Clicks], [Impressions] )   // API-reported clicks; not the click used for attribution
+		formatString: "0.0%"
+		displayFolder: Campaign\Ratios
+
+	measure 'Conversion Rate' =
+			DIVIDE ( [Orders on Spend Days], [Ad Clicks] )   // attributed orders per API click
+		formatString: "0.0%"
+		displayFolder: Campaign\Ratios
+
+	measure CPA =
+			DIVIDE ( [Spend], [Orders on Spend Days] )
+		formatString: "#,0"
+		displayFolder: Campaign\Ratios
+
+	measure 'Cost per Delivered Order' =
+			DIVIDE ( [Spend], [Delivered Orders on Spend Days] )
+		formatString: "#,0"
+		displayFolder: Campaign\Ratios
+
+	measure 'ROAS Placed' =
+			DIVIDE ( [Revenue Placed on Spend Days], [Spend] )
+		formatString: "0.00"
+		displayFolder: Campaign\Ratios
+
+	measure 'ROAS Delivered' =
+			DIVIDE ( [Revenue Delivered on Spend Days], [Spend] )   // the headline: what the cash actually returns
+		formatString: "0.00"
+		displayFolder: Campaign\Ratios
+
+	measure 'ROAS Gap' =
+			// How much of the placed ROAS is lost to cancellations, returns and failed COD deliveries.
+			VAR Placed = [ROAS Placed]
+			VAR Delivered = [ROAS Delivered]
+			RETURN
+				IF ( NOT ISBLANK ( Placed ) && NOT ISBLANK ( Delivered ), Placed - Delivered )
+		formatString: "0.00"
+		displayFolder: Campaign\Ratios
+
+	measure 'Platform vs Attributed' =
+			// Conversions the ad platform reports divided by orders we attribute. Above 1 means the platform claims more.
+			DIVIDE ( [Platform Conversions], [Orders on Spend Days] )
+		formatString: "0.00"
+		displayFolder: Campaign\Ratios
+
+	measure 'Is Provisional' =
+			VAR LastDay = MAX ( 'Date'[Date] )
+			RETURN
+				LastDay >= TODAY () - 3
+		displayFolder: Campaign\Maturity
+
+	measure 'Maturity Label' =
+			IF ( [Is Provisional], "Provisional: orders still settling", "Settled" )
+		displayFolder: Campaign\Maturity
+
+	measure Sessions =
+			SUM ( 'Funnel Daily'[sessions] )
+		formatString: "#,0"
+		displayFolder: Funnel
+
+	measure 'Product View Sessions' =
+			SUM ( 'Funnel Daily'[product_views] )
+		formatString: "#,0"
+		displayFolder: Funnel
+
+	measure 'Cart Sessions' =
+			SUM ( 'Funnel Daily'[cart_sessions] )
+		formatString: "#,0"
+		displayFolder: Funnel
+
+	measure 'Checkout Sessions' =
+			SUM ( 'Funnel Daily'[checkout_sessions] )
+		formatString: "#,0"
+		displayFolder: Funnel
+
+	measure 'Funnel Orders' =
+			SUM ( 'Funnel Daily'[orders] )
+		formatString: "#,0"
+		displayFolder: Funnel
+
+	measure 'View Rate' =
+			DIVIDE ( [Product View Sessions], [Sessions] )
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Cart Rate' =
+			DIVIDE ( [Cart Sessions], [Product View Sessions] )
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Checkout Rate' =
+			DIVIDE ( [Checkout Sessions], [Cart Sessions] )
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Order Rate' =
+			DIVIDE ( [Funnel Orders], [Checkout Sessions] )
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Session Conversion' =
+			DIVIDE ( [Funnel Orders], [Sessions] )
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Cart Abandon Rate' =
+			1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Checkout Abandon Rate' =
+			1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
+		formatString: "0.0%"
+		displayFolder: Funnel
+
+	measure 'Orders Placed' =
+			SUM ( 'Orders Daily'[orders_placed] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Orders Delivered' =
+			SUM ( 'Orders Daily'[orders_delivered] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Orders Cancelled' =
+			SUM ( 'Orders Daily'[orders_cancelled] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Orders Returned' =
+			SUM ( 'Orders Daily'[orders_returned] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Orders with Failed Attempt' =
+			SUM ( 'Orders Daily'[orders_with_failed_attempt] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Revenue Placed' =
+			SUM ( 'Orders Daily'[revenue_placed] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Revenue Delivered' =
+			SUM ( 'Orders Daily'[revenue_delivered] )   // counted on the ORDER date (cohort view)
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure AOV =
+			DIVIDE ( [Revenue Placed], [Orders Placed] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'Delivered Share of Revenue' =
+			DIVIDE ( [Revenue Delivered], [Revenue Placed] )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'Cancel Rate' =
+			DIVIDE ( [Orders Cancelled], [Orders Placed] )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'Return Rate' =
+			DIVIDE ( [Orders Returned], [Orders Placed] )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'Failed Attempt Rate' =
+			DIVIDE ( [Orders with Failed Attempt], [Orders Placed] )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'New Customer Orders' =
+			SUM ( 'Orders Daily'[new_customer_orders] )
+		formatString: "#,0"
+		displayFolder: Executive
+
+	measure 'New Customer Share' =
+			DIVIDE ( [New Customer Orders], [Orders Placed] )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'Direct Share' =
+			DIVIDE (
+				CALCULATE ( [Orders Placed], 'Orders Daily'[channel] = "direct" ),
+				CALCULATE ( [Orders Placed], REMOVEFILTERS ( 'Orders Daily'[channel] ) )
+			)
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	measure 'Revenue Placed vs Last Week' =
+			// Change against the same weekday one week earlier. Needs the marked date table.
+			VAR Current = [Revenue Placed]
+			VAR LastWeek = CALCULATE ( [Revenue Placed], DATEADD ( 'Date'[Date], -7, DAY ) )
+			RETURN
+				DIVIDE ( Current - LastWeek, LastWeek )
+		formatString: "0.0%"
+		displayFolder: Executive
+
+	column Dummy
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: Dummy
+
+	partition _Measures = m
+		mode: import
+		source =
+			let
+				Source = #table(type table [Dummy = text], {})
+			in
+				Source

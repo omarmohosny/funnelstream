@@ -1,0 +1,53 @@
+table Campaign
+
+	column campaign_key
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: campaign_key
+
+	column campaign_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: campaign_id
+
+	column utm_campaign
+		dataType: string
+		summarizeBy: none
+		sourceColumn: utm_campaign
+
+	column platform
+		dataType: string
+		summarizeBy: none
+		sourceColumn: platform
+
+	column name
+		dataType: string
+		summarizeBy: none
+		sourceColumn: name
+
+	column start_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: start_date
+
+	column end_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: end_date
+
+	partition Campaign = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_campaign", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"campaign_key", "campaign_id", "utm_campaign", "platform", "name", "start_date", "end_date"})
+			in
+				Selected

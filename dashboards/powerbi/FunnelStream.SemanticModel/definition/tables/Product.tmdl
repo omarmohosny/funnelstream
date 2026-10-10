@@ -1,0 +1,40 @@
+table Product
+
+	column product_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column name
+		dataType: string
+		summarizeBy: none
+		sourceColumn: name
+
+	column category
+		dataType: string
+		summarizeBy: none
+		sourceColumn: category
+
+	column price
+		dataType: double
+		summarizeBy: none
+		sourceColumn: price
+
+	column is_current
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_current
+
+	partition Product = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_product", Kind = "Table"]}[Data],
+				Filtered = Table.SelectRows(Raw, each [is_current] = true),
+				Selected = Table.SelectColumns(Filtered, {"product_id", "name", "category", "price", "is_current"})
+			in
+				Selected

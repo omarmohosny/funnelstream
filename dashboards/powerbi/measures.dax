@@ -1,0 +1,300 @@
+// FunnelStream: Power BI measures (version 2) for the Executive, Campaign, Funnel, Inventory and Marketing-and-inventory pages.
+//
+// Paste each measure into the model (Modeling, New measure) or load the whole file with Tabular Editor / the
+// Power BI Modeling MCP. Create one empty table "_Measures" first and put every measure in it, grouped by the display
+// folder named in the comment above each block.
+//
+// Table names used below are the friendly names set in Power Query (see MODEL.md, section 1):
+//   Databricks Gold:  'Date' <- dim_date        'Campaign' <- dim_campaign      'Product' <- dim_product (current rows)
+//                     'Campaign Daily' <- agg_campaign_daily   'Funnel Daily' <- agg_funnel_daily
+//                     'Orders Daily' <- agg_orders_daily       'Orders' <- fact_orders
+//   Postgres marts:   'Store' <- dim_store                     'Stock Now' <- live_stock_now
+//                     'Inventory Daily' <- inventory_daily     'OOS Demand Daily' <- oos_demand_daily
+//                     'Express Daily' <- express_daily
+//                     'Marketing D1 Campaign' <- marketing_d1_campaign   'Marketing D1 Product' <- marketing_d1_product
+//
+// Rules this file follows:
+//  1. Every ratio is a measure built from SUMs. The pre-computed rate columns of the Gold tables (ctr, roas_placed,
+//     cancel_rate, ...) are hidden: averaging a rate over rows gives a wrong number, a ratio of sums gives the right one.
+//  2. DIVIDE instead of "/", so a zero or blank denominator gives BLANK, not an error.
+//  3. Spend exists only on days when the ad API was pulled. Orders exist on many more days. Any ratio of orders or
+//     revenue to spend therefore counts revenue and orders ONLY on rows that have spend (the "Spend Days" measures);
+//     otherwise ROAS would divide all revenue by the spend of two days.
+//  4. Sessions in the funnel are distinct per Cairo day, so a session that spans midnight counts once on each day:
+//     daily sessions do not add up exactly across days (docs/metrics.md, "Funnel metrics").
+//  5. Stock is semi-additive: closing stock is never summed over days (see "Closing Stock"); sales and receipts are
+//     flows and add normally.
+//  6. All inventory data is SIMULATED. Reservations are out of scope, so available stock equals on-hand stock.
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Campaign \ Base
+// ---------------------------------------------------------------------------------------------------------------
+Spend = SUM ( 'Campaign Daily'[spend] )
+
+Impressions = SUM ( 'Campaign Daily'[impressions] )
+
+Ad Clicks = SUM ( 'Campaign Daily'[clicks] )
+
+Platform Conversions = SUM ( 'Campaign Daily'[platform_conversions] )
+
+Attributed Orders = SUM ( 'Campaign Daily'[orders_placed] )
+
+Attributed Revenue Placed = SUM ( 'Campaign Daily'[revenue_placed] )
+
+Attributed Revenue Delivered = SUM ( 'Campaign Daily'[revenue_delivered] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Campaign \ Spend days only
+// Rows of 'Campaign Daily' that carry spend. KEEPFILTERS keeps the filters of the page and slicers.
+// ---------------------------------------------------------------------------------------------------------------
+Orders on Spend Days =
+CALCULATE ( [Attributed Orders], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+
+Delivered Orders on Spend Days =
+CALCULATE ( SUM ( 'Campaign Daily'[orders_delivered] ), KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+
+Revenue Placed on Spend Days =
+CALCULATE ( [Attributed Revenue Placed], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+
+Revenue Delivered on Spend Days =
+CALCULATE ( [Attributed Revenue Delivered], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Campaign \ Ratios
+// ---------------------------------------------------------------------------------------------------------------
+CTR =
+DIVIDE ( [Ad Clicks], [Impressions] )   // API-reported clicks; not the click used for attribution
+
+Conversion Rate =
+DIVIDE ( [Orders on Spend Days], [Ad Clicks] )   // attributed orders per API click
+
+CPA =
+DIVIDE ( [Spend], [Orders on Spend Days] )
+
+Cost per Delivered Order =
+DIVIDE ( [Spend], [Delivered Orders on Spend Days] )
+
+ROAS Placed =
+DIVIDE ( [Revenue Placed on Spend Days], [Spend] )
+
+ROAS Delivered =
+DIVIDE ( [Revenue Delivered on Spend Days], [Spend] )   // the headline: what the cash actually returns
+
+ROAS Gap =
+// How much of the placed ROAS is lost to cancellations, returns and failed COD deliveries.
+VAR Placed = [ROAS Placed]
+VAR Delivered = [ROAS Delivered]
+RETURN
+    IF ( NOT ISBLANK ( Placed ) && NOT ISBLANK ( Delivered ), Placed - Delivered )
+
+Platform vs Attributed =
+// Conversions the ad platform reports divided by orders we attribute. Above 1 means the platform claims more.
+DIVIDE ( [Platform Conversions], [Orders on Spend Days] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Campaign \ Maturity
+// Delivered revenue lags spend by about 2 to 4 days, so the newest days are incomplete.
+// ---------------------------------------------------------------------------------------------------------------
+Is Provisional =
+VAR LastDay = MAX ( 'Date'[Date] )
+RETURN
+    LastDay >= TODAY () - 3
+
+Maturity Label =
+IF ( [Is Provisional], "Provisional: orders still settling", "Settled" )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Funnel
+// ---------------------------------------------------------------------------------------------------------------
+Sessions = SUM ( 'Funnel Daily'[sessions] )
+
+Product View Sessions = SUM ( 'Funnel Daily'[product_views] )
+
+Cart Sessions = SUM ( 'Funnel Daily'[cart_sessions] )
+
+Checkout Sessions = SUM ( 'Funnel Daily'[checkout_sessions] )
+
+Funnel Orders = SUM ( 'Funnel Daily'[orders] )
+
+View Rate = DIVIDE ( [Product View Sessions], [Sessions] )
+
+Cart Rate = DIVIDE ( [Cart Sessions], [Product View Sessions] )
+
+Checkout Rate = DIVIDE ( [Checkout Sessions], [Cart Sessions] )
+
+Order Rate = DIVIDE ( [Funnel Orders], [Checkout Sessions] )
+
+Session Conversion = DIVIDE ( [Funnel Orders], [Sessions] )
+
+Cart Abandon Rate = 1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
+
+Checkout Abandon Rate = 1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Executive
+// 'Orders Daily' holds every order, attributed or not.
+// ---------------------------------------------------------------------------------------------------------------
+Orders Placed = SUM ( 'Orders Daily'[orders_placed] )
+
+Orders Delivered = SUM ( 'Orders Daily'[orders_delivered] )
+
+Orders Cancelled = SUM ( 'Orders Daily'[orders_cancelled] )
+
+Orders Returned = SUM ( 'Orders Daily'[orders_returned] )
+
+Orders with Failed Attempt = SUM ( 'Orders Daily'[orders_with_failed_attempt] )
+
+Revenue Placed = SUM ( 'Orders Daily'[revenue_placed] )
+
+Revenue Delivered = SUM ( 'Orders Daily'[revenue_delivered] )   // counted on the ORDER date (cohort view)
+
+AOV = DIVIDE ( [Revenue Placed], [Orders Placed] )
+
+Delivered Share of Revenue = DIVIDE ( [Revenue Delivered], [Revenue Placed] )
+
+Cancel Rate = DIVIDE ( [Orders Cancelled], [Orders Placed] )
+
+Return Rate = DIVIDE ( [Orders Returned], [Orders Placed] )
+
+Failed Attempt Rate = DIVIDE ( [Orders with Failed Attempt], [Orders Placed] )
+
+New Customer Orders = SUM ( 'Orders Daily'[new_customer_orders] )
+
+New Customer Share = DIVIDE ( [New Customer Orders], [Orders Placed] )
+
+Direct Share =
+DIVIDE (
+    CALCULATE ( [Orders Placed], 'Orders Daily'[channel] = "direct" ),
+    CALCULATE ( [Orders Placed], REMOVEFILTERS ( 'Orders Daily'[channel] ) )
+)
+
+Revenue Placed vs Last Week =
+// Change against the same weekday one week earlier. Needs the marked date table.
+VAR Current = [Revenue Placed]
+VAR LastWeek = CALCULATE ( [Revenue Placed], DATEADD ( 'Date'[Date], -7, DAY ) )
+RETURN
+    DIVIDE ( Current - LastWeek, LastWeek )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Inventory \ Now
+// 'Stock Now' has one row per store and product (simulated stock, written by the live sink after each Silver batch).
+// ---------------------------------------------------------------------------------------------------------------
+Stock Lines = COUNTROWS ( 'Stock Now' )   // store and product pairs
+
+Stock Units Available = SUM ( 'Stock Now'[available] )
+
+Out of Stock Lines =
+CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) )
+
+Low Stock Lines =
+// Above zero but below the reorder point. A column-to-column comparison needs FILTER, not a CALCULATE boolean.
+COUNTROWS (
+    FILTER (
+        'Stock Now',
+        'Stock Now'[available] > 0 && 'Stock Now'[available] < 'Stock Now'[reorder_point]
+    )
+)
+
+Out of Stock Rate = DIVIDE ( [Out of Stock Lines], [Stock Lines] )
+
+Stock Freshness (seconds) =
+// Age of the newest stock row. Stock is recomputed after each Silver batch, so about one batch behind real time.
+DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Inventory \ Daily
+// 'Inventory Daily' has one row per store, product and Cairo day.
+// ---------------------------------------------------------------------------------------------------------------
+Closing Stock =
+// Semi-additive: the total of the LAST day that has data inside the filter context, never a sum over days.
+VAR LastDay = CALCULATE ( MAX ( 'Inventory Daily'[report_date] ) )
+RETURN
+    CALCULATE ( SUM ( 'Inventory Daily'[closing_on_hand] ), 'Inventory Daily'[report_date] = LastDay )
+
+Units Sold = SUM ( 'Inventory Daily'[units_sold] )
+
+Units Received = SUM ( 'Inventory Daily'[units_received] )
+
+Units Shrunk = SUM ( 'Inventory Daily'[units_shrunk] )
+
+Units Adjusted = SUM ( 'Inventory Daily'[units_adjusted] )
+
+Oversold Units =
+// Units customers asked for beyond the stock on the shelf (no reservations, so the app promised stock it did not have).
+SUM ( 'Inventory Daily'[oversold_units] )
+
+Shrinkage Rate = DIVIDE ( [Units Shrunk], [Units Sold] + [Units Shrunk] )
+
+Net Stock Change = [Units Received] - [Units Sold] - [Units Shrunk] + [Units Adjusted]
+
+Ended Out of Stock =
+CALCULATE ( COUNTROWS ( 'Inventory Daily' ), KEEPFILTERS ( 'Inventory Daily'[ended_out_of_stock] = TRUE () ) )
+
+Days of Cover =
+// Closing stock divided by the average units sold per day with data. Blank when nothing sold.
+VAR Days = CALCULATE ( DISTINCTCOUNT ( 'Inventory Daily'[report_date] ) )
+VAR AvgDailySold = DIVIDE ( [Units Sold], Days )
+RETURN
+    DIVIDE ( [Closing Stock], AvgDailySold )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Inventory \ Demand on empty shelves
+// 'OOS Demand Daily' keeps only demand that met a store and product with zero available stock when the sink wrote it.
+// ---------------------------------------------------------------------------------------------------------------
+OOS Views = SUM ( 'OOS Demand Daily'[views] )
+
+OOS Add to Cart = SUM ( 'OOS Demand Daily'[add_to_cart] )
+
+OOS Landing Clicks = SUM ( 'OOS Demand Daily'[landing_clicks] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Marketing and inventory
+// 'Marketing D1 Campaign' is the daily mart: campaign spend joined with the share of landing clicks on empty shelves.
+// ---------------------------------------------------------------------------------------------------------------
+Landing Clicks = SUM ( 'Marketing D1 Campaign'[landing_clicks] )
+
+OOS Clicks = SUM ( 'Marketing D1 Campaign'[oos_clicks] )
+
+OOS Click Share = DIVIDE ( [OOS Clicks], [Landing Clicks] )
+
+Exposed Spend =
+// Estimated spend exposed to out-of-stock: spend x share of landing clicks on an empty shelf. An upper bound.
+SUM ( 'Marketing D1 Campaign'[exposed_spend] )
+
+Campaign Spend D1 = SUM ( 'Marketing D1 Campaign'[spend] )
+
+Exposed Share of Spend = DIVIDE ( [Exposed Spend], [Campaign Spend D1] )
+
+Revenue at Risk =
+// Add-to-carts on empty shelves times price (top products of the day). Revenue the shelf could not serve, not lost revenue.
+SUM ( 'Marketing D1 Product'[revenue_at_risk] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Express delivery (the 20-minute promise)
+// 'Express Daily' has one row per store and Cairo day. Every express order carries its own promise.
+// ---------------------------------------------------------------------------------------------------------------
+Express Orders = SUM ( 'Express Daily'[orders] )
+
+Express Delivered = SUM ( 'Express Daily'[delivered] )
+
+Express On Time = SUM ( 'Express Daily'[on_time] )
+
+Express Breaches =
+// Always a number: zero breaches must show as 0, never as blank.
+COALESCE ( SUM ( 'Express Daily'[breached] ), 0 )
+
+Express On-time Rate =
+// On-time orders over orders that have been decided: delivered, or undelivered past their promise.
+DIVIDE ( [Express On Time], [Express On Time] + [Express Breaches] )
+
+Slowest Express Delivery (min) = MAX ( 'Express Daily'[max_delivery_minutes] )
+
+Average Express Delivery (min) =
+// Weighted by delivered orders, not an average of daily averages.
+DIVIDE (
+    SUMX ( 'Express Daily', 'Express Daily'[avg_delivery_minutes] * 'Express Daily'[delivered] ),
+    [Express Delivered]
+)
+
+Promise Met =
+IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
