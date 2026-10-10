@@ -1,0 +1,7 @@
+campaign_id,report_date,pulled_at,utm_campaign,ad_platform,impressions,clicks,platform_conversions,spend,currency
+camp_201,2026-10-05,2026-10-06T00:00:00+00:00,eid_sale_1,google,65305,1900,49,1490.8386,EGP
+camp_201,2026-10-08,2026-10-09T00:00:00+00:00,eid_sale_1,google,74170,1464,59,1451.5866,EGP
+camp_202,2026-10-05,2026-10-06T00:00:00+00:00,ramadan_offer_1,meta,88355,2004,102,1940.4177,EGP
+camp_202,2026-10-08,2026-10-09T00:00:00+00:00,ramadan_offer_1,meta,84827,3092,118,1958.3385,EGP
+camp_203,2026-10-05,2026-10-06T00:00:00+00:00,retarget_cart_1,meta,18063,218,11,551.2643,EGP
+camp_203,2026-10-08,2026-10-09T00:00:00+00:00,retarget_cart_1,meta,23323,353,20,581.8696,EGP

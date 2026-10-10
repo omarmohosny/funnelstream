@@ -1,0 +1,5 @@
+campaign_key,campaign_id,utm_campaign,platform,name,start_date,end_date
+-1,unknown,unknown,unknown,Unknown,,
+1,camp_201,eid_sale_1,google,eid_sale_1,,
+2,camp_202,ramadan_offer_1,meta,ramadan_offer_1,,
+3,camp_203,retarget_cart_1,meta,retarget_cart_1,,

@@ -6,7 +6,7 @@ New to the project? Start with the team handoff (Q&A, status, remaining tasks): 
 
 Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.
 
-Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan.xlsx`.
+Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Inventory spec: `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md`. Inventory plan: `docs/superpowers/plans/2026-10-10-inventory-two-users.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan-v3.xlsx`.
 
 ## Repository layout
 
@@ -54,7 +54,51 @@ Airflow DAG `ads_yesterday_report` (03:00 UTC daily, `airflow/dags/`, logic in `
 
 ## Status
 
-Built and tested: simulator with noise, Kafka, Bronze and Silver (Spark in Docker), the Gold model and DDL, the Databricks Silver mirror, the ad-report DAG. Next: the Gold build (Task 10c), then Grafana live monitoring and the remaining batch tasks. See the plan for the full order.
+Built and verified (see [docs/HANDOFF.md](docs/HANDOFF.md) and [docs/RUNNING.md](docs/RUNNING.md)):
+
+- Simulator with injected noise, Kafka, and Bronze and Silver Delta tables (Spark in Docker).
+- Publish of Silver to the Databricks Silver mirror, then the Gold build: 11 Gold tables built (`rec_product` is an empty slot, `customer_360` is a stretch table) and 63 data quality checks, run together by `scripts/run_batch.py`.
+- Campaign attribution (`fact_attribution`, first and last touch) and `agg_campaign_daily`.
+- The Airflow DAG `ads_yesterday_report`, which writes to Databricks.
+- Live and health tables in Postgres, and Grafana with a live pipeline dashboard and alerts.
+- Failure demo tooling (`scripts/failure_demo.ps1`, `scripts/check_duplicates.py`) and sample CSVs in `samples/`.
+
+Still open:
+
+- Power BI model and pages.
+- The live failure demo has not yet passed twice in a row.
+- The inventory work described in `docs/superpowers/plans/2026-10-10-inventory-two-users.md`.
+
+## Quick start
+
+Windows, PowerShell, from the repo root. Needs Docker Desktop and Python 3.11.
+
+```powershell
+Copy-Item .env.example .env                       # then set your own passwords; never commit .env
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+docker compose build spark
+docker compose up -d kafka postgres grafana
+.venv\Scripts\python kafka/create_topics.py
+docker compose run --rm spark python scripts/seed_silver_reference.py --lake data/lake   # products and customers; Silver needs them to recognise valid product ids
+.\scripts\watch_demo.ps1 -Rate 10 -SyncEvery 0     # opens the Kafka, pipeline and generator windows; Grafana at http://localhost:3000
+```
+
+`watch_demo.ps1` also starts Kafka, Postgres and Grafana and creates the topics itself, so the `docker compose up` and `create_topics.py` lines are only needed to prepare them earlier. Stop with `.\scripts\stop_demo.ps1`. Script execution may need `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+
+## Demo
+
+- Failure demo: kill the Spark job, watch Grafana and the alert, restart, check for duplicates. See [docs/RUNNING.md](docs/RUNNING.md), section "Failure demo (G3)".
+- Sample data: CSV files of the Gold and Silver tables in [samples/](samples/) (see `samples/README.md`), so the project can be inspected without Databricks. Regenerate with `scripts/export_samples.py`.
+- Benchmark: once the benchmark has run, the report is `docs/benchmark.md`. It is produced by `scripts/benchmark.py`.
+- Grafana dashboards: http://localhost:3000 (log in as `admin`), dashboard "FunnelStream: live pipeline".
+
+## Troubleshooting
+
+- Java 17 and Spark live inside the Docker image. Do not install Java on the host. The host needs Python 3.11.
+- Docker needs about 8 GB of memory.
+- The host does not read `.env`. Scripts that need the Databricks or Postgres settings run in the `spark` container, for example `docker compose run --rm spark python scripts/check_databricks.py`.
+- If `localhost:9092` or `localhost:3000` stop answering after Docker Desktop restarts, run `docker compose restart kafka` or `docker compose up -d --force-recreate grafana`.
 
 ## Getting started
 
