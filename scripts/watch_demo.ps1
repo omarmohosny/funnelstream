@@ -73,7 +73,7 @@ function Open-Window($title, $command) {
 
 Write-Host "Starting windows (seed $Seed, universe $UniverseSeed, $Events events at $Rate/s) ..."
 Open-Window 'FS 1 Kafka listener' 'docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:19092 --include ''app.events|orders|delivery.events'' --property print.topic=true --property print.key=true'
-Open-Window 'FS 2 Pipeline' "docker compose run --rm --name fs-pipeline spark python -m streaming.jobs.pipeline --lake data/lake --checkpoints data/checkpoints --show $Sample --live-store"
+Open-Window 'FS 2 Pipeline' "docker compose run --rm --name fs-pipeline -e 'FS_SPARK_MASTER=local[4]' spark python -m streaming.jobs.pipeline --lake data/lake --checkpoints data/checkpoints --show $Sample --live-store"
 Write-Host "Waiting $StartDelay s for Spark to start, then the generator starts ..."
 Start-Sleep $StartDelay
 $foreverFlag = if ($Once) { '' } else { ' --forever' }

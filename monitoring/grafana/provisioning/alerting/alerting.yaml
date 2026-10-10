@@ -5,8 +5,14 @@ apiVersion: 1
 # NOTE: history-mode data is late by rule (every event is older than the watermark), so rule (a) is meaningful for
 # --live runs only. Rules (b) and (c) work in both modes.
 #
-# Every rule reads the contract tables only (pipeline_health_minute). A query that returns no row means "not enough
-# data": rules (a) and (b) then report OK (noDataState OK); rule (c) treats no data as firing.
+# Every rule reads the contract tables only (pipeline_health_minute, pipeline_heartbeat). A query that returns no row
+# means "not enough data": rules (a) and (b) then report OK (noDataState OK); the two rules below them treat no data
+# as firing.
+#
+# Why two stall rules: a Silver batch takes about 60 s on the demo laptop and the health table is written per batch, so
+# the newest minute with events can be about 3 minutes old while the job is healthy. "No events" therefore looks at
+# 5 minutes. "Silver job silent" looks at the heartbeat, which a separate thread writes every 15 s whatever the batch
+# speed, so it is the fast alarm for a crashed job (about 2 to 3 minutes).
 groups:
   - orgId: 1
     name: fs-pipeline
@@ -103,8 +109,8 @@ groups:
               conditions:
                 - evaluator: {type: gt, params: [2]}
               datasource: {type: __expr__, uid: __expr__}
-      - uid: fs-no-events
-        title: No events for 2 minutes
+      - uid: fs-silver-silent
+        title: Silver job silent for 2 minutes
         condition: C
         for: 0s
         noDataState: Alerting
@@ -112,7 +118,51 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "No Silver events arrived in the last 2 minutes"
+          summary: "The Silver job has not reported for 2 minutes"
+          runbook: "The Silver job is down (a job that is alive but stuck on a batch is caught by 'No events for 5 minutes'): check docker compose ps and the fs-pipeline container logs; restart it with the same command and checkpoints (scripts/failure_demo.ps1 restart), then confirm the heartbeat age drops under 30 s."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, count(*) AS alive
+                FROM pipeline_heartbeat
+                WHERE component = 'silver_job' AND last_seen_at >= now() - interval '2 minutes'
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-no-events
+        title: No events for 5 minutes
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Silver events arrived in the last 5 minutes"
           runbook: "Check that the simulator and the Silver job are running (docker compose ps, the spark container logs); restart the Silver job, then confirm the event line recovers."
         data:
           - refId: A
@@ -125,9 +175,9 @@ groups:
               format: time_series
               rawQuery: true
               rawSql: >-
-                SELECT now() AS time, coalesce(sum(events), 0) AS events_2m
+                SELECT now() AS time, coalesce(sum(events), 0) AS events_5m
                 FROM pipeline_health_minute
-                WHERE minute_start >= now() - interval '2 minutes'
+                WHERE minute_start >= now() - interval '5 minutes'
           - refId: B
             datasourceUid: __expr__
             relativeTimeRange: {from: 600, to: 0}

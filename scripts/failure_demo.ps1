@@ -6,7 +6,8 @@ Start the demo first with .\scripts\watch_demo.ps1 and open Grafana (http://loca
   .\scripts\failure_demo.ps1 restart   starts the pipeline again in a new window (same command as watch_demo.ps1)
   .\scripts\failure_demo.ps1 verify    duplicate check on the Silver tables (sync container, read-only)
 Nothing runs by itself. The alert numbers below are from monitoring\grafana\provisioning\alerting\alerting.yaml
-(rule fs-no-events: interval 1m, for 0s, query window 2 minutes; contact point group_wait 10s, group_interval 1m).
+(rule fs-silver-silent: interval 1m, for 0s, heartbeat older than 2 minutes; rule fs-no-events: no events for 5 minutes;
+contact point group_wait 10s, group_interval 1m).
 #>
 param(
     [Parameter(Position = 0)]
@@ -55,10 +56,11 @@ switch ($Step) {
         Test-Docker
         $running = docker ps --filter name=fs-pipeline --format '{{.Names}}'
         if (-not $running) { Fail "fs-pipeline is not running. Start it with .\scripts\watch_demo.ps1 or .\scripts\failure_demo.ps1 restart." }
+        $hb = Query-Pg "SELECT coalesce(round(extract(epoch FROM now() - last_seen_at))::text, '') FROM pipeline_heartbeat WHERE component = 'silver_job'"
         $lag = Query-Pg "SELECT coalesce(round(extract(epoch FROM now() - max(minute_start)))::text, '') FROM live_metrics_minute"
-        if ($lag -match '^\d+$' -and [int]$lag -gt 150) {
-            Write-Host ("WARNING: the newest minute with events is already {0} s old, so the 'No events for 2 minutes' alert is already firing and a kill will not trigger a new alert." -f $lag) -ForegroundColor Yellow
-            Write-Host "Start the generator (or wait until the pipeline has caught up: .\scripts\failure_demo.ps1 status shows under about 90 s), then kill. Use -Rate 20 -SyncEvery 0 on watch_demo.ps1 if the pipeline falls behind." -ForegroundColor Yellow
+        if (($hb -match '^\d+$' -and [int]$hb -gt 100) -or ($lag -match '^\d+$' -and [int]$lag -gt 270)) {
+            Write-Host ("WARNING: the Silver heartbeat is {0} s old and the newest minute with events {1} s old, so an alert is already firing and a kill will not trigger a new one." -f $hb, $lag) -ForegroundColor Yellow
+            Write-Host "Wait until the pipeline is up (.\scripts\failure_demo.ps1 status shows a heartbeat under 30 s) and the alert sink printed RESOLVED, then kill. Check the generator is running." -ForegroundColor Yellow
             if (-not $Force) { Write-Host "Not killed. Repeat with -Force to kill anyway." -ForegroundColor Yellow; exit 3 }
         }
         $t = Get-Date
@@ -70,9 +72,10 @@ switch ($Step) {
         Write-Host "Look at Grafana (http://localhost:3000, refresh 5 s):"
         Write-Host "  - 'seconds since the Silver job last reported' climbs past 30 s (amber) and 120 s (red)."
         Write-Host "  - The events-per-minute line falls to zero once the last minute with data is behind the line."
-        Write-Host ("Alert 'No events for 2 minutes' (rule fs-no-events) fires about 1 to 3 minutes after the kill, i.e. between {0} and {1}:" -f $t.AddMinutes(1).ToString('HH:mm'), $t.AddMinutes(3).ToString('HH:mm'))
-        Write-Host "  the rule runs every 1 minute, has no extra pending time, and looks at the last 2 minutes of events."
+        Write-Host ("Alert 'Silver job silent for 2 minutes' (rule fs-silver-silent) fires about 2 to 3 minutes after the kill, i.e. between {0} and {1}:" -f $t.AddMinutes(2).ToString('HH:mm'), $t.AddMinutes(4).ToString('HH:mm'))
+        Write-Host "  the rule runs every 1 minute, has no extra pending time, and fires when the heartbeat is older than 2 minutes."
         Write-Host "  The webhook message appears in the alert sink window (python scripts\alert_sink.py) about 10 s later."
+        Write-Host ("Alert 'No events for 5 minutes' (rule fs-no-events) follows about 5 to 7 minutes after the kill, i.e. after {0}." -f $t.AddMinutes(5).ToString('HH:mm'))
         Write-Host "Check progress any time with: .\scripts\failure_demo.ps1 status"
     }
     'restart' {
@@ -82,7 +85,7 @@ switch ($Step) {
         if (-not $pg) { Write-Host "WARNING: postgres is not running; the live tables will not update (docker compose up -d postgres grafana)." -ForegroundColor Yellow }
         # Same command as watch_demo.ps1 (tests/test_check_duplicates.py keeps the two in sync). The checkpoints in
         # data\checkpoints are reused, so Spark resumes from the last committed Kafka offsets.
-        $command = "docker compose run --rm --name fs-pipeline spark python -m streaming.jobs.pipeline --lake data/lake --checkpoints data/checkpoints --show $Sample --live-store"
+        $command = "docker compose run --rm --name fs-pipeline -e 'FS_SPARK_MASTER=local[4]' spark python -m streaming.jobs.pipeline --lake data/lake --checkpoints data/checkpoints --show $Sample --live-store"
         $cmd = "`$Host.UI.RawUI.WindowTitle = 'FS 2 Pipeline'; Set-Location '$root'; $command"
         Start-Process powershell -ArgumentList '-NoExit', '-Command', $cmd | Out-Null
         $t = Get-Date
@@ -91,7 +94,7 @@ switch ($Step) {
         Write-Host "Say: same command, same checkpoints. Spark resumes from the offsets it last committed and reads what Kafka kept while it was down."
         Write-Host "Look at the new window: Spark needs about 1 minute to start, then [bronze] and [silver] lines show the backlog being processed."
         Write-Host "Look at Grafana: the heartbeat age drops back under 30 s, the events line comes back (a catch-up bump is normal)."
-        Write-Host ("The alert resolves at the next one-minute check after events appear again, roughly 2 to 4 minutes after {0}; the RESOLVED line shows in the alert sink." -f $t.ToString('HH:mm'))
+        Write-Host ("The heartbeat alert resolves at the next one-minute check after the job reports again, roughly 2 to 3 minutes after {0}; the RESOLVED line shows in the alert sink." -f $t.ToString('HH:mm'))
         Write-Host "When the line is moving again, run: .\scripts\failure_demo.ps1 verify"
     }
     'verify' {

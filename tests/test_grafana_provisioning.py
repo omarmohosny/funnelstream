@@ -123,8 +123,8 @@ def test_alert_rules():
     group = alerting()["groups"][0]
     assert group["interval"] == "1m"
     rules = {r["uid"]: r for r in group["rules"]}
-    assert set(rules) == {"fs-late-rate", "fs-quarantine-share", "fs-no-events"}
-    assert len(group["rules"]) == 3
+    assert set(rules) == {"fs-late-rate", "fs-quarantine-share", "fs-no-events", "fs-silver-silent"}
+    assert len(group["rules"]) == 4
 
     def threshold(r):
         c = next(d for d in r["data"] if d["refId"] == "C")["model"]["conditions"][0]["evaluator"]
@@ -136,8 +136,12 @@ def test_alert_rules():
     late, quar, none = rules["fs-late-rate"], rules["fs-quarantine-share"], rules["fs-no-events"]
     assert threshold(late) == ("gt", 5) and "interval '5 minutes'" in sql(late) and "sum(events) >= 20" in sql(late)
     assert threshold(quar) == ("gt", 2) and "interval '5 minutes'" in sql(quar) and ">= 20" in sql(quar)
-    assert threshold(none) == ("lt", 1) and "interval '2 minutes'" in sql(none)
+    assert threshold(none) == ("lt", 1) and "interval '5 minutes'" in sql(none)
+    silent = rules["fs-silver-silent"]
+    assert threshold(silent) == ("lt", 1) and "interval '2 minutes'" in sql(silent)
+    assert "component = 'silver_job'" in sql(silent) and "pipeline_heartbeat" in sql(silent)
     assert late["noDataState"] == "OK" and quar["noDataState"] == "OK" and none["noDataState"] == "Alerting"
+    assert silent["noDataState"] == "Alerting"
     for r in rules.values():
         assert r["labels"]["severity"] and r["annotations"]["runbook"] and r["annotations"]["summary"]
         assert r["condition"] == "C"

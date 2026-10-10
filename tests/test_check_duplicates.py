@@ -11,7 +11,7 @@ SCRIPT = ROOT / "scripts" / "check_duplicates.py"
 DEMO = ROOT / "scripts" / "failure_demo.ps1"
 WATCH = ROOT / "scripts" / "watch_demo.ps1"
 # The pipeline start command. failure_demo.ps1 restart must use exactly what watch_demo.ps1 uses.
-PIPELINE_CMD = ("docker compose run --rm --name fs-pipeline spark python -m streaming.jobs.pipeline "
+PIPELINE_CMD = ("docker compose run --rm --name fs-pipeline -e 'FS_SPARK_MASTER=local[4]' spark python -m streaming.jobs.pipeline "
                 "--lake data/lake --checkpoints data/checkpoints --show $Sample --live-store")
 
 
