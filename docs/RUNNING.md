@@ -580,3 +580,24 @@ General:
 - Windows line endings: the repo has a `.gitattributes` that forces LF. If the generated DDL drift test fails after checkout with CRLF files, re-clone with `git config --global core.autocrlf false` set first. (Not reproduced in this run.)
 - Java is not needed on the host. Do not install it for this project; Spark runs in the container.
 - pytest skips the Spark tests on Windows (reason "Spark needs winutils on Windows; run in Docker"). Run them in Docker with `RUN_SPARK_TESTS=1` as shown above.
+
+## Benchmark
+
+`scripts/benchmark.py` measures how fast the whole pipeline moves a given number of simulated events, stage by stage: Kafka reset, simulator, Bronze, reference seed, Silver, and (unless `--skip-gold`) the Databricks DDL, publish and Gold build with checks. It writes the result to `docs/benchmark.md`, only after a run that finished without a failed stage. Each stage is one timed command; `--events 1000000` is the intended size (1 to 2 million events).
+
+It is destructive on purpose and limited in scope: it recreates the Kafka container (every message in Kafka is lost), deletes and rewrites only `data/bench` (lake, checkpoints, export, noise manifest), and writes to the scratch Databricks catalog `workspace`. The demo lake `data/lake` and the real catalog `funnelstream` are never touched, and the script refuses `--lake` or `--checkpoints` outside `data/bench` and `--catalog funnelstream` (exit 3). The Spark stages run with an empty `PG_DSN`, so no benchmark data reaches the live Postgres tables.
+
+Stop the demo stack first, otherwise it would consume the benchmark messages (the script checks for the containers `fs-pipeline`, `fs-sync`, `fs-bronze` and `fs-silver` and exits 3 if one is running):
+
+```powershell
+.\scripts\stop_demo.ps1
+.venv\Scripts\python scripts/benchmark.py --events 1000000 --dry-run     # prints the numbered plan with every command, runs nothing
+.venv\Scripts\python scripts/benchmark.py --events 1000000 --yes         # the real run; without --yes it prints the plan and exits 2
+.venv\Scripts\python scripts/benchmark.py --events 200000 --skip-gold --yes   # local stages only, no Databricks
+```
+
+Other options: `--catalog` (default `workspace`), `--lake` and `--checkpoints` (defaults below `data/bench`), `--seed` (default 4242; the same seed always produces the same ids). The Databricks stages need the `DATABRICKS_*` settings in `.env`.
+
+Expected duration: to be measured: the first real run will record it in `docs/benchmark.md`.
+
+Afterwards the scratch tables stay in the catalog `workspace`. Drop them in the Databricks UI (Catalog Explorer, catalog `workspace`, schemas `gold` and `silver`). Do not use `apply_ddl.py --recreate` for this: it drops and recreates tables, it does not remove them.

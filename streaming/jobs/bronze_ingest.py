@@ -91,12 +91,21 @@ def show_loop(spark, queries, lake_root, sample=3, every=5.0, stop=None, out=_sa
                     out("          (sample unavailable: %s)" % type(e).__name__)
 
 
-def await_all(queries, spark=None):
-    """Block until any query ends; raise its error. Always stop all queries."""
+def trigger_options(once: bool) -> dict:
+    """Trigger keyword for writeStream.trigger(**...): read what is there and stop (once), else every 10 s."""
+    return {"availableNow": True} if once else {"processingTime": "10 seconds"}
+
+
+def await_all(queries, spark=None, all_done=False):
+    """Block until any query ends (all_done: until every query ends); raise its error. Always stop all queries."""
     try:
         if spark is None:
             raise RuntimeError("no active SparkSession")
-        spark.streams.awaitAnyTermination()
+        if all_done:
+            for q in queries:  # bounded mode: one query finishing first must not stop the others
+                q.awaitTermination()
+        else:
+            spark.streams.awaitAnyTermination()
     finally:
         for q in queries:
             try:
@@ -106,7 +115,7 @@ def await_all(queries, spark=None):
 
 
 def run(bootstrap: str, lake_root: str = "data/lake",
-        checkpoint_root: str = "data/checkpoints", topics=None):
+        checkpoint_root: str = "data/checkpoints", topics=None, once: bool = False):
     from streaming.common.spark import get_spark
 
     lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
@@ -120,7 +129,7 @@ def run(bootstrap: str, lake_root: str = "data/lake",
             bronze_frame(raw).writeStream.format("delta")
             .option("checkpointLocation", checkpoint_path(checkpoint_root, topic))
             .partitionBy("ingest_date")
-            .trigger(processingTime="10 seconds")
+            .trigger(**trigger_options(once))
             .queryName(BRONZE_TABLES[topic])
             .start(bronze_path(lake_root, topic)))
     return queries
@@ -135,11 +144,13 @@ if __name__ == "__main__":
     ap.add_argument("--bootstrap", default=os.environ.get("KAFKA_BOOTSTRAP", "kafka:19092"))
     ap.add_argument("--lake", default="data/lake")
     ap.add_argument("--checkpoints", default="data/checkpoints")
+    ap.add_argument("--once", action="store_true",
+                    help="read everything in Kafka now, write it to Delta, then exit 0")
     ap.add_argument("--show", type=int, nargs="?", const=3, default=0, metavar="N",
                     help="print a progress line per batch and the newest N raw messages (default 3)")
     args = ap.parse_args()
-    qs = run(args.bootstrap, args.lake, args.checkpoints)
+    qs = run(args.bootstrap, args.lake, args.checkpoints, once=args.once)
     if args.show:
         threading.Thread(target=show_loop, args=(SparkSession.getActiveSession(), qs, args.lake, args.show),
                          daemon=True).start()
-    await_all(qs, SparkSession.getActiveSession())
+    await_all(qs, SparkSession.getActiveSession(), all_done=args.once)
