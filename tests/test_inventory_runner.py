@@ -71,3 +71,6 @@ def test_show_prints_the_store_and_quantity_of_a_stock_event():
 def test_the_demo_script_has_an_inventory_switch():
     text = (Path(__file__).parent.parent / "scripts" / "watch_demo.ps1").read_text(encoding="utf-8")
     assert "[switch]$Inventory" in text and "--inventory --scenario hero-stockout" in text
+    assert "[int]$ExpressPromiseMinutes" in text and "[int]$LateExpressEvery" in text
+    assert "--express-promise-minutes $ExpressPromiseMinutes" in text and "--late-express-every $LateExpressEvery" in text
+    assert "-ExpressPromiseMinutes 2 -LateExpressEvery 15" in text  # the documented rehearsal

@@ -50,6 +50,17 @@ def test_tables_use_the_keys_defined_in_the_writer():
         assert t in text
 
 
+def test_inventory_and_express_tables_are_checked_with_their_writer_keys():
+    sys.path.insert(0, str(ROOT))
+    from scripts.check_duplicates import TABLES
+    from streaming.silver.writer import SILVER_KEYS
+    assert len(TABLES) == len(set(TABLES))
+    for t, key in (("silver_stock_movements", ["event_id"]), ("silver_stock_snapshots", ["event_id"]),
+                   ("silver_express_orders", ["order_id"])):
+        assert t in TABLES
+        assert SILVER_KEYS[t] == key
+
+
 def test_failure_demo_kills_hard_and_never_redirects_stderr():
     text = DEMO.read_text()
     assert "docker kill fs-pipeline" in text

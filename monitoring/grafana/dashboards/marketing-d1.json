@@ -1,0 +1,488 @@
+{
+  "uid": "fs-marketing-d1",
+  "title": "FunnelStream: Marketing, D-1",
+  "tags": [
+    "funnelstream"
+  ],
+  "timezone": "Africa/Cairo",
+  "refresh": "1m",
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Spend (EGP)",
+      "description": "Ad spend of the latest D-1 day (the ad platform's UTC day), all campaigns.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(spend), 0) AS \"spend\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Orders placed",
+      "description": "Orders attributed to the campaigns (last touch) on the latest D-1 day.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(orders_placed), 0) AS \"orders\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "ROAS placed",
+      "description": "Placed revenue divided by spend on the latest D-1 day.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(revenue_placed) / nullif(sum(spend), 0), 0) AS \"roas placed\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "ROAS delivered (provisional for recent days)",
+      "description": "Delivered revenue divided by spend. Delivery matures one to three days after the order day, so recent days read low.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(revenue_delivered) / nullif(sum(spend), 0), 0) AS \"roas delivered\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Estimated spend exposed to out-of-stock (EGP)",
+      "description": "Spend x out-of-stock landing clicks / served landing clicks. An estimate that assumes spend is spread evenly over served landing clicks.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(exposed_spend), 0) AS \"exposed spend\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Out-of-stock click share",
+      "description": "Landing clicks in minutes flagged out of stock, divided by all landing clicks in served districts.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(oos_clicks)::numeric / nullif(sum(served_clicks), 0), 0) AS \"share\" FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.15
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Campaigns, sorted by exposed spend",
+      "description": "One row per campaign with spend on the latest D-1 day; provisional marks days whose delivered revenue can still grow.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT campaign_id, utm_campaign, spend, orders_placed, cpa, roas_placed, roas_delivered, served_clicks, oos_clicks, oos_click_share, exposed_spend, provisional FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign) ORDER BY exposed_spend DESC NULLS LAST"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Top 5 products by revenue at risk",
+      "description": "Out-of-stock add-to-carts times price on the latest D-1 day. The mart keeps every out-of-stock product; the limit is this panel's.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", coalesce(p.name, m.product_id) AS \"product\", m.oos_add_to_carts, m.revenue_at_risk FROM marketing_d1_product m JOIN dim_store s ON s.store_id = m.store_id LEFT JOIN dim_product_current p ON p.product_id = m.product_id WHERE m.report_date = (SELECT max(report_date) FROM marketing_d1_product) ORDER BY m.revenue_at_risk DESC NULLS LAST LIMIT 5"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "text",
+      "title": "About this data",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend is the ad platform's UTC day, orders and demand are the Cairo day: they differ by at most 3 hours. Recent days are provisional: ROAS delivered matures after 1 to 3 days."
+      }
+    }
+  ]
+}

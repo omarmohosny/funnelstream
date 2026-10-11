@@ -263,6 +263,10 @@ def test_live_compression_leaves_express_orders_in_real_minutes_and_shrinks_stan
     rs.compress_orders(batch, 21600.0)
     rs.cap_order_tail(batch, 60.0)
     assert offsets(batch, ids, True) == pytest.approx(before_express)
+    # the whole express lifecycle moves with its session: the order is created at the purchase event's time
+    purchase_at = {e["payload"]["order_id"]: e["event_time"] for h, e in batch if e.get("event_type") == "purchase"}
+    created = {e["order_id"]: e["event_time"] for h, e in batch if h == "order" and e["event_type"] == "order_created"}
+    assert all(created[o] == purchase_at[o] for o in ids)
     assert max(offsets(batch, ids, False).values()) <= 60.0 + 1e-6 < max(before_std.values())
 
 

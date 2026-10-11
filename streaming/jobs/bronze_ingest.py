@@ -8,7 +8,10 @@ import os
 import threading
 import time
 
+from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, functions as F
+from pyspark.sql.types import (DateType, IntegerType, LongType, StringType, StructField, StructType,
+                               TimestampType)
 
 BRONZE_TABLES = {
     "app.events": "bronze_app_events",
@@ -16,6 +19,14 @@ BRONZE_TABLES = {
     "delivery.events": "bronze_delivery_events",
     "inventory.events": "bronze_inventory_events",
 }
+
+
+BRONZE_SCHEMA = StructType([
+    StructField("raw_value", StringType()), StructField("kafka_topic", StringType()),
+    StructField("kafka_partition", IntegerType()), StructField("kafka_offset", LongType()),
+    StructField("kafka_timestamp", TimestampType()), StructField("ingest_time", TimestampType()),
+    StructField("ingest_date", DateType()),
+])
 
 
 def bronze_path(lake_root: str, topic: str) -> str:
@@ -115,6 +126,20 @@ def await_all(queries, spark=None, all_done=False):
                 pass
 
 
+def ensure_bronze_tables(spark, lake_root, topics=None):
+    """Create the Bronze Delta tables that do not exist yet (empty), so a Delta stream can start on every one.
+
+    An availableNow query on an empty topic runs no batch and so creates no table; the Silver stream would then
+    fail with "not a Delta table". Returns the names of the tables created."""
+    created = []
+    for topic in topics or list(BRONZE_TABLES):
+        path = bronze_path(lake_root, topic)
+        if not DeltaTable.isDeltaTable(spark, path):
+            spark.createDataFrame([], BRONZE_SCHEMA).write.format("delta").partitionBy("ingest_date").save(path)
+            created.append(BRONZE_TABLES[topic])
+    return created
+
+
 def run(bootstrap: str, lake_root: str = "data/lake",
         checkpoint_root: str = "data/checkpoints", topics=None, once: bool = False):
     from streaming.common.spark import get_spark
@@ -122,7 +147,9 @@ def run(bootstrap: str, lake_root: str = "data/lake",
     lake_root, checkpoint_root = os.path.abspath(lake_root), os.path.abspath(checkpoint_root)
     spark = get_spark("bronze_ingest", with_kafka=True)
     queries = []
-    for topic in topics or list(BRONZE_TABLES):
+    topics = topics or list(BRONZE_TABLES)
+    ensure_bronze_tables(spark, lake_root, topics)
+    for topic in topics:
         raw = (spark.readStream.format("kafka")
                .options(**kafka_options(bootstrap, topic))
                .load())

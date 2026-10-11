@@ -206,6 +206,47 @@ class PostgresStore(GoldStore):
             cur.close()
         return len(data)
 
+    def execute_atomic(self, statements):
+        """Run the statements one after the other in ONE transaction: all are committed together or none is."""
+        conn = self._connection()
+        cur = conn.cursor()
+        try:
+            for stmt in statements:
+                cur.execute(stmt)
+            conn.commit()
+        except Exception:
+            self._rollback()
+            raise
+        finally:
+            cur.close()
+
+    def replace_for_date(self, table, date_col, day, rows, key_cols):
+        """Replace every row of `table` whose `date_col` equals `day` with `rows` (same validation as upsert).
+
+        The DELETE and the INSERT share one transaction, so a key that is no longer produced disappears and a
+        failure leaves the old rows. Returns the number of rows written."""
+        spec, columns, keys, rows = _prepare(table, rows, key_cols)
+        col = _ident(date_col)
+        if col not in {c.name for c in spec.columns}:
+            raise ValueError("table %s has no column %s" % (table, col))
+        sets = [c for c in columns if c not in keys]
+        sql = "INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) " % (
+            spec.name, ", ".join(columns), ", ".join(["%s"] * len(columns)), ", ".join(keys))
+        sql += ("DO UPDATE SET " + ", ".join("%s = EXCLUDED.%s" % (c, c) for c in sets)) if sets else "DO NOTHING"
+        data = [tuple(r.get(c) for c in columns) for r in rows]
+        conn = self._connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM %s WHERE %s = %%s" % (spec.name, col), (day,))
+            cur.executemany(sql, data)
+            conn.commit()
+        except Exception:
+            self._rollback()
+            raise
+        finally:
+            cur.close()
+        return len(data)
+
     def schema_prefix(self, group):
         super().schema_prefix(group)  # validates the group
         return "public"  # Gold tables live in schema public; the Gold build SQL itself is Databricks/Spark only

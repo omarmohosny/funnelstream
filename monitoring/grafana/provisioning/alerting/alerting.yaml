@@ -1,13 +1,16 @@
 apiVersion: 1
-# Spec 17.19. Three alert rules, evaluated every minute, notifying the webhook contact point fs-webhook
+# Spec 17.19. Six alert rules, evaluated every minute, notifying the webhook contact point fs-webhook
 # (scripts/alert_sink.py listens on the host, port 9099, and prints/logs every alert).
 #
 # NOTE: history-mode data is late by rule (every event is older than the watermark), so rule (a) is meaningful for
 # --live runs only. Rules (b) and (c) work in both modes.
 #
-# Every rule reads the contract tables only (pipeline_health_minute, pipeline_heartbeat). A query that returns no row
-# means "not enough data": rules (a) and (b) then report OK (noDataState OK); the two rules below them treat no data
-# as firing.
+# Four rules read the contract tables (pipeline_health_minute, pipeline_heartbeat); fs-oos-demand reads
+# live_oos_demand_minute (only rows flagged oos_at_write, summed over campaigns per minute); fs-express-sla reads
+# live_express_orders only (a breach is a delivery later than the order's own promise, or an open order older than its
+# promise plus one minute of grace; a cancelled or returned order that was never delivered is not a breach). A query that returns no row
+# means "not enough data": the rules with noDataState OK then report OK; fs-silver-silent and fs-no-events treat no
+# data as firing.
 #
 # Why two stall rules: a Silver batch takes about 60 s on the demo laptop and the health table is written per batch, so
 # the newest minute with events can be about 3 minutes old while the job is healthy. "No events" therefore looks at
@@ -196,6 +199,107 @@ groups:
               expression: B
               conditions:
                 - evaluator: {type: lt, params: [1]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-oos-demand
+        title: Demand on out-of-stock products
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "At least 5 add-to-carts a minute on an out-of-stock product, two minutes in a row"
+          runbook: "Open the dashboard 'Operations, live inventory', table 'Lost demand now': restock the listed store and product, or ask marketing to pause the campaign that sends traffic to it."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, count(*) AS products
+                FROM (
+                  SELECT store_id, product_id
+                  FROM (
+                    SELECT minute_start, store_id, product_id, sum(add_to_cart) AS carts
+                    FROM live_oos_demand_minute
+                    WHERE minute_start >= now() - interval '3 minutes' AND oos_at_write
+                    GROUP BY minute_start, store_id, product_id
+                  ) m
+                  WHERE carts >= 5
+                  GROUP BY store_id, product_id
+                  HAVING count(*) >= 2
+                ) t
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-express-sla
+        title: An express order missed its delivery promise
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "An express order missed its delivery promise"
+          runbook: "Open 'Operations, live inventory', table 'Slowest express orders': find the store, check its stock and riders, call the customer, and record the cause."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time, count(*) AS breaches
+                FROM live_express_orders
+                WHERE created_at >= now() - interval '60 minutes'
+                  AND ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute')
+                    OR (delivered_at IS NULL AND NOT closed_without_delivery
+                        AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
               datasource: {type: __expr__, uid: __expr__}
 contactPoints:
   - orgId: 1

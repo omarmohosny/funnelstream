@@ -8,7 +8,9 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 PROV = ROOT / "monitoring" / "grafana" / "provisioning"
 DASH = ROOT / "monitoring" / "grafana" / "dashboards" / "pipeline-live.json"
-CONTRACT_TABLES = {"live_metrics_minute", "pipeline_health_minute", "pipeline_batch_log", "pipeline_heartbeat"}
+CONTRACT_TABLES = {"live_metrics_minute", "pipeline_health_minute", "pipeline_batch_log", "pipeline_heartbeat",
+                   "live_stock_now", "live_oos_demand_minute", "dim_store", "dim_store_district", "dim_product_current",
+                   "live_express_orders"}
 REQUIRED_PANELS = [
     "Events per minute (all countries)", "Events, last full minute", "Active sessions per minute",
     "Orders placed per minute", "Product views and add-to-cart per minute", "Late-event rate % (5 min window)",
@@ -123,8 +125,9 @@ def test_alert_rules():
     group = alerting()["groups"][0]
     assert group["interval"] == "1m"
     rules = {r["uid"]: r for r in group["rules"]}
-    assert set(rules) == {"fs-late-rate", "fs-quarantine-share", "fs-no-events", "fs-silver-silent"}
-    assert len(group["rules"]) == 4
+    assert set(rules) == {"fs-late-rate", "fs-quarantine-share", "fs-no-events", "fs-silver-silent",
+                          "fs-oos-demand", "fs-express-sla"}
+    assert len(group["rules"]) == 6
 
     def threshold(r):
         c = next(d for d in r["data"] if d["refId"] == "C")["model"]["conditions"][0]["evaluator"]
@@ -142,6 +145,19 @@ def test_alert_rules():
     assert "component = 'silver_job'" in sql(silent) and "pipeline_heartbeat" in sql(silent)
     assert late["noDataState"] == "OK" and quar["noDataState"] == "OK" and none["noDataState"] == "Alerting"
     assert silent["noDataState"] == "Alerting"
+    oos = rules["fs-oos-demand"]
+    assert threshold(oos) == ("gt", 0) and oos["noDataState"] == "OK"
+    assert "interval '3 minutes'" in sql(oos) and "count(*) >= 2" in sql(oos)
+    assert "oos_at_write" in sql(oos) and "sum(add_to_cart) AS carts" in sql(oos) and "carts >= 5" in sql(oos)  # per minute, flagged
+    exp = rules["fs-express-sla"]
+    assert threshold(exp) == ("gt", 0) and exp["noDataState"] == "OK" and exp["for"] == "0s"
+    assert exp["labels"]["severity"] == "critical"
+    for needle in ["promised_minutes", "live_express_orders", "closed_without_delivery", "interval '1 minute'",
+                   "interval '60 minutes'", "delivered_at - created_at > promised_minutes"]:
+        assert needle in sql(exp), needle
+    assert tables_in(sql(exp)) == {"live_express_orders"}
+    assert exp["annotations"]["summary"] == "An express order missed its delivery promise"
+    assert "table 'Slowest express orders'" in exp["annotations"]["runbook"]
     for r in rules.values():
         assert r["labels"]["severity"] and r["annotations"]["runbook"] and r["annotations"]["summary"]
         assert r["condition"] == "C"
@@ -187,7 +203,7 @@ def test_compose_grafana_service():
 def test_no_password_literal_in_committed_grafana_files():
     files = list((ROOT / "monitoring").rglob("*")) + [ROOT / "docker-compose.yml", ROOT / "scripts" / "alert_sink.py"]
     for f in files:
-        if not f.is_file():
+        if not f.is_file() or "__pycache__" in f.parts:  # monitoring/ is now a Python package
             continue
         text = f.read_text(encoding="utf-8")
         for m in re.finditer(r"(?i)\bpassword\b[\"']?\s*[:=]\s*(\S+)", text):

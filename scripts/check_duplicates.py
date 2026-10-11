@@ -17,7 +17,8 @@ if _ROOT not in sys.path:
 
 # The Silver keys are defined in streaming/silver/writer.py (SILVER_KEYS); that module needs delta, which the host
 # does not have, so the tables to check are named here and their keys are read from SILVER_KEYS at run time.
-TABLES = ["silver_events", "silver_orders", "silver_order_status", "silver_order_items"]
+TABLES = ["silver_events", "silver_orders", "silver_order_status", "silver_order_items",
+          "silver_stock_movements", "silver_stock_snapshots", "silver_express_orders"]
 
 
 def check_lake(spark, lake):

@@ -196,9 +196,8 @@ def compress_sessions(batch, session_scale, starts=None):
         return a + (t - a) / session_scale
 
     shift = {}
-    skip = express_order_ids(batch)
     for hint, e in batch:
-        if hint == "order" and e["event_type"] == "order_created" and e["order_id"] not in skip:
+        if hint == "order" and e["event_type"] == "order_created":
             sid = e["payload"].get("session_id")
             if sid in anchors:
                 t = datetime.fromisoformat(e["event_time"])

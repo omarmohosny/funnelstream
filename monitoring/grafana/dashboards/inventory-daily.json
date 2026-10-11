@@ -1,0 +1,637 @@
+{
+  "uid": "fs-inventory-daily",
+  "title": "FunnelStream: Inventory insights, daily",
+  "tags": [
+    "funnelstream"
+  ],
+  "timezone": "Africa/Cairo",
+  "refresh": "1m",
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Closing stock, latest day (units)",
+      "description": "Units on hand at the end of the latest Cairo day in the mart (simulated stock, never below zero).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(closing_on_hand), 0) AS \"units\" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Products out of stock at day end",
+      "description": "Store and product pairs whose stock minus reservations was zero or less at the end of the latest day.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"products\" FROM inventory_daily WHERE ended_out_of_stock AND report_date = (SELECT max(report_date) FROM inventory_daily)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Oversold units, latest day",
+      "description": "Units asked for beyond the shelf on the latest day. A lower bound: a sale of zero units emits no movement.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(oversold_units), 0) AS \"units\" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Shrinkage share of units out, latest day",
+      "description": "Shrunk units divided by shrunk plus sold units on the latest day.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(round(100.0 * sum(units_shrunk) / nullif(sum(units_sold) + sum(units_shrunk), 0), 1), 0) AS \"percent\" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Closing stock by store (units)",
+      "description": "Stock at the end of each Cairo day, summed per dark store.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT i.report_date::timestamp AS \"time\", s.store_name AS \"metric\", sum(i.closing_on_hand) AS \"units\" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id WHERE $__timeFilter(i.report_date::timestamp) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Units sold, received and shrunk per day",
+      "description": "Daily movement totals over all stores and products.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT report_date::timestamp AS \"time\", sum(units_sold) AS \"sold\", sum(units_received) AS \"received\", sum(units_shrunk) AS \"shrunk\" FROM inventory_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Lowest days of cover, latest day (20 products)",
+      "description": "Closing stock divided by the average units sold per day over the last 7 days; products that did not sell are left out.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", coalesce(p.name, i.product_id) AS \"product\", i.closing_on_hand AS \"closing stock\", round(a.per_day, 1) AS \"sold per day\", round(i.closing_on_hand / nullif(a.per_day, 0), 1) AS \"days of cover\" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id LEFT JOIN dim_product_current p ON p.product_id = i.product_id JOIN (SELECT store_id, product_id, sum(units_sold)::numeric / 7 AS per_day FROM inventory_daily WHERE report_date > (SELECT max(report_date) FROM inventory_daily) - 7 GROUP BY 1, 2) a ON a.store_id = i.store_id AND a.product_id = i.product_id WHERE i.report_date = (SELECT max(report_date) FROM inventory_daily) AND a.per_day > 0 ORDER BY 5 ASC NULLS LAST LIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Demand on empty shelves per day",
+      "description": "Product views and add-to-carts that arrived while the product was out of stock (the stock when the minute was written).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT report_date::timestamp AS \"time\", sum(oos_views) AS \"views\", sum(oos_add_to_cart) AS \"add to cart\" FROM oos_demand_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Express delivery, 20-minute promise",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Express on-time rate, latest day",
+      "description": "On-time orders divided by delivered or breached orders on the latest day in express_daily. 100 when there is nothing to measure.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(round(100.0 * sum(on_time) / nullif(sum(on_time) + sum(breached), 0), 1), 100) AS \"percent\" FROM express_daily WHERE report_date = (SELECT max(report_date) FROM express_daily)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Slowest express delivery per day (minutes)",
+      "description": "The longest delivery time of each Cairo day against the 20-minute promise.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 18,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT report_date::timestamp AS \"time\", max(max_delivery_minutes) AS \"slowest\", 20 AS \"promise\" FROM express_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "text",
+      "title": "About this data",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Simulated stock. Closing stock is the end of the Cairo day; oversold units are a lower bound; cancelled orders do not return stock (reserve-on-order); demand on empty shelves is flagged with the stock when the minute was written, which a replay can change."
+      }
+    }
+  ]
+}

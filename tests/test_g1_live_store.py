@@ -569,3 +569,16 @@ def test_watch_demo_runs_one_pipeline_window_and_needs_postgres():
     assert text.index("apply_live_ddl.py") < text.index("Open-Window 'FS 1 Kafka listener'")
     stop = (ROOT / "scripts" / "stop_demo.ps1").read_text(encoding="utf-8")
     assert "fs-pipeline" in stop
+
+
+def test_product_fill_starts_no_spark_session_without_a_silver_products_table(tmp_path, monkeypatch, capsys):
+    """M3: applying the DDL from the host must not launch a JVM when there is no product table to read."""
+    import streaming.common.spark as common
+    import warehouse.live_stock as live_stock
+
+    calls = []
+    monkeypatch.setattr(common, "get_spark", lambda name: calls.append(name) or object())
+    monkeypatch.setattr(live_stock, "compute_product_rows", lambda spark, lake: [{"product_id": "p1"}])
+    assert apply_live_ddl.read_product_rows(str(tmp_path / "lake")) == [] and calls == []
+    (tmp_path / "lake" / "silver" / "silver_products").mkdir(parents=True)
+    assert apply_live_ddl.read_product_rows(str(tmp_path / "lake")) == [{"product_id": "p1"}] and calls == ["apply_live_ddl"]

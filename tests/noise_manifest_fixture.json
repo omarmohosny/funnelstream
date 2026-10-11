@@ -1,0 +1,24 @@
+{
+  "total_messages": 3182,
+  "injected": {
+    "duplicate": 25,
+    "malformed_json": 9,
+    "missing_field": 6,
+    "unknown_type": 2,
+    "bad_version": 3,
+    "negative_price": 2,
+    "future_timestamp": 4,
+    "late": 49,
+    "very_late": 9,
+    "tz_offset": 28,
+    "null_product_id": 16,
+    "unknown_product_id": 8,
+    "dirty_text": 67,
+    "numeric_string": 4,
+    "out_of_order_status": 0,
+    "cancel_after_ship": 0,
+    "bot_session": 1,
+    "dirty_district": 50,
+    "dirty_utm": 11
+  }
+}

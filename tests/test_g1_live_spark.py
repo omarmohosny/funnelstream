@@ -281,6 +281,7 @@ def test_silver_stream_survives_a_database_outage(spark, tmp_path):
 def test_ensure_bronze_tables_creates_empty_tables_once_and_silver_can_start(spark, tmp_path):
     lake = str(tmp_path / "lake")
     assert sorted(ensure_bronze_tables(spark, lake)) == ["bronze_app_events", "bronze_delivery_events",
+                                                         "bronze_inventory_events",
                                                          "bronze_orders"]
     assert ensure_bronze_tables(spark, lake) == []
     q = silver_clean.run(lake, str(tmp_path / "ckpt"), once=True, live_store=False)

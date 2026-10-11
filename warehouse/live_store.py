@@ -14,31 +14,23 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
 from streaming.common.spark import inherit_job_group
 from streaming.gold.live import live_metrics_for_minutes, minute_epochs
-from streaming.silver.writer import silver_path
+from warehouse.live_common import _read, _utc
+from warehouse.live_express import compute_express_rows
+from warehouse.live_stock import compute_demand_rows, compute_stock_rows, write_oos_demand
 from warehouse.live_tables import HEALTH_COLUMNS, LIVE_METRIC_COLUMNS
 
 log = logging.getLogger("funnelstream.live_store")
 
 LIVE_KEYS = ["minute_start", "country"]
 CONNECT_TIMEOUT = 3  # seconds
+EXPRESS_WINDOW = timedelta(hours=3)  # an open express order is refreshed until it is delivered or older than this
 LIVENESS_INTERVAL = 15.0  # seconds between "alive" heartbeats of the Silver job
-
-
-def _utc(epoch: int) -> datetime:
-    return datetime.fromtimestamp(epoch, tz=timezone.utc)
-
-
-def _read(spark, silver_root, table):
-    """The Silver Delta table, or None when it does not exist yet (Silver only creates a table on its first row)."""
-    path = silver_path(silver_root, table)
-    return spark.read.format("delta").load(path) if DeltaTable.isDeltaTable(spark, path) else None
 
 
 def compute_live_metric_rows(spark, silver_root, minutes, bot_lookback_hours=6) -> list:
@@ -156,6 +148,8 @@ class LiveSink:
         self._retry_after = retry_after
         self._down_until = 0.0
         self._pending_metrics, self._pending_health = set(), set()
+        self._pending_stock, self._stock_seen = set(), False
+        self._express_seen = False
         self._stop_liveness = threading.Event()
 
     def _get_store(self):
@@ -205,12 +199,16 @@ class LiveSink:
         t.start()
         return t
 
-    def on_batch(self, spark, batch_id, event_minutes, arrival_minutes=(), quarantine_minutes=(), now=None):
+    def on_batch(self, spark, batch_id, event_minutes, arrival_minutes=(), quarantine_minutes=(), now=None,
+                 stock_pairs=(), express_seen=False):
         """Write the live and health rows of one finished Silver batch. Returns (metric minutes, health minutes)
         or None when Postgres could not be written (the minutes stay pending for the next batch)."""
         now = now or datetime.now(timezone.utc)
         self._pending_metrics |= set(minute_epochs(event_minutes))
         self._pending_health |= set(minute_epochs(list(arrival_minutes) + list(quarantine_minutes) + [now]))
+        self._pending_stock |= {tuple(p) for p in stock_pairs}
+        self._stock_seen = self._stock_seen or bool(self._pending_stock)
+        self._express_seen = self._express_seen or bool(express_seen) or self._stock_seen
         n_metrics, n_health = len(self._pending_metrics), len(self._pending_health)
         if self._clock() < self._down_until:
             log.warning("live_store: Postgres unavailable, %d metric minutes and %d health minutes wait for the "
@@ -219,19 +217,34 @@ class LiveSink:
         try:
             store = self._get_store()
             metric_minutes, health_minutes = set(self._pending_metrics), set(self._pending_health)
+            stock_pairs_now = set(self._pending_stock)
             # The two recomputes only read Silver and meet at Postgres, so their Spark work runs side by side; the
             # writes below stay one after the other on the single connection.
             in_job_group = inherit_job_group(spark)  # so query.stop() also cancels the sink's Spark jobs
-            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-sink") as pool:
+            with ThreadPoolExecutor(max_workers=5, thread_name_prefix="live-sink") as pool:
                 metric_job = pool.submit(in_job_group(compute_live_metric_rows), spark, self.silver_root,
                                          metric_minutes)
                 health_job = pool.submit(in_job_group(compute_health_counts), spark, self.silver_root,
                                          health_minutes)
+                stock_job = (pool.submit(in_job_group(compute_stock_rows), spark, self.silver_root,
+                                         sorted(stock_pairs_now), now) if stock_pairs_now else None)
+                demand_job = (pool.submit(in_job_group(compute_demand_rows), spark, self.silver_root, metric_minutes)
+                              if self._stock_seen else None)
+                express_job = (pool.submit(in_job_group(compute_express_rows), spark, self.silver_root,
+                                           now - EXPRESS_WINDOW) if self._express_seen else None)
             metric_rows, health_counts = metric_job.result(), health_job.result()  # raises the first failure
+            stock_rows = stock_job.result() if stock_job else []
+            demand_rows = demand_job.result() if demand_job else []
+            express_rows = express_job.result() if express_job else []
             if metric_rows:
                 store.upsert("live_metrics_minute", metric_rows, LIVE_KEYS)
             log_batch(store, self.job_run_id, batch_id, now)
             write_health(store, health_minutes, health_counts)
+            if stock_rows:  # stock first, so the demand flag below sees the new stock
+                store.upsert("live_stock_now", stock_rows, ["store_id", "product_id"])
+            write_oos_demand(store, demand_rows)
+            if express_rows:
+                store.upsert("live_express_orders", express_rows, ["order_id"])
             heartbeat(store, "silver_job", "batch %s" % batch_id, now)
         except Exception as e:  # Silver is the source of truth; the next batch repairs these minutes
             text = " ".join(str(e).split())[:200]
@@ -241,5 +254,6 @@ class LiveSink:
             self._down_until = self._clock() + self._retry_after
             return None
         self._pending_metrics, self._pending_health = set(), set()
+        self._pending_stock = set()
         log.info("live_store: %d metric minutes, %d health minutes", n_metrics, n_health)
         return n_metrics, n_health

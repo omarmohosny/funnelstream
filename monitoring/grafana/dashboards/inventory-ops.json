@@ -1,0 +1,754 @@
+{
+  "uid": "fs-inventory-ops",
+  "title": "FunnelStream: Operations, live inventory",
+  "tags": [
+    "funnelstream"
+  ],
+  "timezone": "Africa/Cairo",
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Out-of-stock products now",
+      "description": "Store and product pairs with available stock of zero (simulated stock, latest sink write).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"out of stock\" FROM live_stock_now WHERE available <= 0"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Low-stock products now",
+      "description": "Pairs with stock above zero but below their reorder point.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"low stock\" FROM live_stock_now WHERE available > 0 AND available < reorder_point"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Seconds since the last stock change",
+      "description": "Age of the newest stock row. Stock is recomputed after each Silver batch, so it is about one batch behind.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(round(extract(epoch from (now() - max(updated_at))))::int, 0) AS \"seconds\" FROM live_stock_now"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "title": "About this data",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "All stock numbers are **simulated**: the simulator sells and restocks eight dark stores. Available stock is on-hand stock; order reservations are out of scope. Demand on empty shelves is flagged with the stock when the minute was written: an estimate that a replay can change."
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Demand on out-of-stock products per minute",
+      "description": "Product views and add-to-carts that arrived for a store and product with zero stock when the minute was written (the stock when the minute was written, not at event time). Demand the shelf could not serve.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(minute_start, '1m', 0), sum(views) AS \"views\", sum(add_to_cart) AS \"add to cart\" FROM live_oos_demand_minute WHERE oos_at_write AND $__timeFilter(minute_start) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "App traffic: events per minute",
+      "description": "Non-late, non-bot events per minute from live_metrics_minute (all countries).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(minute_start, '1m', 0), sum(events) AS \"events\" FROM live_metrics_minute WHERE $__timeFilter(minute_start) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Lowest stock now (20 products)",
+      "description": "The twenty store and product pairs with the least available stock.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", coalesce(p.name, l.product_id) AS \"product\", l.available AS \"available\", l.reorder_point AS \"reorder point\" FROM live_stock_now l JOIN dim_store s ON s.store_id = l.store_id LEFT JOIN dim_product_current p ON p.product_id = l.product_id ORDER BY l.available ASC, l.store_id, l.product_id LIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Lost demand now (last 15 minutes)",
+      "description": "Products with the most add-to-carts while out of stock in the last 15 minutes (stock when the minute was written).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", coalesce(p.name, d.product_id) AS \"product\", sum(d.add_to_cart) AS \"add to cart\", sum(d.views) AS \"views\" FROM live_oos_demand_minute d JOIN dim_store s ON s.store_id = d.store_id LEFT JOIN dim_product_current p ON p.product_id = d.product_id WHERE d.oos_at_write AND d.minute_start >= now() - interval '15 minutes' GROUP BY d.store_id, s.store_name, d.product_id, p.name ORDER BY 3 DESC, 4 DESC LIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Express delivery, 20-minute promise",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Express orders at risk now",
+      "description": "Undelivered express orders that used 75% of their promise and are not yet breached.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute' + interval '1 minute'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Express breaches, last hour",
+      "description": "Orders created in the last hour that were delivered late or are overdue (promise plus 1 minute of grace).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"breaches\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour' AND ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "On-time rate, last hour",
+      "description": "On-time orders divided by delivered or breached orders created in the last hour. Cancelled and returned undelivered orders are in neither count.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Slowest express delivery, last hour (minutes)",
+      "description": "Longest elapsed time: the delivery time of delivered orders, the age of open orders that are not closed.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(max(EXTRACT(EPOCH FROM (coalesce(delivered_at, now()) - created_at)) / 60.0)::numeric, 1) AS \"minutes\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour' AND (delivered_at IS NOT NULL OR NOT closed_without_delivery)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Slowest express orders, last hour",
+      "description": "The ten express orders of the last hour with the longest elapsed time (closed orders sort last).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(s.store_name, o.store_id) AS \"store\", o.order_id AS \"order\", promised_minutes AS \"promise (min)\", CASE WHEN delivered_at IS NULL AND closed_without_delivery THEN NULL ELSE round((EXTRACT(EPOCH FROM (coalesce(delivered_at, now()) - created_at)) / 60.0)::numeric, 1) END AS \"elapsed (min)\", CASE WHEN delivered_at IS NULL AND closed_without_delivery THEN 'closed without delivery' WHEN ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute')) THEN 'breached' WHEN delivered_at IS NULL AND now() - created_at >= promised_minutes * interval '45 seconds' THEN 'at risk' ELSE 'on time' END AS \"state\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id WHERE created_at >= now() - interval '1 hour' ORDER BY 4 DESC NULLS LAST, o.order_id LIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 15,
+      "type": "text",
+      "title": "Express definitions",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**On time**: delivered within the order's own promise (`delivered_at - created_at <= promised_minutes`). **Breached**: delivered later than the promise, or still undelivered more than the promise plus a 1-minute grace after it was created (the grace keeps a `delivered` event that reaches the sink a batch late from raising a false alarm). **At risk**: undelivered and at least 75% of the promise has passed (15 minutes for a 20-minute promise), not yet breached. An order that was cancelled or returned without a delivery is **closed without delivery**: it has no delivery to be late, so it is in no count. Times are simulator event times; the state is computed with now(), so it moves between Silver batches."
+      }
+    }
+  ]
+}

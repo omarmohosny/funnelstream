@@ -43,7 +43,7 @@ from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
 from streaming.common.spark import get_spark, inherit_job_group
-from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path
+from streaming.jobs.bronze_ingest import BRONZE_TABLES, await_all, bronze_path, ensure_bronze_tables
 from streaming.silver.orders import split_cancel_after_ship
 from streaming.silver.schemas import TABLE_COLUMNS
 from streaming.silver.spark_schemas import SCHEMAS, coerce_row
@@ -219,7 +219,8 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
     the batch whose district was outside their city (reported, not an error). With stats["collect_minutes"] true
     it also gets stats["event_minutes"] (minutes of event_time of the batch's Silver events), ["arrival_minutes"]
     (minutes of kafka_timestamp) and ["quarantine_minutes"] (minutes of received_at), as epoch seconds,
-    and ["stock_pairs"] (the sorted (store_id, product_id) pairs of the batch's stock rows)."""
+    and ["stock_pairs"] (the sorted (store_id, product_id) pairs of the batch's stock rows). ["express_seen"] is true
+    when the batch had express orders."""
     now = now or datetime.now(timezone.utc)
     cols = ["raw_value", "kafka_topic", "kafka_timestamp", "ingest_time"]
     known_bc = spark.sparkContext.broadcast(set(known_products)) if known_products is not None else None
@@ -260,6 +261,8 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
             if want_minutes and n and table in ("silver_stock_movements", "silver_stock_snapshots"):
                 stock_pairs.update((r["store_id"], r["product_id"])
                                    for r in df.select("store_id", "product_id").distinct().collect())
+            if want_minutes and n and table == "silver_express_orders":
+                stats["express_seen"] = True
             if n:
                 to_merge[table] = (df, partitions)
         _merge_tables(spark, lake_root, to_merge)
@@ -316,6 +319,9 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, s
         from warehouse.live_store import LiveSink  # psycopg is only imported on the first connect
         sink = LiveSink(lake_root)
     spark = get_spark("silver_clean")
+    made = ensure_bronze_tables(spark, lake_root)  # a lake from before the inventory topic has no such table
+    if made:
+        log.info("created empty Bronze tables: %s", ", ".join(made))
     frames = [spark.readStream.format("delta").option("maxBytesPerTrigger", "64m")
               .load(bronze_path(lake_root, topic)) for topic in BRONZE_TABLES]
     union = frames[0]
@@ -329,7 +335,9 @@ def run(lake_root="data/lake", checkpoint_root="data/checkpoints", once=False, s
         log.info("batch %s: %s district_violations=%d", batch_id, counts, stats.get("district_violations", 0))
         if sink is not None:
             sink.on_batch(sess, batch_id, stats.get("event_minutes", ()), stats.get("arrival_minutes", ()),
-                          stats.get("quarantine_minutes", ()))  # never raises
+                          stats.get("quarantine_minutes", ()),
+                          stock_pairs=stats.get("stock_pairs", ()),
+                          express_seen=stats.get("express_seen", False))  # never raises
         if show:
             show_batch(sess, lake_root, batch_id, counts, stats, sample=show)
 

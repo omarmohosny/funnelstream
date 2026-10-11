@@ -3,6 +3,7 @@
 The SQL itself runs on local Spark with Delta in tests/test_checks_spark.py.
 """
 import json
+import os
 import re
 import types
 
@@ -17,6 +18,7 @@ from warehouse.ddl_render import split_statements
 from warehouse.gold_build import GoldBuildError, main, placeholders, run_build
 from warehouse.tables import GOLD_TABLES, SILVER_MIRROR_TABLES
 
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "noise_manifest_fixture.json")  # fixed numbers, not the last run
 VALUES = placeholders("funnelstream.silver", "funnelstream.gold", "2026-10-01", "2026-10-03")
 TAG = re.compile(r"^/\* funnelstream check (\S+) \*/ ")
 WRITE_WORDS = re.compile(r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|SET|GRANT|COPY|OPTIMIZE|VACUUM)\b",
@@ -227,7 +229,7 @@ def manifest(path, **injected):
 
 
 def test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest():
-    repo = json.load(open("noise_manifest.json", encoding="utf-8"))["injected"]
+    repo = json.load(open(FIXTURE, encoding="utf-8"))["injected"]
     assert ck.expected_quarantine(repo) == 9 + 6 + 2 + 3 + 2 + 4 + 16 + 8 + 0 == 50
     assert ck.MANIFEST_QUARANTINE_KINDS == ("malformed_json", "missing_field", "unknown_type", "bad_version",
                                             "negative_price", "future_timestamp", "null_product_id",
@@ -299,7 +301,7 @@ def test_manifest_missing_file_and_malformed_json_and_wrong_shape(tmp_path):
 
 
 def test_the_repo_manifest_loads():
-    assert ck.load_manifest("noise_manifest.json")["duplicate"] == 25
+    assert ck.load_manifest(FIXTURE)["duplicate"] == 25
 
 
 # ---------------------------------------------------------------- the build step

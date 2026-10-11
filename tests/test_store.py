@@ -411,3 +411,29 @@ def test_qualified_names_per_backend():
     dbx = DatabricksStore("https://h", TOKEN, warehouse_id="w", catalog="funnelstream", connection=object())
     assert dbx.qualified("silver_campaign_snapshots") == "funnelstream.silver.silver_campaign_snapshots"
     assert dbx.qualified("fact_orders") == "funnelstream.gold.fact_orders"
+
+
+# M4: delete-then-insert in one transaction (Postgres)
+def test_postgres_execute_atomic_commits_once_and_rolls_back_on_failure():
+    conn = FakeConn()
+    PostgresStore("postgresql://x", connection=conn).execute_atomic(["DELETE FROM a", "INSERT INTO a SELECT 1"])
+    assert conn.statements == ["DELETE FROM a", "INSERT INTO a SELECT 1"] and conn.commits == 1
+    conn = FakeConn(failures=[RuntimeError("boom")])
+    conn.rollbacks = 0
+    conn.rollback = lambda: setattr(conn, "rollbacks", conn.rollbacks + 1)
+    with pytest.raises(RuntimeError):
+        PostgresStore("postgresql://x", connection=conn).execute_atomic(["DELETE FROM a", "INSERT INTO a SELECT 1"])
+    assert conn.commits == 0 and conn.rollbacks == 1 and conn.statements == ["DELETE FROM a"]
+
+
+def test_postgres_replace_for_date_deletes_the_day_then_inserts_in_one_commit():
+    conn = FakeConn()
+    s = PostgresStore("postgresql://x", connection=conn)
+    rows = [{"report_date": "2026-10-04", "campaign_id": "c1", "utm_campaign": "u1"}]
+    assert s.replace_for_date("marketing_d1_campaign", "report_date", "2026-10-04", rows,
+                              ["report_date", "campaign_id"]) == 1
+    assert conn.statements == [("DELETE FROM marketing_d1_campaign WHERE report_date = %s", ("2026-10-04",))]
+    assert len(conn.many) == 1 and conn.many[0][0].startswith("INSERT INTO marketing_d1_campaign (")
+    assert conn.commits == 1
+    with pytest.raises(ValueError):
+        s.replace_for_date("marketing_d1_campaign", "no such col", "2026-10-04", rows, ["report_date"])

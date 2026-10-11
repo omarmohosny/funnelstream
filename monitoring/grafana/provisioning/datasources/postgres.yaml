@@ -1,5 +1,5 @@
 apiVersion: 1
-# Read-only role grafana_ro (SELECT on the four live/health tables only), created by warehouse/live_ddl.sql.
+# Read-only role grafana_ro (SELECT on the live, health and inventory tables only), created by warehouse/live_ddl.sql.
 # Both values come from the grafana container environment (docker-compose.yml); no secret is stored here.
 datasources:
   - name: FunnelStream Postgres

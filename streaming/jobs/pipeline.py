@@ -15,32 +15,15 @@ import logging
 import os
 import threading
 
-from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (DateType, IntegerType, LongType, StringType, StructField, StructType,
-                               TimestampType)
 
 from streaming.jobs import bronze_ingest, silver_clean
 
 log = logging.getLogger("pipeline")
 
-BRONZE_SCHEMA = StructType([
-    StructField("raw_value", StringType()), StructField("kafka_topic", StringType()),
-    StructField("kafka_partition", IntegerType()), StructField("kafka_offset", LongType()),
-    StructField("kafka_timestamp", TimestampType()), StructField("ingest_time", TimestampType()),
-    StructField("ingest_date", DateType()),
-])
-
-
-def ensure_bronze_tables(spark, lake_root):
-    """Create the Bronze Delta tables that do not exist yet (empty), so the Silver stream can start at once."""
-    created = []
-    for topic in bronze_ingest.BRONZE_TABLES:
-        path = bronze_ingest.bronze_path(lake_root, topic)
-        if not DeltaTable.isDeltaTable(spark, path):
-            spark.createDataFrame([], BRONZE_SCHEMA).write.format("delta").partitionBy("ingest_date").save(path)
-            created.append(bronze_ingest.BRONZE_TABLES[topic])
-    return created
+# Kept as module names: tests and callers import them from here.
+BRONZE_SCHEMA = bronze_ingest.BRONZE_SCHEMA
+ensure_bronze_tables = bronze_ingest.ensure_bronze_tables
 
 
 def parse_args(argv=None):
