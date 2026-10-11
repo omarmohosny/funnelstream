@@ -1,0 +1,27 @@
+table Store
+
+	column store_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: store_id
+
+	column store_name
+		dataType: string
+		summarizeBy: none
+		sourceColumn: store_name
+
+	column city
+		dataType: string
+		summarizeBy: none
+		sourceColumn: city
+
+	partition Store = m
+		mode: import
+		source =
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "dim_store"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"store_id", "store_name", "city"})
+			in
+				Selected

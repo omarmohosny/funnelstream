@@ -1,0 +1,100 @@
+table 'Marketing D1 Campaign'
+
+	column report_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: report_date
+
+	column campaign_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: campaign_id
+
+	column utm_campaign
+		dataType: string
+		summarizeBy: none
+		sourceColumn: utm_campaign
+
+	column spend
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: spend
+
+	column ad_clicks
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: ad_clicks
+
+	column orders_placed
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_placed
+
+	column revenue_placed
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: revenue_placed
+
+	column revenue_delivered
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: revenue_delivered
+
+	column cpa
+		dataType: decimal
+		isHidden
+		summarizeBy: none
+		sourceColumn: cpa
+
+	column roas_placed
+		dataType: decimal
+		isHidden
+		summarizeBy: none
+		sourceColumn: roas_placed
+
+	column roas_delivered
+		dataType: decimal
+		isHidden
+		summarizeBy: none
+		sourceColumn: roas_delivered
+
+	column served_clicks
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: served_clicks
+
+	column oos_clicks
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: oos_clicks
+
+	column oos_click_share
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: oos_click_share
+
+	column exposed_spend
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: exposed_spend
+
+	column provisional
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: provisional
+
+	partition 'Marketing D1 Campaign' = m
+		mode: import
+		source =
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "marketing_d1_campaign"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "campaign_id", "utm_campaign", "spend", "ad_clicks", "orders_placed", "revenue_placed", "revenue_delivered", "cpa", "roas_placed", "roas_delivered", "served_clicks", "oos_clicks", "oos_click_share", "exposed_spend", "provisional"})
+			in
+				Selected

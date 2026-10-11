@@ -1,0 +1,57 @@
+table 'Express Daily'
+
+	column report_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: report_date
+
+	column store_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: store_id
+
+	column orders
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders
+
+	column delivered
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: delivered
+
+	column on_time
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: on_time
+
+	column breached
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: breached
+
+	column avg_delivery_minutes
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: avg_delivery_minutes
+
+	column max_delivery_minutes
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: max_delivery_minutes
+
+	partition 'Express Daily' = m
+		mode: import
+		source =
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "express_daily"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "orders", "delivered", "on_time", "breached", "avg_delivery_minutes", "max_delivery_minutes"})
+			in
+				Selected

@@ -3,7 +3,9 @@
   "pageOrder": [
     "executive",
     "campaign",
-    "funnel"
+    "funnel",
+    "inventory",
+    "marketing_inventory"
   ],
   "activePageName": "campaign"
 }

@@ -1,0 +1,106 @@
+"""The Power BI project generator (scripts/make_pbip.py) cannot be opened in Power BI Desktop by a test, so these
+checks catch what a person would otherwise find by opening it: a Postgres column that does not exist, a measure that
+points at a missing column, a relationship to a missing table."""
+import re
+from pathlib import Path
+
+import pytest
+
+from scripts import make_pbip
+
+ROOT = Path(__file__).resolve().parent.parent
+PG_TYPE = {"text": "string", "integer": "int64", "bigint": "int64", "numeric": "decimal", "date": "dateTime",
+           "timestamptz": "dateTime", "boolean": "boolean"}
+
+
+@pytest.fixture(scope="module")
+def project(tmp_path_factory):
+    out = tmp_path_factory.mktemp("pbip")
+    saved = make_pbip.OUT
+    make_pbip.OUT = out
+    try:
+        make_pbip.main()
+    finally:
+        make_pbip.OUT = saved
+    return out
+
+
+def ddl_columns(table):
+    text = (ROOT / "warehouse" / "live_ddl.sql").read_text(encoding="utf-8")
+    body = re.search(r"CREATE TABLE IF NOT EXISTS %s \((.*?)\n\);" % table, text, re.S).group(1)
+    cols = []
+    for line in body.splitlines():
+        m = re.match(r"\s+([a-z_0-9]+)\s+(text|integer|bigint|numeric(?:\(\d+,\s*\d+\))?|date|timestamptz|boolean)\b", line)
+        if m:
+            cols.append((m.group(1), PG_TYPE[m.group(2).split("(")[0]]))
+    return cols
+
+
+@pytest.mark.parametrize("name,table,cols", make_pbip.PG_TABLES)
+def test_postgres_columns_equal_the_ddl(name, table, cols):
+    assert cols == ddl_columns(table)
+
+
+def model_columns(project):
+    tables = {}
+    for f in (project / "FunnelStream.SemanticModel" / "definition" / "tables").glob("*.tmdl"):
+        text = f.read_text(encoding="utf-8")
+        name = re.match(r"table (.+)", text).group(1).strip("'")
+        tables[name] = {c.strip("'") for c in re.findall(r"^\tcolumn (.+)$", text, re.M)}
+        tables[name] |= {m.strip("'") for m in re.findall(r"^\tmeasure (.+?) =", text, re.M)}
+    return tables
+
+
+def test_every_table_is_in_the_model_and_has_a_source(project):
+    d = project / "FunnelStream.SemanticModel" / "definition"
+    listed = re.findall(r"^ref table (.+)$", (d / "model.tmdl").read_text(encoding="utf-8"), re.M)
+    files = {f.stem for f in (d / "tables").glob("*.tmdl")}
+    assert {t.strip("'") for t in listed} == files and len(files) == 15
+    for f in (d / "tables").glob("*.tmdl"):
+        assert "\tpartition " in f.read_text(encoding="utf-8"), f.name
+
+
+def test_every_measure_points_at_existing_columns_and_measures(project):
+    tables = model_columns(project)
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "tables" / "_Measures.tmdl").read_text(encoding="utf-8")
+    refs = re.findall(r"'([A-Za-z0-9 ]+)'\[([A-Za-z0-9_ ()\-]+)\]|\b([A-Za-z0-9_]+)\[([A-Za-z0-9_ ()\-]+)\]", text)
+    missing = []
+    for qt, qc, ut, uc in refs:
+        t, c = (qt, qc) if qt else (ut, uc)
+        if t in ("VAR", "RETURN"):
+            continue
+        # DAX matches table and column names case-insensitively ('Date'[Date] is the column "date")
+        by_lower = {name.lower(): {col.lower() for col in cols} for name, cols in tables.items()}
+        if t.lower() not in by_lower or c.lower() not in by_lower[t.lower()]:
+            missing.append("%s[%s]" % (t, c))
+    assert not missing, sorted(set(missing))
+
+
+def test_every_measure_of_measures_dax_is_in_the_model(project):
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "tables" / "_Measures.tmdl").read_text(encoding="utf-8")
+    generated = len(re.findall(r"^\tmeasure ", text, re.M))
+    assert generated == len(make_pbip.parse_measures()) >= 80
+    folders = set(re.findall(r"^\t\tdisplayFolder: (.+)$", text, re.M))
+    for needed in ("Inventory", "Marketing and inventory", "Express delivery (the 20-minute promise)"):
+        assert any(f.startswith(needed) for f in folders), needed
+
+
+def test_relationships_connect_existing_columns_and_stay_many_to_one(project):
+    tables = model_columns(project)
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "relationships.tmdl").read_text(encoding="utf-8")
+    pairs = re.findall(r"fromColumn: (.+?)\.(\w+)\n\ttoColumn: (.+?)\.(\w+)", text)
+    assert len(pairs) == len(make_pbip.RELS) == 22
+    seen = set()
+    for ft, fc, tt, tc in pairs:
+        ft, tt = ft.strip("'"), tt.strip("'")
+        assert fc in tables[ft] and tc in tables[tt], (ft, fc, tt, tc)
+        assert tt in ("Date", "Campaign", "Product", "Store"), "the one side must be a dimension: " + tt
+        assert (ft, fc) not in seen, "duplicate relationship from " + ft + "." + fc
+        seen.add((ft, fc))
+
+
+def test_the_report_has_the_five_pages_of_the_guide(project):
+    pages = (project / "FunnelStream.Report" / "definition" / "pages" / "pages.json").read_text(encoding="utf-8")
+    for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory"):
+        assert '"%s"' % page in pages
+        assert (project / "FunnelStream.Report" / "definition" / "pages" / page / "page.json").exists()

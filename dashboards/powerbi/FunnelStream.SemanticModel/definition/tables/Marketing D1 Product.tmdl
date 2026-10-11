@@ -1,0 +1,46 @@
+table 'Marketing D1 Product'
+
+	column report_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: report_date
+
+	column store_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: store_id
+
+	column product_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column oos_views
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: oos_views
+
+	column oos_add_to_carts
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: oos_add_to_carts
+
+	column revenue_at_risk
+		dataType: decimal
+		summarizeBy: none
+		sourceColumn: revenue_at_risk
+
+	partition 'Marketing D1 Product' = m
+		mode: import
+		source =
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "marketing_d1_product"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "oos_views", "oos_add_to_carts", "revenue_at_risk"})
+			in
+				Selected

@@ -1,4 +1,7 @@
-"""Generate dashboards/powerbi/FunnelStream.pbip (Gold part of the model) from samples/*.csv and measures.dax."""
+"""Generate dashboards/powerbi/FunnelStream.pbip (version 2: Databricks Gold tables plus the Postgres inventory and marketing
+marts) from samples/*.csv, the Postgres column lists below and measures.dax.
+
+The Postgres columns are copied from warehouse/live_ddl.sql (see PG_TABLES); test_make_pbip.py checks them against that file."""
 import csv, json, re, uuid, shutil
 from pathlib import Path
 
@@ -17,6 +20,38 @@ TABLES = [
     ("Funnel Daily", "agg_funnel_daily", None),
     ("Orders Daily", "agg_orders_daily", None),
     ("Orders", "fact_orders", None),
+]
+PG_HOST = "localhost:5432"
+PG_DB = "funnelstream"
+PG_SCHEMA = "public"
+# (power bi name, postgres table, [(column, power bi type)]) -- read-only role grafana_ro, Import mode
+PG_TABLES = [
+    ("Store", "dim_store", [("store_id", "string"), ("store_name", "string"), ("city", "string")]),
+    ("Stock Now", "live_stock_now", [("store_id", "string"), ("product_id", "string"), ("on_hand", "int64"),
+                                     ("reserved_qty", "int64"), ("available", "int64"), ("reorder_point", "int64"),
+                                     ("updated_at", "dateTime")]),
+    ("Inventory Daily", "inventory_daily", [("report_date", "dateTime"), ("store_id", "string"), ("product_id", "string"),
+                                            ("closing_on_hand", "int64"), ("units_sold", "int64"), ("units_received", "int64"),
+                                            ("units_shrunk", "int64"), ("units_adjusted", "int64"), ("oversold_units", "int64"),
+                                            ("ended_out_of_stock", "boolean")]),
+    ("OOS Demand Daily", "oos_demand_daily", [("report_date", "dateTime"), ("store_id", "string"), ("product_id", "string"),
+                                              ("campaign_id", "string"), ("utm_campaign", "string"), ("served_views", "int64"),
+                                              ("served_add_to_cart", "int64"), ("served_clicks", "int64"), ("oos_views", "int64"),
+                                              ("oos_add_to_cart", "int64"), ("oos_clicks", "int64")]),
+    ("Express Daily", "express_daily", [("report_date", "dateTime"), ("store_id", "string"), ("orders", "int64"),
+                                        ("delivered", "int64"), ("on_time", "int64"), ("breached", "int64"),
+                                        ("avg_delivery_minutes", "decimal"), ("max_delivery_minutes", "decimal")]),
+    ("Marketing D1 Campaign", "marketing_d1_campaign", [("report_date", "dateTime"), ("campaign_id", "string"),
+                                                        ("utm_campaign", "string"), ("spend", "decimal"), ("ad_clicks", "int64"),
+                                                        ("orders_placed", "int64"), ("revenue_placed", "decimal"),
+                                                        ("revenue_delivered", "decimal"), ("cpa", "decimal"),
+                                                        ("roas_placed", "decimal"), ("roas_delivered", "decimal"),
+                                                        ("served_clicks", "int64"), ("oos_clicks", "int64"),
+                                                        ("oos_click_share", "decimal"), ("exposed_spend", "decimal"),
+                                                        ("provisional", "boolean")]),
+    ("Marketing D1 Product", "marketing_d1_product", [("report_date", "dateTime"), ("store_id", "string"),
+                                                      ("product_id", "string"), ("oos_views", "int64"),
+                                                      ("oos_add_to_carts", "int64"), ("revenue_at_risk", "decimal")]),
 ]
 PRODUCT_KEEP = ["product_id", "name", "category", "price", "is_current"]
 INT_NAMES = {"impressions", "clicks", "platform_conversions", "orders_placed", "orders_delivered", "orders_cancelled",
@@ -120,11 +155,42 @@ def table_tmdl(name, gold, step):
     return "\n".join(out)
 
 
+def pg_table_tmdl(name, pg_table, cols):
+    names = ", ".join('"%s"' % c for c, _ in cols)
+    steps = [
+        'Source = PostgreSQL.Database("%s", "%s")' % (PG_HOST, PG_DB),
+        'Raw = Source{[Schema = "%s", Item = "%s"]}[Data]' % (PG_SCHEMA, pg_table),
+        "Selected = Table.SelectColumns(Raw, {%s})" % names,
+    ]
+    m = "let\n\t\t\t\t" + ",\n\t\t\t\t".join(steps) + "\n\t\t\tin\n\t\t\t\tSelected"
+    out = ["table " + q(name), ""]
+    for c, t in cols:
+        out.append("\tcolumn " + q(c))
+        out.append("\t\tdataType: " + t)
+        if t == "dateTime":
+            out.append("\t\tformatString: " + ("yyyy-MM-dd HH:mm" if c.endswith("_at") else "yyyy-MM-dd"))
+        if t == "int64":
+            out.append("\t\tformatString: 0")
+        if hidden(c):
+            out.append("\t\tisHidden")
+        out.append("\t\tsummarizeBy: none")
+        out.append("\t\tsourceColumn: " + c)
+        out.append("")
+    out.append("\tpartition %s = m" % q(name))
+    out.append("\t\tmode: import")
+    out.append("\t\tsource =")
+    out.append("\t\t\t" + m)
+    out.append("")
+    return "\n".join(out)
+
+
 PCT = {"CTR", "Conversion Rate", "View Rate", "Cart Rate", "Checkout Rate", "Order Rate", "Session Conversion",
        "Cart Abandon Rate", "Checkout Abandon Rate", "Delivered Share of Revenue", "Cancel Rate", "Return Rate",
-       "Failed Attempt Rate", "New Customer Share", "Direct Share", "Revenue Placed vs Last Week"}
+       "Failed Attempt Rate", "New Customer Share", "Direct Share", "Revenue Placed vs Last Week",
+       "Out of Stock Rate", "Shrinkage Rate", "OOS Click Share", "Exposed Share of Spend", "Express On-time Rate"}
 RATIO2 = {"ROAS Placed", "ROAS Delivered", "ROAS Gap", "Platform vs Attributed"}
-TEXT = {"Maturity Label", "Is Provisional"}
+ONE_DECIMAL = {"Days of Cover", "Slowest Express Delivery (min)", "Average Express Delivery (min)"}
+TEXT = {"Maturity Label", "Is Provisional", "Promise Met"}
 
 
 def parse_measures():
@@ -145,8 +211,7 @@ def parse_measures():
         if ln and not ln.startswith("//") and not ln[0].isspace() and " =" in ln:
             name, rest = ln.split(" =", 1)
             cur = {"name": name.strip(), "folder": folder, "body": [rest] if rest.strip() else []}
-    keep = ("Campaign", "Funnel", "Executive")
-    return [m for m in out if m["folder"] and m["folder"].split("\\")[0] in keep]
+    return [m for m in out if m["folder"]]
 
 
 def measure_tmdl(m):
@@ -161,6 +226,8 @@ def measure_tmdl(m):
         out.append("\t\tformatString: \"0.0%\"")
     elif n in RATIO2:
         out.append("\t\tformatString: \"0.00\"")
+    elif n in ONE_DECIMAL:
+        out.append("\t\tformatString: \"#,0.0\"")
     elif n not in TEXT:
         out.append("\t\tformatString: \"#,0\"")
     out.append("\t\tdisplayFolder: " + m["folder"])
@@ -175,6 +242,23 @@ RELS = [
     ("Orders", "date_key", "Date", "date_key"),
     ("Campaign Daily", "campaign_id", "Campaign", "campaign_id"),
     ("Orders", "campaign_id", "Campaign", "campaign_id"),
+    # version 2: the Postgres marts (MODEL.md section 2)
+    ("Inventory Daily", "report_date", "Date", "date"),
+    ("OOS Demand Daily", "report_date", "Date", "date"),
+    ("Marketing D1 Campaign", "report_date", "Date", "date"),
+    ("Marketing D1 Product", "report_date", "Date", "date"),
+    ("Express Daily", "report_date", "Date", "date"),
+    ("Marketing D1 Campaign", "campaign_id", "Campaign", "campaign_id"),
+    ("OOS Demand Daily", "campaign_id", "Campaign", "campaign_id"),
+    ("Stock Now", "store_id", "Store", "store_id"),
+    ("Inventory Daily", "store_id", "Store", "store_id"),
+    ("OOS Demand Daily", "store_id", "Store", "store_id"),
+    ("Express Daily", "store_id", "Store", "store_id"),
+    ("Marketing D1 Product", "store_id", "Store", "store_id"),
+    ("Stock Now", "product_id", "Product", "product_id"),
+    ("Inventory Daily", "product_id", "Product", "product_id"),
+    ("OOS Demand Daily", "product_id", "Product", "product_id"),
+    ("Marketing D1 Product", "product_id", "Product", "product_id"),
 ]
 
 
@@ -188,13 +272,15 @@ def main():
     w = lambda p, t: p.write_text(t, encoding="utf-8", newline="\n")
     w(sm / "definition.pbism", json.dumps({"version": "4.2", "settings": {}}, indent=2))
     w(sm / "definition" / "database.tmdl", "database\n\tcompatibilityLevel: 1600\n")
-    names = [t[0] for t in TABLES] + ["_Measures"]
+    names = [t[0] for t in TABLES] + [t[0] for t in PG_TABLES] + ["_Measures"]
     model = ["model Model", "\tculture: en-US", "\tdefaultPowerBIDataSourceVersion: powerBI_V3",
              "\tdiscourageImplicitMeasures", "\tsourceQueryCulture: en-US", ""]
     model += ["ref table " + q(n) for n in names] + [""]
     w(sm / "definition" / "model.tmdl", "\n".join(model))
     for name, gold, step in TABLES:
         w(sm / "definition" / "tables" / (name + ".tmdl"), table_tmdl(name, gold, step))
+    for name, pg_table, cols in PG_TABLES:
+        w(sm / "definition" / "tables" / (name + ".tmdl"), pg_table_tmdl(name, pg_table, cols))
     ms = parse_measures()
     mt = ["table _Measures", ""]
     mt += [measure_tmdl(m) for m in ms]
@@ -215,7 +301,8 @@ def main():
     w(rp / "definition" / "version.json", json.dumps({"$schema": base + "versionMetadata/1.0.0/schema.json", "version": "2.0.0"}, indent=2))
     w(rp / "definition" / "report.json", json.dumps({"$schema": base + "report/3.0.0/schema.json", "themeCollection": {
         "baseTheme": {"name": "CY24SU10", "reportVersionAtImport": "5.61", "type": "SharedResources"}}}, indent=2))
-    pages = [("executive", "Executive"), ("campaign", "Campaign"), ("funnel", "Funnel")]
+    pages = [("executive", "Executive"), ("campaign", "Campaign"), ("funnel", "Funnel"), ("inventory", "Inventory"),
+             ("marketing_inventory", "Marketing and inventory")]
     w(rp / "definition" / "pages" / "pages.json", json.dumps({
         "$schema": base + "pagesMetadata/1.0.0/schema.json", "pageOrder": [p[0] for p in pages], "activePageName": "campaign"}, indent=2))
     for pid, title in pages:
@@ -229,4 +316,5 @@ def main():
     print("measures:", len(ms), "| tables:", len(names))
 
 
-main()
+if __name__ == "__main__":
+    main()

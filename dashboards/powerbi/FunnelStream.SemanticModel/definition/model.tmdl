@@ -11,4 +11,11 @@ ref table 'Campaign Daily'
 ref table 'Funnel Daily'
 ref table 'Orders Daily'
 ref table Orders
+ref table Store
+ref table 'Stock Now'
+ref table 'Inventory Daily'
+ref table 'OOS Demand Daily'
+ref table 'Express Daily'
+ref table 'Marketing D1 Campaign'
+ref table 'Marketing D1 Product'
 ref table _Measures

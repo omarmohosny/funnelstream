@@ -1,0 +1,53 @@
+table 'Stock Now'
+
+	column store_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: store_id
+
+	column product_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column on_hand
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: on_hand
+
+	column reserved_qty
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: reserved_qty
+
+	column available
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: available
+
+	column reorder_point
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: reorder_point
+
+	column updated_at
+		dataType: dateTime
+		formatString: yyyy-MM-dd HH:mm
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition 'Stock Now' = m
+		mode: import
+		source =
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "live_stock_now"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"store_id", "product_id", "on_hand", "reserved_qty", "available", "reorder_point", "updated_at"})
+			in
+				Selected

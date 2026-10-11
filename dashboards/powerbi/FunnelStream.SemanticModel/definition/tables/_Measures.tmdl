@@ -257,6 +257,205 @@ table _Measures
 		formatString: "0.0%"
 		displayFolder: Executive
 
+	measure 'Stock Lines' =
+			COUNTROWS ( 'Stock Now' )   // store and product pairs
+		formatString: "#,0"
+		displayFolder: Inventory\Now
+
+	measure 'Stock Units Available' =
+			SUM ( 'Stock Now'[available] )
+		formatString: "#,0"
+		displayFolder: Inventory\Now
+
+	measure 'Out of Stock Lines' =
+			CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) )
+		formatString: "#,0"
+		displayFolder: Inventory\Now
+
+	measure 'Low Stock Lines' =
+			// Above zero but below the reorder point. A column-to-column comparison needs FILTER, not a CALCULATE boolean.
+			COUNTROWS (
+				FILTER (
+					'Stock Now',
+					'Stock Now'[available] > 0 && 'Stock Now'[available] < 'Stock Now'[reorder_point]
+				)
+			)
+		formatString: "#,0"
+		displayFolder: Inventory\Now
+
+	measure 'Out of Stock Rate' =
+			DIVIDE ( [Out of Stock Lines], [Stock Lines] )
+		formatString: "0.0%"
+		displayFolder: Inventory\Now
+
+	measure 'Stock Freshness (seconds)' =
+			// Age of the newest stock row. Stock is recomputed after each Silver batch, so about one batch behind real time.
+			DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
+		formatString: "#,0"
+		displayFolder: Inventory\Now
+
+	measure 'Closing Stock' =
+			// Semi-additive: the total of the LAST day that has data inside the filter context, never a sum over days.
+			VAR LastDay = CALCULATE ( MAX ( 'Inventory Daily'[report_date] ) )
+			RETURN
+				CALCULATE ( SUM ( 'Inventory Daily'[closing_on_hand] ), 'Inventory Daily'[report_date] = LastDay )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Units Sold' =
+			SUM ( 'Inventory Daily'[units_sold] )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Units Received' =
+			SUM ( 'Inventory Daily'[units_received] )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Units Shrunk' =
+			SUM ( 'Inventory Daily'[units_shrunk] )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Units Adjusted' =
+			SUM ( 'Inventory Daily'[units_adjusted] )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Oversold Units' =
+			// Units customers asked for beyond the stock on the shelf (no reservations, so the app promised stock it did not have).
+			SUM ( 'Inventory Daily'[oversold_units] )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Shrinkage Rate' =
+			DIVIDE ( [Units Shrunk], [Units Sold] + [Units Shrunk] )
+		formatString: "0.0%"
+		displayFolder: Inventory\Daily
+
+	measure 'Net Stock Change' =
+			[Units Received] - [Units Sold] - [Units Shrunk] + [Units Adjusted]
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Ended Out of Stock' =
+			CALCULATE ( COUNTROWS ( 'Inventory Daily' ), KEEPFILTERS ( 'Inventory Daily'[ended_out_of_stock] = TRUE () ) )
+		formatString: "#,0"
+		displayFolder: Inventory\Daily
+
+	measure 'Days of Cover' =
+			// Closing stock divided by the average units sold per day with data. Blank when nothing sold.
+			VAR Days = CALCULATE ( DISTINCTCOUNT ( 'Inventory Daily'[report_date] ) )
+			VAR AvgDailySold = DIVIDE ( [Units Sold], Days )
+			RETURN
+				DIVIDE ( [Closing Stock], AvgDailySold )
+		formatString: "#,0.0"
+		displayFolder: Inventory\Daily
+
+	measure 'OOS Views' =
+			SUM ( 'OOS Demand Daily'[oos_views] )
+		formatString: "#,0"
+		displayFolder: Inventory\Demand on empty shelves
+
+	measure 'OOS Add to Cart' =
+			SUM ( 'OOS Demand Daily'[oos_add_to_cart] )
+		formatString: "#,0"
+		displayFolder: Inventory\Demand on empty shelves
+
+	measure 'Served Demand Clicks' =
+			SUM ( 'OOS Demand Daily'[served_clicks] )   // all landing clicks in served districts
+		formatString: "#,0"
+		displayFolder: Inventory\Demand on empty shelves
+
+	measure 'OOS Demand Clicks' =
+			SUM ( 'OOS Demand Daily'[oos_clicks] )   // the flagged part of the same clicks
+		formatString: "#,0"
+		displayFolder: Inventory\Demand on empty shelves
+
+	measure 'Served Clicks' =
+			SUM ( 'Marketing D1 Campaign'[served_clicks] )   // landing clicks in served districts: the denominator
+		formatString: "#,0"
+		displayFolder: Marketing and inventory
+
+	measure 'OOS Clicks' =
+			SUM ( 'Marketing D1 Campaign'[oos_clicks] )   // the part in minutes flagged out of stock: the numerator
+		formatString: "#,0"
+		displayFolder: Marketing and inventory
+
+	measure 'OOS Click Share' =
+			DIVIDE ( [OOS Clicks], [Served Clicks] )   // both counts come from the same table and population
+		formatString: "0.0%"
+		displayFolder: Marketing and inventory
+
+	measure 'Exposed Spend' =
+			// Estimated spend exposed to out-of-stock: spend x oos_clicks / served_clicks per campaign and day (the column is summed).
+			// An estimate that assumes spend is spread evenly over served landing clicks; the flag is the stock when the minute was written.
+			SUM ( 'Marketing D1 Campaign'[exposed_spend] )
+		formatString: "#,0"
+		displayFolder: Marketing and inventory
+
+	measure 'Campaign Spend D1' =
+			SUM ( 'Marketing D1 Campaign'[spend] )
+		formatString: "#,0"
+		displayFolder: Marketing and inventory
+
+	measure 'Exposed Share of Spend' =
+			DIVIDE ( [Exposed Spend], [Campaign Spend D1] )
+		formatString: "0.0%"
+		displayFolder: Marketing and inventory
+
+	measure 'Revenue at Risk' =
+			// Add-to-carts on empty shelves times price. 'Marketing D1 Product' keeps EVERY out-of-stock product per store, so the total
+			// is the whole day's; put the Top N in the visual filter. Revenue the shelf could not serve, not lost revenue.
+			SUM ( 'Marketing D1 Product'[revenue_at_risk] )
+		formatString: "#,0"
+		displayFolder: Marketing and inventory
+
+	measure 'Express Orders' =
+			SUM ( 'Express Daily'[orders] )
+		formatString: "#,0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Express Delivered' =
+			SUM ( 'Express Daily'[delivered] )
+		formatString: "#,0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Express On Time' =
+			SUM ( 'Express Daily'[on_time] )
+		formatString: "#,0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Express Breaches' =
+			// Always a number: zero breaches must show as 0, never as blank.
+			COALESCE ( SUM ( 'Express Daily'[breached] ), 0 )
+		formatString: "#,0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Express On-time Rate' =
+			// On-time orders over orders that have been decided: delivered, or undelivered past their promise.
+			DIVIDE ( [Express On Time], [Express On Time] + [Express Breaches] )
+		formatString: "0.0%"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Slowest Express Delivery (min)' =
+			MAX ( 'Express Daily'[max_delivery_minutes] )
+		formatString: "#,0.0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Average Express Delivery (min)' =
+			// Weighted by delivered orders, not an average of daily averages.
+			DIVIDE (
+				SUMX ( 'Express Daily', 'Express Daily'[avg_delivery_minutes] * 'Express Daily'[delivered] ),
+				[Express Delivered]
+			)
+		formatString: "#,0.0"
+		displayFolder: Express delivery (the 20-minute promise)
+
+	measure 'Promise Met' =
+			IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
+		displayFolder: Express delivery (the 20-minute promise)
+
 	column Dummy
 		dataType: string
 		isHidden
