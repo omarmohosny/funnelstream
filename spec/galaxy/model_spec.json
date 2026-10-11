@@ -1,0 +1,723 @@
+{
+  "style": "galaxy",
+  "catalog": "funnelstream",
+  "schema": "gold",
+  "generated_by": "baseline",
+  "tables": [
+    {
+      "name": "dim_customer",
+      "type": "dimension",
+      "scd": 2,
+      "grain": "one row per customer_id version",
+      "pk": [
+        "customer_key"
+      ],
+      "ctes": [
+        "v AS (SELECT *, lead(updated_at) OVER (PARTITION BY customer_id ORDER BY updated_at) AS next_ts FROM silver_customers)"
+      ],
+      "from_sql": "v",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "customer_key",
+          "data_type": "BIGINT",
+          "role": "pk",
+          "source_column": "silver_customers.customer_id",
+          "expression": "xxhash64(v.customer_id, v.updated_at)",
+          "references": ""
+        },
+        {
+          "column": "customer_id",
+          "data_type": "STRING",
+          "role": "bk",
+          "source_column": "silver_customers.customer_id",
+          "expression": "v.customer_id",
+          "references": ""
+        },
+        {
+          "column": "country",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_customers.country",
+          "expression": "v.country",
+          "references": ""
+        },
+        {
+          "column": "city",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_customers.city",
+          "expression": "v.city",
+          "references": ""
+        },
+        {
+          "column": "district",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_customers.district",
+          "expression": "v.district",
+          "references": ""
+        },
+        {
+          "column": "signup_date",
+          "data_type": "DATE",
+          "role": "attribute",
+          "source_column": "silver_customers.signup_date",
+          "expression": "v.signup_date",
+          "references": ""
+        },
+        {
+          "column": "primary_device",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_customers.primary_device",
+          "expression": "v.primary_device",
+          "references": ""
+        },
+        {
+          "column": "marketing_consent",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "silver_customers.marketing_consent",
+          "expression": "v.marketing_consent",
+          "references": ""
+        },
+        {
+          "column": "valid_from",
+          "data_type": "TIMESTAMP",
+          "role": "scd_meta",
+          "source_column": "silver_customers.updated_at",
+          "expression": "v.updated_at",
+          "references": ""
+        },
+        {
+          "column": "valid_to",
+          "data_type": "TIMESTAMP",
+          "role": "scd_meta",
+          "source_column": "silver_customers.updated_at",
+          "expression": "coalesce(v.next_ts, TIMESTAMP'9999-12-31')",
+          "references": ""
+        },
+        {
+          "column": "is_current",
+          "data_type": "BOOLEAN",
+          "role": "scd_meta",
+          "source_column": "silver_customers.updated_at",
+          "expression": "v.next_ts IS NULL",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "dim_product",
+      "type": "dimension",
+      "scd": 2,
+      "grain": "one row per product_id version",
+      "pk": [
+        "product_key"
+      ],
+      "ctes": [
+        "v AS (SELECT *, lead(updated_at) OVER (PARTITION BY product_id ORDER BY updated_at) AS next_ts FROM silver_products)"
+      ],
+      "from_sql": "v",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "product_key",
+          "data_type": "BIGINT",
+          "role": "pk",
+          "source_column": "silver_products.product_id",
+          "expression": "xxhash64(v.product_id, v.updated_at)",
+          "references": ""
+        },
+        {
+          "column": "product_id",
+          "data_type": "STRING",
+          "role": "bk",
+          "source_column": "silver_products.product_id",
+          "expression": "v.product_id",
+          "references": ""
+        },
+        {
+          "column": "name",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_products.name",
+          "expression": "v.name",
+          "references": ""
+        },
+        {
+          "column": "category",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_products.category",
+          "expression": "v.category",
+          "references": ""
+        },
+        {
+          "column": "price",
+          "data_type": "DECIMAL(10,2)",
+          "role": "attribute",
+          "source_column": "silver_products.price",
+          "expression": "v.price",
+          "references": ""
+        },
+        {
+          "column": "is_active",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "silver_products.is_active",
+          "expression": "v.is_active",
+          "references": ""
+        },
+        {
+          "column": "valid_from",
+          "data_type": "TIMESTAMP",
+          "role": "scd_meta",
+          "source_column": "silver_products.updated_at",
+          "expression": "v.updated_at",
+          "references": ""
+        },
+        {
+          "column": "valid_to",
+          "data_type": "TIMESTAMP",
+          "role": "scd_meta",
+          "source_column": "silver_products.updated_at",
+          "expression": "coalesce(v.next_ts, TIMESTAMP'9999-12-31')",
+          "references": ""
+        },
+        {
+          "column": "is_current",
+          "data_type": "BOOLEAN",
+          "role": "scd_meta",
+          "source_column": "silver_products.updated_at",
+          "expression": "v.next_ts IS NULL",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "dim_campaign",
+      "type": "dimension",
+      "scd": 1,
+      "grain": "one row per campaign",
+      "pk": [
+        "campaign_key"
+      ],
+      "ctes": [],
+      "from_sql": "silver_campaign_snapshots",
+      "group_by": [
+        "campaign_id",
+        "utm_campaign",
+        "ad_platform"
+      ],
+      "columns": [
+        {
+          "column": "campaign_key",
+          "data_type": "BIGINT",
+          "role": "pk",
+          "source_column": "silver_campaign_snapshots.campaign_id",
+          "expression": "xxhash64(campaign_id)",
+          "references": ""
+        },
+        {
+          "column": "campaign_id",
+          "data_type": "STRING",
+          "role": "bk",
+          "source_column": "silver_campaign_snapshots.campaign_id",
+          "expression": "campaign_id",
+          "references": ""
+        },
+        {
+          "column": "utm_campaign",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_campaign_snapshots.utm_campaign",
+          "expression": "utm_campaign",
+          "references": ""
+        },
+        {
+          "column": "platform",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_campaign_snapshots.ad_platform",
+          "expression": "ad_platform",
+          "references": ""
+        },
+        {
+          "column": "start_date",
+          "data_type": "DATE",
+          "role": "attribute",
+          "source_column": "silver_campaign_snapshots.report_date",
+          "expression": "min(report_date)",
+          "references": ""
+        },
+        {
+          "column": "end_date",
+          "data_type": "DATE",
+          "role": "attribute",
+          "source_column": "silver_campaign_snapshots.report_date",
+          "expression": "max(report_date)",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "dim_date",
+      "type": "dimension",
+      "scd": 1,
+      "grain": "one row per calendar day 2025-2027",
+      "pk": [
+        "date_key"
+      ],
+      "ctes": [],
+      "from_sql": "(SELECT explode(sequence(DATE'2025-01-01', DATE'2027-12-31', INTERVAL 1 DAY)) AS d)",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "date_key",
+          "data_type": "INT",
+          "role": "pk",
+          "source_column": "",
+          "expression": "CAST(date_format(d, 'yyyyMMdd') AS INT)",
+          "references": ""
+        },
+        {
+          "column": "date",
+          "data_type": "DATE",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "d",
+          "references": ""
+        },
+        {
+          "column": "week",
+          "data_type": "INT",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "weekofyear(d)",
+          "references": ""
+        },
+        {
+          "column": "month",
+          "data_type": "INT",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "month(d)",
+          "references": ""
+        },
+        {
+          "column": "is_weekend",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "dayofweek(d) IN (6, 7)",
+          "references": ""
+        },
+        {
+          "column": "is_friday_saturday",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "dayofweek(d) IN (6, 7)",
+          "references": ""
+        },
+        {
+          "column": "is_ramadan",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "(d BETWEEN DATE'2025-03-01' AND DATE'2025-03-29' OR d BETWEEN DATE'2026-02-18' AND DATE'2026-03-19' OR d BETWEEN DATE'2027-02-08' AND DATE'2027-03-09')",
+          "references": ""
+        },
+        {
+          "column": "is_eid",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "(d BETWEEN DATE'2025-03-30' AND DATE'2025-04-01' OR d BETWEEN DATE'2026-03-20' AND DATE'2026-03-22' OR d BETWEEN DATE'2027-03-10' AND DATE'2027-03-12')",
+          "references": ""
+        },
+        {
+          "column": "is_holiday",
+          "data_type": "BOOLEAN",
+          "role": "attribute",
+          "source_column": "",
+          "expression": "(d BETWEEN DATE'2025-03-30' AND DATE'2025-04-01' OR d BETWEEN DATE'2026-03-20' AND DATE'2026-03-22' OR d BETWEEN DATE'2027-03-10' AND DATE'2027-03-12') OR (month(d) = 10 AND day(d) = 6)",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "fact_orders",
+      "type": "fact",
+      "scd": 0,
+      "grain": "one row per order (current state)",
+      "pk": [
+        "order_id"
+      ],
+      "ctes": [
+        "cur AS (SELECT order_id, status, status_rank, carrier FROM (SELECT *, row_number() OVER (PARTITION BY order_id ORDER BY status_rank DESC, status_time DESC) AS rn FROM silver_order_status) WHERE rn = 1)",
+        "ev AS (SELECT order_id, min(CASE WHEN status = 'delivered' THEN status_time END) AS delivered_at, count_if(status = 'delivery_failed') AS failed_count FROM silver_order_status GROUP BY order_id)"
+      ],
+      "from_sql": "silver_orders o LEFT JOIN cur ON cur.order_id = o.order_id LEFT JOIN ev ON ev.order_id = o.order_id LEFT JOIN @gold.dim_customer dc ON dc.customer_id = o.customer_id AND o.order_created_at >= dc.valid_from AND o.order_created_at < dc.valid_to LEFT JOIN @gold.dim_campaign dg ON dg.utm_campaign = o.utm_campaign",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "order_id",
+          "data_type": "STRING",
+          "role": "pk",
+          "source_column": "silver_orders.order_id",
+          "expression": "o.order_id",
+          "references": ""
+        },
+        {
+          "column": "customer_key",
+          "data_type": "BIGINT",
+          "role": "fk",
+          "source_column": "silver_orders.customer_id",
+          "expression": "coalesce(dc.customer_key, -1)",
+          "references": "dim_customer.customer_key"
+        },
+        {
+          "column": "campaign_key",
+          "data_type": "BIGINT",
+          "role": "fk",
+          "source_column": "silver_orders.utm_campaign",
+          "expression": "coalesce(dg.campaign_key, -1)",
+          "references": "dim_campaign.campaign_key"
+        },
+        {
+          "column": "date_key",
+          "data_type": "INT",
+          "role": "fk",
+          "source_column": "silver_orders.order_created_at",
+          "expression": "CAST(date_format(from_utc_timestamp(o.order_created_at, 'Africa/Cairo'), 'yyyyMMdd') AS INT)",
+          "references": "dim_date.date_key"
+        },
+        {
+          "column": "channel",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.channel",
+          "expression": "o.channel",
+          "references": ""
+        },
+        {
+          "column": "platform",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.platform",
+          "expression": "o.platform",
+          "references": ""
+        },
+        {
+          "column": "payment_method",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.payment_method",
+          "expression": "o.payment_method",
+          "references": ""
+        },
+        {
+          "column": "carrier",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_order_status.carrier",
+          "expression": "cur.carrier",
+          "references": ""
+        },
+        {
+          "column": "city",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.city",
+          "expression": "o.city",
+          "references": ""
+        },
+        {
+          "column": "district",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.district",
+          "expression": "o.district",
+          "references": ""
+        },
+        {
+          "column": "country",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.country",
+          "expression": "o.country",
+          "references": ""
+        },
+        {
+          "column": "order_total",
+          "data_type": "DECIMAL(12,2)",
+          "role": "measure",
+          "source_column": "silver_orders.order_total",
+          "expression": "o.order_total",
+          "references": ""
+        },
+        {
+          "column": "current_status",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_order_status.status",
+          "expression": "cur.status",
+          "references": ""
+        },
+        {
+          "column": "status_rank",
+          "data_type": "INT",
+          "role": "attribute",
+          "source_column": "silver_order_status.status_rank",
+          "expression": "cur.status_rank",
+          "references": ""
+        },
+        {
+          "column": "order_created_at",
+          "data_type": "TIMESTAMP",
+          "role": "attribute",
+          "source_column": "silver_orders.order_created_at",
+          "expression": "o.order_created_at",
+          "references": ""
+        },
+        {
+          "column": "delivered_at",
+          "data_type": "TIMESTAMP",
+          "role": "attribute",
+          "source_column": "silver_order_status.status_time",
+          "expression": "ev.delivered_at",
+          "references": ""
+        },
+        {
+          "column": "delivery_lead_hours",
+          "data_type": "DECIMAL(8,2)",
+          "role": "measure",
+          "source_column": "silver_order_status.status_time",
+          "expression": "CAST((unix_timestamp(ev.delivered_at) - unix_timestamp(o.order_created_at)) / 3600 AS DECIMAL(8,2))",
+          "references": ""
+        },
+        {
+          "column": "delivery_failed_count",
+          "data_type": "INT",
+          "role": "measure",
+          "source_column": "silver_order_status.status",
+          "expression": "CAST(coalesce(ev.failed_count, 0) AS INT)",
+          "references": ""
+        },
+        {
+          "column": "is_cancelled",
+          "data_type": "BOOLEAN",
+          "role": "measure",
+          "source_column": "silver_order_status.status",
+          "expression": "cur.status = 'order_cancelled'",
+          "references": ""
+        },
+        {
+          "column": "is_delivered",
+          "data_type": "BOOLEAN",
+          "role": "measure",
+          "source_column": "silver_order_status.status",
+          "expression": "ev.delivered_at IS NOT NULL",
+          "references": ""
+        },
+        {
+          "column": "is_returned",
+          "data_type": "BOOLEAN",
+          "role": "measure",
+          "source_column": "silver_order_status.status",
+          "expression": "cur.status = 'order_returned'",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "fact_order_lines",
+      "type": "fact",
+      "scd": 0,
+      "grain": "one row per order line",
+      "pk": [
+        "order_id",
+        "line_no"
+      ],
+      "ctes": [],
+      "from_sql": "silver_order_items i JOIN silver_orders o ON o.order_id = i.order_id LEFT JOIN @gold.dim_customer dc ON dc.customer_id = o.customer_id AND o.order_created_at >= dc.valid_from AND o.order_created_at < dc.valid_to LEFT JOIN @gold.dim_product dp ON dp.product_id = i.product_id AND o.order_created_at >= dp.valid_from AND o.order_created_at < dp.valid_to",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "order_id",
+          "data_type": "STRING",
+          "role": "pk",
+          "source_column": "silver_order_items.order_id",
+          "expression": "i.order_id",
+          "references": ""
+        },
+        {
+          "column": "line_no",
+          "data_type": "INT",
+          "role": "pk",
+          "source_column": "silver_order_items.line_no",
+          "expression": "i.line_no",
+          "references": ""
+        },
+        {
+          "column": "customer_key",
+          "data_type": "BIGINT",
+          "role": "fk",
+          "source_column": "silver_orders.customer_id",
+          "expression": "coalesce(dc.customer_key, -1)",
+          "references": "dim_customer.customer_key"
+        },
+        {
+          "column": "product_key",
+          "data_type": "BIGINT",
+          "role": "fk",
+          "source_column": "silver_order_items.product_id",
+          "expression": "coalesce(dp.product_key, -1)",
+          "references": "dim_product.product_key"
+        },
+        {
+          "column": "date_key",
+          "data_type": "INT",
+          "role": "fk",
+          "source_column": "silver_order_items.order_time",
+          "expression": "CAST(date_format(from_utc_timestamp(i.order_time, 'Africa/Cairo'), 'yyyyMMdd') AS INT)",
+          "references": "dim_date.date_key"
+        },
+        {
+          "column": "city",
+          "data_type": "STRING",
+          "role": "attribute",
+          "source_column": "silver_orders.city",
+          "expression": "o.city",
+          "references": ""
+        },
+        {
+          "column": "quantity",
+          "data_type": "INT",
+          "role": "measure",
+          "source_column": "silver_order_items.quantity",
+          "expression": "i.quantity",
+          "references": ""
+        },
+        {
+          "column": "line_total",
+          "data_type": "DECIMAL(12,2)",
+          "role": "measure",
+          "source_column": "silver_order_items.line_total",
+          "expression": "i.line_total",
+          "references": ""
+        }
+      ]
+    },
+    {
+      "name": "fact_funnel_daily",
+      "type": "fact",
+      "scd": 0,
+      "grain": "one row per day, country, channel, platform (bots excluded)",
+      "pk": [
+        "date_key",
+        "country",
+        "channel",
+        "platform"
+      ],
+      "ctes": [
+        "agg AS (SELECT CAST(date_format(event_date, 'yyyyMMdd') AS INT) AS date_key, country, channel, platform, count(DISTINCT session_id) AS sessions, count(DISTINCT CASE WHEN event_type = 'product_view' THEN session_id END) AS product_views, count(DISTINCT CASE WHEN event_type = 'add_to_cart' THEN session_id END) AS cart_sessions, count(DISTINCT CASE WHEN event_type = 'checkout_started' THEN session_id END) AS checkout_sessions, count(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) AS orders FROM silver_events WHERE NOT is_bot GROUP BY 1, 2, 3, 4)"
+      ],
+      "from_sql": "agg",
+      "group_by": [],
+      "columns": [
+        {
+          "column": "date_key",
+          "data_type": "INT",
+          "role": "pk",
+          "source_column": "silver_events.event_date",
+          "expression": "agg.date_key",
+          "references": "dim_date.date_key"
+        },
+        {
+          "column": "country",
+          "data_type": "STRING",
+          "role": "pk",
+          "source_column": "silver_events.country",
+          "expression": "agg.country",
+          "references": ""
+        },
+        {
+          "column": "channel",
+          "data_type": "STRING",
+          "role": "pk",
+          "source_column": "silver_events.channel",
+          "expression": "agg.channel",
+          "references": ""
+        },
+        {
+          "column": "platform",
+          "data_type": "STRING",
+          "role": "pk",
+          "source_column": "silver_events.platform",
+          "expression": "agg.platform",
+          "references": ""
+        },
+        {
+          "column": "sessions",
+          "data_type": "BIGINT",
+          "role": "measure",
+          "source_column": "silver_events.session_id",
+          "expression": "agg.sessions",
+          "references": ""
+        },
+        {
+          "column": "product_views",
+          "data_type": "BIGINT",
+          "role": "measure",
+          "source_column": "silver_events.session_id",
+          "expression": "agg.product_views",
+          "references": ""
+        },
+        {
+          "column": "cart_sessions",
+          "data_type": "BIGINT",
+          "role": "measure",
+          "source_column": "silver_events.session_id",
+          "expression": "agg.cart_sessions",
+          "references": ""
+        },
+        {
+          "column": "checkout_sessions",
+          "data_type": "BIGINT",
+          "role": "measure",
+          "source_column": "silver_events.session_id",
+          "expression": "agg.checkout_sessions",
+          "references": ""
+        },
+        {
+          "column": "orders",
+          "data_type": "BIGINT",
+          "role": "measure",
+          "source_column": "silver_events.session_id",
+          "expression": "agg.orders",
+          "references": ""
+        },
+        {
+          "column": "cart_abandon_rate",
+          "data_type": "DECIMAL(8,4)",
+          "role": "measure",
+          "source_column": "",
+          "expression": "CAST(1 - agg.checkout_sessions / nullif(agg.cart_sessions, 0) AS DECIMAL(8,4))",
+          "references": ""
+        },
+        {
+          "column": "checkout_abandon_rate",
+          "data_type": "DECIMAL(8,4)",
+          "role": "measure",
+          "source_column": "",
+          "expression": "CAST(1 - agg.orders / nullif(agg.checkout_sessions, 0) AS DECIMAL(8,4))",
+          "references": ""
+        }
+      ]
+    }
+  ]
+}

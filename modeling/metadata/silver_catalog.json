@@ -1,0 +1,462 @@
+{
+  "layer": "silver",
+  "tables": [
+    {
+      "name": "silver_events",
+      "description": "clickstream events, deduplicated on event_id; is_late and is_bot flags; event_date is the Africa/Cairo date",
+      "primary_key": [
+        "event_id"
+      ],
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "string"
+        },
+        {
+          "name": "event_type",
+          "type": "string"
+        },
+        {
+          "name": "event_time",
+          "type": "timestamp"
+        },
+        {
+          "name": "kafka_timestamp",
+          "type": "timestamp"
+        },
+        {
+          "name": "is_late",
+          "type": "boolean"
+        },
+        {
+          "name": "is_bot",
+          "type": "boolean"
+        },
+        {
+          "name": "event_version",
+          "type": "string"
+        },
+        {
+          "name": "session_id",
+          "type": "string"
+        },
+        {
+          "name": "customer_id",
+          "type": "string"
+        },
+        {
+          "name": "device",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "platform",
+          "type": "string"
+        },
+        {
+          "name": "country",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "district",
+          "type": "string"
+        },
+        {
+          "name": "campaign_id",
+          "type": "string"
+        },
+        {
+          "name": "utm_source",
+          "type": "string"
+        },
+        {
+          "name": "utm_campaign",
+          "type": "string"
+        },
+        {
+          "name": "utm_medium",
+          "type": "string"
+        },
+        {
+          "name": "click_id",
+          "type": "string"
+        },
+        {
+          "name": "page_url",
+          "type": "string"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "element",
+          "type": "string"
+        },
+        {
+          "name": "dwell_seconds",
+          "type": "int"
+        },
+        {
+          "name": "cart_id",
+          "type": "string"
+        },
+        {
+          "name": "order_id",
+          "type": "string"
+        },
+        {
+          "name": "search_term",
+          "type": "string"
+        },
+        {
+          "name": "event_date",
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "name": "silver_orders",
+      "description": "one row per order from the order_created event; order_total in EGP",
+      "primary_key": [
+        "order_id"
+      ],
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "string"
+        },
+        {
+          "name": "customer_id",
+          "type": "string"
+        },
+        {
+          "name": "session_id",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "platform",
+          "type": "string"
+        },
+        {
+          "name": "utm_source",
+          "type": "string"
+        },
+        {
+          "name": "utm_campaign",
+          "type": "string"
+        },
+        {
+          "name": "utm_medium",
+          "type": "string"
+        },
+        {
+          "name": "click_id",
+          "type": "string"
+        },
+        {
+          "name": "payment_method",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "district",
+          "type": "string"
+        },
+        {
+          "name": "country",
+          "type": "string"
+        },
+        {
+          "name": "order_total",
+          "type": "decimal(12,2)"
+        },
+        {
+          "name": "order_created_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "event_date",
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "name": "silver_order_status",
+      "description": "order and delivery status changes; current status is the highest status_rank (tie: latest status_time)",
+      "primary_key": [
+        "event_id"
+      ],
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "string"
+        },
+        {
+          "name": "order_id",
+          "type": "string"
+        },
+        {
+          "name": "customer_id",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "status_rank",
+          "type": "int"
+        },
+        {
+          "name": "status_time",
+          "type": "timestamp"
+        },
+        {
+          "name": "payment_method",
+          "type": "string"
+        },
+        {
+          "name": "carrier",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        },
+        {
+          "name": "event_date",
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "name": "silver_order_items",
+      "description": "one row per order line",
+      "primary_key": [
+        "order_id",
+        "line_no"
+      ],
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "string"
+        },
+        {
+          "name": "line_no",
+          "type": "int"
+        },
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "int"
+        },
+        {
+          "name": "unit_price",
+          "type": "decimal(12,2)"
+        },
+        {
+          "name": "line_total",
+          "type": "decimal(12,2)"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "order_time",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "name": "silver_quarantine",
+      "description": "rejected rows with error_code; never joined into facts",
+      "primary_key": [
+        "quarantine_id"
+      ],
+      "columns": [
+        {
+          "name": "quarantine_id",
+          "type": "string"
+        },
+        {
+          "name": "raw_payload",
+          "type": "string"
+        },
+        {
+          "name": "source_topic",
+          "type": "string"
+        },
+        {
+          "name": "error_code",
+          "type": "string"
+        },
+        {
+          "name": "error_detail",
+          "type": "string"
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "name": "silver_products",
+      "description": "product versions (updated_at) for the SCD2 product dimension",
+      "primary_key": [
+        "product_id",
+        "updated_at"
+      ],
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "string"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "category",
+          "type": "string"
+        },
+        {
+          "name": "price",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "is_active",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "silver_customers",
+      "description": "customer versions (updated_at) for the SCD2 customer dimension",
+      "primary_key": [
+        "customer_id",
+        "updated_at"
+      ],
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "string"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "country",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "district",
+          "type": "string"
+        },
+        {
+          "name": "signup_date",
+          "type": "date"
+        },
+        {
+          "name": "primary_device",
+          "type": "string"
+        },
+        {
+          "name": "marketing_consent",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "silver_campaign_snapshots",
+      "description": "ad API pulls; the latest pull per campaign and report_date wins",
+      "primary_key": [
+        "campaign_id",
+        "report_date",
+        "pulled_at"
+      ],
+      "columns": [
+        {
+          "name": "campaign_id",
+          "type": "string"
+        },
+        {
+          "name": "report_date",
+          "type": "date"
+        },
+        {
+          "name": "pulled_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "utm_campaign",
+          "type": "string"
+        },
+        {
+          "name": "ad_platform",
+          "type": "string"
+        },
+        {
+          "name": "impressions",
+          "type": "bigint"
+        },
+        {
+          "name": "clicks",
+          "type": "bigint"
+        },
+        {
+          "name": "platform_conversions",
+          "type": "bigint"
+        },
+        {
+          "name": "spend",
+          "type": "decimal(12,4)"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "business_questions": [
+    "Spend, CPA and ROAS per campaign per day (delivered ROAS is the headline)",
+    "Conversion and cart/checkout abandonment per channel and platform, split by payment method (COD vs prepaid)",
+    "Funnel from product view to cart, checkout, order and delivery, with drop-off per step",
+    "Cancellation, failed-delivery rate and delivery lead time per carrier and city",
+    "Products browsed and bought per city; next-product recommendations (labelled co-view)"
+  ],
+  "notes": [
+    "Gold holds no names or phone numbers.",
+    "SCD2 dimensions: valid_from = updated_at, valid_to = next updated_at, is_current on the last row.",
+    "Dimension joins are written as @gold.<table>."
+  ]
+}

@@ -114,6 +114,19 @@ pytest
 
 Spark tasks (7 onward) run in Docker. The host needs Python 3.11 only for the simulator and the host tests. Java is NOT needed on the host: Java is inside the Spark Docker image. See [docs/RUNNING.md](docs/RUNNING.md).
 
+## LLM analytics assistant
+
+The assistant is in `src/llm/`. It queries generated data through read-only DuckDB views; the model does not receive customer names or phone numbers. Set `ANTHROPIC_API_KEY` in `.env` to use natural-language chat. The first run creates a deterministic, PII-free batch dataset under the git-ignored `data/generated/small/` folder from the repository's simulator. Use `--scale medium` or `--scale large` to generate a larger batch dataset.
+
+```powershell
+python src/llm/agent.py "Which campaign had the highest CTR?"
+python src/llm/agent.py --source sim --sessions 2000 "How many sessions reached checkout?"
+python src/llm/agent.py --source csv --schema
+streamlit run src/llm/app.py
+```
+
+The default `sim` source generates event and order lifecycles in memory with the project's simulator and combines them with the generated campaign/ad data, so funnel and order questions work without Kafka or Docker. `csv` provides the batch dimensions and ad metrics only. `kafka` reads existing topics, and `delta` reads local Silver/Gold tables. Run `python src/llm/agent.py --source sim --sql "SELECT count(*) FROM order_current"` to query without an API key.
+
 ## Spark in Docker
 
 Spark needs Hadoop's winutils on Windows, so Spark runs in a container. Spark tests are skipped on the Windows host unless `RUN_SPARK_TESTS=1`.
