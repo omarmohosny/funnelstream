@@ -9,7 +9,7 @@ model Model
 
 annotation __PBI_TimeIntelligenceEnabled = 0
 
-annotation PBI_QueryOrder = ["Date","Campaign","Product","Campaign Daily","Funnel Daily","Orders Daily","Orders","City Product Daily","Order Lines","Customer","Store","Stock Now","Inventory Daily","OOS Demand Daily","Express Daily","Marketing D1 Campaign","Marketing D1 Product","_Measures"]
+annotation PBI_QueryOrder = ["Date","Campaign","Product","Campaign Daily","Funnel Daily","Orders Daily","Orders","City Product Daily","Order Lines","Customer","Customer 360","Store","Stock Now","Inventory Daily","OOS Demand Daily","Express Daily","Marketing D1 Campaign","Marketing D1 Product","_Measures"]
 
 annotation PBI_ProTooling = ["DevMode"]
 
@@ -23,6 +23,7 @@ ref table Orders
 ref table 'City Product Daily'
 ref table 'Order Lines'
 ref table Customer
+ref table 'Customer 360'
 ref table Store
 ref table 'Stock Now'
 ref table 'Inventory Daily'

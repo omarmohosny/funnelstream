@@ -544,6 +544,51 @@ table _Measures
 		displayFolder: Customers and delivery
 		lineageTag: daca6528-93a9-4efb-9154-114a25e091ef
 
+	measure 'Customers on File' =
+			DISTINCTCOUNT ( 'Customer 360'[customer_id] )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure Buyers =
+			// Customers with at least one placed order.
+			CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[orders_count] > 0 )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure 'Repeat Buyers' =
+			// Customers with two or more placed orders.
+			CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[is_repeat_buyer] = TRUE () )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure 'Repeat Buyer Rate' =
+			DIVIDE ( [Repeat Buyers], [Buyers] )
+		formatString: "0.0%"
+		displayFolder: Customer 360
+
+	measure 'Lifetime Spend' =
+			// Orders that were neither cancelled nor returned, in EGP.
+			SUM ( 'Customer 360'[total_spend] )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure 'Average Spend per Buyer' =
+			DIVIDE ( [Lifetime Spend], [Buyers] )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure 'Browsers Without Order' =
+			// Customers with at least one session and no placed order.
+			CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[total_sessions] > 0, 'Customer 360'[orders_count] = 0 )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
+	measure 'Lapsed Buyers (30+ days)' =
+			// Buyers whose last order is 30 or more days old; days_since_last_order is counted to today.
+			CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[days_since_last_order] >= 30 )
+		formatString: "#,0"
+		displayFolder: Customer 360
+
 	column Dummy
 		dataType: string
 		isHidden

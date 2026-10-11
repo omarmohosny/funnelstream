@@ -57,7 +57,7 @@ Airflow DAG `ads_yesterday_report` (03:00 UTC daily, `airflow/dags/`, logic in `
 Built and verified (see [docs/HANDOFF.md](docs/HANDOFF.md) and [docs/RUNNING.md](docs/RUNNING.md)):
 
 - Simulator with injected noise, Kafka, and Bronze and Silver Delta tables (Spark in Docker).
-- Publish of Silver to the Databricks Silver mirror, then the Gold build: 11 Gold tables built (`rec_product` is an empty slot, `customer_360` is a stretch table) and 63 data quality checks, run together by `scripts/run_batch.py`.
+- Publish of Silver to the Databricks Silver mirror, then the Gold build: 12 Gold tables built (`rec_product` is an empty slot) and 65 data quality checks, run together by `scripts/run_batch.py`.
 - Campaign attribution (`fact_attribution`, first and last touch) and `agg_campaign_daily`.
 - The Airflow DAG `ads_yesterday_report`, which writes to Databricks.
 - Live and health tables in Postgres, and Grafana with a live pipeline dashboard and alerts.

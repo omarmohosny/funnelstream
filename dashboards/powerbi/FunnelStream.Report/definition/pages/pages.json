@@ -7,7 +7,8 @@
     "inventory",
     "marketing_inventory",
     "products",
-    "customers_delivery"
+    "customers_delivery",
+    "customer_360"
   ],
   "activePageName": "customers_delivery"
 }

@@ -353,3 +353,34 @@ Order Count =
 COUNTROWS ( Orders )
 
 Order Revenue = SUM ( Orders[order_total] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Customer 360
+// 'Customer 360' (Gold customer_360) has one row per customer with their current state; it is recomputed in full on
+// every Gold build and has no date, so these measures follow its own columns (city, category, payment method).
+// ---------------------------------------------------------------------------------------------------------------
+Customers on File = DISTINCTCOUNT ( 'Customer 360'[customer_id] )
+
+Buyers =
+// Customers with at least one placed order.
+CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[orders_count] > 0 )
+
+Repeat Buyers =
+// Customers with two or more placed orders.
+CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[is_repeat_buyer] = TRUE () )
+
+Repeat Buyer Rate = DIVIDE ( [Repeat Buyers], [Buyers] )
+
+Lifetime Spend =
+// Orders that were neither cancelled nor returned, in EGP.
+SUM ( 'Customer 360'[total_spend] )
+
+Average Spend per Buyer = DIVIDE ( [Lifetime Spend], [Buyers] )
+
+Browsers Without Order =
+// Customers with at least one session and no placed order.
+CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[total_sessions] > 0, 'Customer 360'[orders_count] = 0 )
+
+Lapsed Buyers (30+ days) =
+// Buyers whose last order is 30 or more days old; days_since_last_order is counted to today.
+CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[days_since_last_order] >= 30 )

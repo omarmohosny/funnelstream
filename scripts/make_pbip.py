@@ -22,6 +22,7 @@ TABLES = [
     ("Orders", "fact_orders", None),
     ("City Product Daily", "agg_city_product_daily", None),
     ("Order Lines", "fact_order_lines", None),
+    ("Customer 360", "customer_360", None),
     ("Customer", "dim_customer", 'Table.SelectRows(Table.Buffer(#"Selected"), each [is_current] = true)'),
 ]
 PG_HOST = "localhost:5432"
@@ -194,7 +195,7 @@ PCT = {"CTR", "Conversion Rate", "View Rate", "Cart Rate", "Checkout Rate", "Ord
        "Cart Abandon Rate", "Checkout Abandon Rate", "Delivered Share of Revenue", "Cancel Rate", "Return Rate",
        "Failed Attempt Rate", "New Customer Share", "Direct Share", "Revenue Placed vs Last Week",
        "Out of Stock Rate", "Shrinkage Rate", "OOS Click Share", "Exposed Share of Spend", "Express On-time Rate",
-       "Product Cart Rate", "First Attempt Delivery Rate"}
+       "Product Cart Rate", "First Attempt Delivery Rate", "Repeat Buyer Rate"}
 RATIO2 = {"ROAS Placed", "ROAS Delivered", "ROAS Gap", "Platform vs Attributed"}
 ONE_DECIMAL = {"Days of Cover", "Slowest Express Delivery (min)", "Average Express Delivery (min)", "Average Delivery Hours"}
 TEXT = {"Maturity Label", "Is Provisional", "Promise Met"}
@@ -459,6 +460,23 @@ def page_layouts():
                {"Category": [C("Orders", "carrier")], "Y": [M("Average Delivery Hours")]}),
            vis("clusteredColumnChart", "Orders by payment method", (852, mid, 412, 240),
                {"Category": [C("Orders", "payment_method")], "Y": [M("Order Count")]})])
+    pages["customer_360"] = ("Customer 360", [header("FunnelStream  |  Customer 360", "One row per customer: how often they buy, what they buy and who has gone quiet; no date filter, this is the current state")]
+        + slicer_row([C("Customer 360", "city"), C("Customer 360", "top_category"), C("Customer 360", "preferred_payment_method")])
+        + card_row(["Customers on File", "Buyers", "Repeat Buyer Rate", "Lifetime Spend", "Average Spend per Buyer",
+                    "Lapsed Buyers (30+ days)"])
+        + [vis("clusteredBarChart", "Buyers by favourite category", (16, top, 400, 240),
+               {"Category": [C("Customer 360", "top_category")], "Y": [M("Buyers")]}),
+           vis("donutChart", "Preferred payment method", (424, top, 420, 240),
+               {"Category": [C("Customer 360", "preferred_payment_method")], "Y": [M("Buyers")]}),
+           vis("clusteredColumnChart", "One-time and repeat buyers", (852, top, 412, 240),
+               {"Category": [C("Customer 360", "is_repeat_buyer")], "Y": [M("Buyers")]}),
+           vis("clusteredBarChart", "Lifetime spend by city", (16, mid, 400, 240),
+               {"Category": [C("Customer 360", "city")], "Y": [M("Lifetime Spend")]}),
+           vis("tableEx", "Top customers by lifetime spend", (424, mid, 840, 240),
+               {"Values": [C("Customer 360", "customer_id"), C("Customer 360", "city"), C("Customer 360", "top_category"),
+                           C("Customer 360", "orders_count"), C("Customer 360", "total_spend"),
+                           C("Customer 360", "days_since_last_order")]},
+               sort=C("Customer 360", "total_spend"))])
     return pages
 
 

@@ -1,0 +1,138 @@
+table 'Customer 360'
+
+	column customer_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: customer_id
+
+	column customer_key
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: customer_key
+
+	column country
+		dataType: string
+		summarizeBy: none
+		sourceColumn: country
+
+	column city
+		dataType: string
+		summarizeBy: none
+		sourceColumn: city
+
+	column district
+		dataType: string
+		summarizeBy: none
+		sourceColumn: district
+
+	column total_sessions
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: total_sessions
+
+	column product_views
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: product_views
+
+	column add_to_cart_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: add_to_cart_count
+
+	column checkouts_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: checkouts_count
+
+	column orders_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: orders_count
+
+	column delivered_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: delivered_count
+
+	column cancelled_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: cancelled_count
+
+	column total_spend
+		dataType: double
+		summarizeBy: none
+		sourceColumn: total_spend
+
+	column avg_order_value
+		dataType: double
+		summarizeBy: none
+		sourceColumn: avg_order_value
+
+	column first_order_at
+		dataType: dateTime
+		formatString: yyyy-MM-dd HH:mm
+		summarizeBy: none
+		sourceColumn: first_order_at
+
+	column last_order_at
+		dataType: dateTime
+		formatString: yyyy-MM-dd HH:mm
+		summarizeBy: none
+		sourceColumn: last_order_at
+
+	column last_seen_at
+		dataType: dateTime
+		formatString: yyyy-MM-dd HH:mm
+		summarizeBy: none
+		sourceColumn: last_seen_at
+
+	column days_since_last_order
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: days_since_last_order
+
+	column top_category
+		dataType: string
+		summarizeBy: none
+		sourceColumn: top_category
+
+	column preferred_payment_method
+		dataType: string
+		summarizeBy: none
+		sourceColumn: preferred_payment_method
+
+	column last_campaign_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: last_campaign_id
+
+	column is_repeat_buyer
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_repeat_buyer
+
+	partition 'Customer 360' = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "customer_360", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"customer_id", "customer_key", "country", "city", "district", "total_sessions", "product_views", "add_to_cart_count", "checkouts_count", "orders_count", "delivered_count", "cancelled_count", "total_spend", "avg_order_value", "first_order_at", "last_order_at", "last_seen_at", "days_since_last_order", "top_category", "preferred_payment_method", "last_campaign_id", "is_repeat_buyer"})
+			in
+				Selected

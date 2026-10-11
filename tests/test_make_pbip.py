@@ -55,7 +55,7 @@ def test_every_table_is_in_the_model_and_has_a_source(project):
     d = project / "FunnelStream.SemanticModel" / "definition"
     listed = re.findall(r"^ref table (.+)$", (d / "model.tmdl").read_text(encoding="utf-8"), re.M)
     files = {f.stem for f in (d / "tables").glob("*.tmdl")}
-    assert {t.strip("'") for t in listed} == files and len(files) == 18
+    assert {t.strip("'") for t in listed} == files and len(files) == 19
     for f in (d / "tables").glob("*.tmdl"):
         assert "\tpartition " in f.read_text(encoding="utf-8"), f.name
 
@@ -81,7 +81,7 @@ def test_every_measure_of_measures_dax_is_in_the_model(project):
     generated = len(re.findall(r"^\tmeasure ", text, re.M))
     assert generated == len(make_pbip.parse_measures()) >= 80
     folders = set(re.findall(r"^\t\tdisplayFolder: (.+)$", text, re.M))
-    for needed in ("Inventory", "Marketing and inventory", "Express delivery (the 20-minute promise)", "Products and cities", "Customers and delivery"):
+    for needed in ("Inventory", "Marketing and inventory", "Express delivery (the 20-minute promise)", "Products and cities", "Customers and delivery", "Customer 360"):
         assert any(f.startswith(needed) for f in folders), needed
 
 
@@ -101,7 +101,7 @@ def test_relationships_connect_existing_columns_and_stay_many_to_one(project):
 
 def test_the_report_has_the_five_pages_of_the_guide(project):
     pages = (project / "FunnelStream.Report" / "definition" / "pages" / "pages.json").read_text(encoding="utf-8")
-    for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery"):
+    for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery", "customer_360"):
         assert '"%s"' % page in pages
         assert (project / "FunnelStream.Report" / "definition" / "pages" / page / "page.json").exists()
 
@@ -175,11 +175,12 @@ def fields_of(visual):
 
 def test_every_page_has_visuals_and_the_headline_numbers_of_the_guide(project):
     found = visuals(project)
-    assert set(found) == {"executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery"}
+    assert set(found) == {"executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery",
+                          "customer_360"}
     assert all(len(v) >= 8 for v in found.values()), {k: len(v) for k, v in found.items()}
     wanted = {"executive": "Revenue Delivered", "campaign": "ROAS Placed", "funnel": "Cart Abandon Rate",
               "inventory": "Out of Stock Lines", "marketing_inventory": "Exposed Spend", "products": "Product Revenue",
-              "customers_delivery": "Average Delivery Hours"}
+              "customers_delivery": "Average Delivery Hours", "customer_360": "Repeat Buyer Rate"}
     for page, measure in wanted.items():
         used = {prop for v in found[page] for kind, _, prop, _ in fields_of(v) if kind == "Measure"}
         assert measure in used, (page, measure)
@@ -227,7 +228,9 @@ def test_the_model_uses_the_demand_order_line_and_customer_tables(project):
     tables = model_columns(project)
     for name, needed in (("City Product Daily", {"city", "product_id", "units", "revenue", "sessions_viewed", "add_to_cart"}),
                          ("Order Lines", {"product_id", "city", "quantity", "line_total"}),
-                         ("Customer", {"customer_id", "city", "primary_device", "signup_date"})):
+                         ("Customer", {"customer_id", "city", "primary_device", "signup_date"}),
+                         ("Customer 360", {"customer_id", "orders_count", "total_spend", "top_category", "is_repeat_buyer",
+                                           "days_since_last_order", "preferred_payment_method"})):
         assert needed <= {c.lower() for c in tables[name]}, name
     for measure in ("Product Revenue", "Product Cart Rate", "Lines Revenue", "Active Customers", "Average Delivery Hours",
                     "First Attempt Delivery Rate"):

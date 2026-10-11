@@ -1,6 +1,6 @@
 # Power BI model and pages (version 2: campaigns, funnel and inventory)
 
-This folder holds what is needed to build the FunnelStream report in Power BI Desktop: the measures (`measures.dax`) and this guide. The whole model is generated as a Power BI project: ten Databricks Gold tables and seven Postgres marts (18 tables with the measures table), 27 relationships, all 96 measures and seven pages with 97 generated visuals (a navy header band, slicers, KPI cards, charts and tables on each page) styled by a custom theme, `FunnelStreamTheme.json`, whose eight series colours were checked with the dataviz skill's palette validator (the Top 5 filter of the products table is not set). Open `FunnelStream.pbip` in Power BI Desktop (File, Options, Preview features: enable "Power BI Project (.pbip) save option" if needed), sign in to Databricks and to PostgreSQL (`localhost:5432`, database `funnelstream`, role `grafana_ro`), Refresh, and adjust the generated visuals (positions, colours, formats). `scripts/make_pbip.py` regenerates the project from `samples/`, its Postgres column lists and `measures.dax`; `tests/test_make_pbip.py` checks the columns against `warehouse/live_ddl.sql` and every measure reference, but nobody has opened the project in Power BI Desktop yet.
+This folder holds what is needed to build the FunnelStream report in Power BI Desktop: the measures (`measures.dax`) and this guide. The whole model is generated as a Power BI project: eleven Databricks Gold tables and seven Postgres marts (19 tables with the measures table), 27 relationships, all 104 measures and eight pages with 112 generated visuals (a navy header band, slicers, KPI cards, charts and tables on each page) styled by a custom theme, `FunnelStreamTheme.json`, whose eight series colours were checked with the dataviz skill's palette validator (the Top 5 filter of the products table is not set). Open `FunnelStream.pbip` in Power BI Desktop (File, Options, Preview features: enable "Power BI Project (.pbip) save option" if needed), sign in to Databricks and to PostgreSQL (`localhost:5432`, database `funnelstream`, role `grafana_ro`), Refresh, and adjust the generated visuals (positions, colours, formats). `scripts/make_pbip.py` regenerates the project from `samples/`, its Postgres column lists and `measures.dax`; `tests/test_make_pbip.py` checks the columns against `warehouse/live_ddl.sql` and every measure reference, but nobody has opened the project in Power BI Desktop yet.
 
 The report serves two end users with one model:
 
@@ -27,6 +27,7 @@ Two sources, both Import mode with read-only credentials. The write token of the
 | `agg_city_product_daily` | `City Product Daily` | City, product and day: sessions that viewed, add to cart, units, revenue |
 | `fact_order_lines` | `Order Lines` | One row per order line: quantity and line total |
 | `dim_customer` | `Customer` | Current rows only (the generator buffers the table and filters `is_current` in Power BI, because the Databricks connector turned the boolean filter into `is_current = 1`, which Databricks rejects) |
+| `customer_360` | `Customer 360` | One row per customer, current state, recomputed in full on every Gold build; no date and no relationship (it follows its own columns) |
 
 **Postgres** (connector "PostgreSQL database", database `funnelstream`, read-only role `grafana_ro`): the inventory and marketing marts that the live sink and the daily job write (inventory plan, Tasks 7, 9A and 9B). Grafana reads the same tables, so both tools show the same numbers. There are eight Postgres tables in all: the seven in the table below, which Power BI loads, plus `dim_product_current(product_id, name, category, price)`, which only Grafana uses to show product names (Power BI takes names from the Gold `Product`).
 
@@ -133,6 +134,12 @@ Pages 6 to 8 (Delivery and COD, City and product, Customer 360) follow the same 
 - Slicers: date range, city, carrier (these filter the order-level `Orders` table; the cards on this page all read it).
 - Cards: `Active Customers`, `Order Count`, `Order Revenue`, `Average Delivery Hours`, `First Attempt Delivery Rate`.
 - Bars: orders by city; average delivery hours by carrier. Donut: orders by status. Columns: customers by device, orders by payment method.
+
+### Page 8: Customer 360
+- Slicers: city, favourite category, preferred payment method (no date: the table is the current state).
+- Cards: `Customers on File`, `Buyers`, `Repeat Buyer Rate`, `Lifetime Spend`, `Average Spend per Buyer`, `Lapsed Buyers (30+ days)`.
+- Bars and donut: buyers by favourite category, preferred payment method, lifetime spend by city. Columns: one-time and repeat buyers.
+- Table: top customers by lifetime spend with city, favourite category, orders and days since the last order.
 
 ## 5. Refresh and the quality gate
 
