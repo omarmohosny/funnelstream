@@ -1,0 +1,56 @@
+table Customer
+
+	column customer_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: customer_id
+
+	column country
+		dataType: string
+		summarizeBy: none
+		sourceColumn: country
+
+	column city
+		dataType: string
+		summarizeBy: none
+		sourceColumn: city
+
+	column district
+		dataType: string
+		summarizeBy: none
+		sourceColumn: district
+
+	column signup_date
+		dataType: dateTime
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: signup_date
+
+	column primary_device
+		dataType: string
+		summarizeBy: none
+		sourceColumn: primary_device
+
+	column marketing_consent
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: marketing_consent
+
+	column is_current
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_current
+
+	partition Customer = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_customer", Kind = "Table"]}[Data],
+				Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
+				Selected = Table.SelectColumns(Filtered, {"customer_id", "country", "city", "district", "signup_date", "primary_device", "marketing_consent", "is_current"})
+			in
+				Selected

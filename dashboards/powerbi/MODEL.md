@@ -1,6 +1,6 @@
 # Power BI model and pages (version 2: campaigns, funnel and inventory)
 
-This folder holds what is needed to build the FunnelStream report in Power BI Desktop: the measures (`measures.dax`) and this guide. The whole model is generated as a Power BI project: seven Databricks Gold tables and seven Postgres marts (15 tables with the measures table), 22 relationships, all 84 measures and the five pages of section 4 with 60 generated visuals (cards, slicers, charts and tables; the Top 5 filter of the products table is not set). Open `FunnelStream.pbip` in Power BI Desktop (File, Options, Preview features: enable "Power BI Project (.pbip) save option" if needed), sign in to Databricks and to PostgreSQL (`localhost:5432`, database `funnelstream`, role `grafana_ro`), Refresh, and adjust the generated visuals (positions, colours, formats). `scripts/make_pbip.py` regenerates the project from `samples/`, its Postgres column lists and `measures.dax`; `tests/test_make_pbip.py` checks the columns against `warehouse/live_ddl.sql` and every measure reference, but nobody has opened the project in Power BI Desktop yet.
+This folder holds what is needed to build the FunnelStream report in Power BI Desktop: the measures (`measures.dax`) and this guide. The whole model is generated as a Power BI project: ten Databricks Gold tables and seven Postgres marts (18 tables with the measures table), 27 relationships, all 96 measures and seven pages with 97 generated visuals (a navy header band, slicers, KPI cards, charts and tables on each page) styled by a custom theme, `FunnelStreamTheme.json`, whose eight series colours were checked with the dataviz skill's palette validator (the Top 5 filter of the products table is not set). Open `FunnelStream.pbip` in Power BI Desktop (File, Options, Preview features: enable "Power BI Project (.pbip) save option" if needed), sign in to Databricks and to PostgreSQL (`localhost:5432`, database `funnelstream`, role `grafana_ro`), Refresh, and adjust the generated visuals (positions, colours, formats). `scripts/make_pbip.py` regenerates the project from `samples/`, its Postgres column lists and `measures.dax`; `tests/test_make_pbip.py` checks the columns against `warehouse/live_ddl.sql` and every measure reference, but nobody has opened the project in Power BI Desktop yet.
 
 The report serves two end users with one model:
 
@@ -23,7 +23,10 @@ Two sources, both Import mode with read-only credentials. The write token of the
 | `agg_campaign_daily` | `Campaign Daily` | Keep only `attribution_model = "last_touch"` |
 | `agg_funnel_daily` | `Funnel Daily` | |
 | `agg_orders_daily` | `Orders Daily` | Every order, attributed or not |
-| `fact_orders` | `Orders` | For drill-through and the Delivery page |
+| `fact_orders` | `Orders` | Order-level detail: city, carrier, status, delivery hours. Drives the `Order Count` and delivery measures |
+| `agg_city_product_daily` | `City Product Daily` | City, product and day: sessions that viewed, add to cart, units, revenue |
+| `fact_order_lines` | `Order Lines` | One row per order line: quantity and line total |
+| `dim_customer` | `Customer` | Current rows only (the generator buffers the table and filters `is_current` in Power BI, because the Databricks connector turned the boolean filter into `is_current = 1`, which Databricks rejects) |
 
 **Postgres** (connector "PostgreSQL database", database `funnelstream`, read-only role `grafana_ro`): the inventory and marketing marts that the live sink and the daily job write (inventory plan, Tasks 7, 9A and 9B). Grafana reads the same tables, so both tools show the same numbers. There are eight Postgres tables in all: the seven in the table below, which Power BI loads, plus `dim_product_current(product_id, name, category, price)`, which only Grafana uses to show product names (Power BI takes names from the Gold `Product`).
 
@@ -37,7 +40,7 @@ Two sources, both Import mode with read-only credentials. The write token of the
 | `marketing_d1_campaign` | `Marketing D1 Campaign` | campaign and ad day (`served_clicks`, `oos_clicks`) | `build_d1_marketing.py` |
 | `marketing_d1_product` | `Marketing D1 Product` | store, product and day: every out-of-stock product (Top N is done by the visual) | `build_d1_marketing.py` |
 
-Do not load `dim_customer` until the Customer 360 page.
+`dim_customer` is loaded for the Customers page; the Customer 360 table is not.
 
 ## 2. Relationships (star schema)
 
@@ -119,6 +122,17 @@ Canvas 16:9 (1280 x 720). Read order: filters, headline numbers, the main chart,
 - Footnote: the metric is an estimate that assumes spend is spread evenly over served landing clicks; out-of-stock is the stock when the minute was written; spend is the ad UTC day and demand the Cairo day (at most 3 hours apart); recent days are provisional.
 
 Pages 6 to 8 (Delivery and COD, City and product, Customer 360) follow the same pattern after these five.
+
+### Page 6: Products and cities
+- Slicers: date range, product category, city.
+- Cards: `Product Revenue`, `Product Units`, `Product Sessions`, `Product Add to Carts`, `Product Cart Rate`.
+- Treemap: revenue by product category. Bars: revenue by city. Columns: units ordered by category from the order lines.
+- Line: `Product Revenue` by day. Table: top products by revenue with units, sessions and cart rate.
+
+### Page 7: Customers and delivery
+- Slicers: date range, city, carrier (these filter the order-level `Orders` table; the cards on this page all read it).
+- Cards: `Active Customers`, `Order Count`, `Order Revenue`, `Average Delivery Hours`, `First Attempt Delivery Rate`.
+- Bars: orders by city; average delivery hours by carrier. Donut: orders by status. Columns: customers by device, orders by payment method.
 
 ## 5. Refresh and the quality gate
 

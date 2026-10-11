@@ -456,6 +456,74 @@ table _Measures
 			IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
 		displayFolder: Express delivery (the 20-minute promise)
 
+	measure 'Product Sessions' =
+			SUM ( 'City Product Daily'[sessions_viewed] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Product Add to Carts' =
+			SUM ( 'City Product Daily'[add_to_cart] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Product Units' =
+			SUM ( 'City Product Daily'[units] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Product Revenue' =
+			SUM ( 'City Product Daily'[revenue] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Product Cart Rate' =
+			// Sessions that added the product to the cart, over sessions that viewed it.
+			DIVIDE ( [Product Add to Carts], [Product Sessions] )
+		formatString: "0.0%"
+		displayFolder: Products and cities
+
+	measure 'Lines Revenue' =
+			SUM ( 'Order Lines'[line_total] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Units Ordered' =
+			SUM ( 'Order Lines'[quantity] )
+		formatString: "#,0"
+		displayFolder: Products and cities
+
+	measure 'Active Customers' =
+			DISTINCTCOUNT ( Orders[customer_id] )
+		formatString: "#,0"
+		displayFolder: Customers and delivery
+
+	measure 'Average Delivery Hours' =
+			// Hours from order to delivery, over delivered orders only (undelivered orders have no delivery time).
+			AVERAGE ( Orders[delivery_lead_hours] )
+		formatString: "#,0.0"
+		displayFolder: Customers and delivery
+
+	measure 'First Attempt Delivery Rate' =
+			// Delivered orders that arrived on the first attempt, over all delivered orders.
+			DIVIDE (
+				CALCULATE ( COUNTROWS ( Orders ), Orders[first_attempt_delivered] = TRUE () ),
+				CALCULATE ( COUNTROWS ( Orders ), Orders[is_delivered] = TRUE () )
+			)
+		formatString: "0.0%"
+		displayFolder: Customers and delivery
+
+	measure 'Order Count' =
+			// One row per order in 'Orders', so it follows the city, carrier, status and customer filters that
+			// 'Orders Daily' (no city) cannot answer.
+			COUNTROWS ( Orders )
+		formatString: "#,0"
+		displayFolder: Customers and delivery
+
+	measure 'Order Revenue' =
+			SUM ( Orders[order_total] )
+		formatString: "#,0"
+		displayFolder: Customers and delivery
+
 	column Dummy
 		dataType: string
 		isHidden

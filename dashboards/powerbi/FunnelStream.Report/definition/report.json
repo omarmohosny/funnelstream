@@ -9,6 +9,28 @@
         "visual": "2.0.0"
       },
       "type": "SharedResources"
+    },
+    "customTheme": {
+      "name": "FunnelStreamTheme.json",
+      "reportVersionAtImport": {
+        "page": "2.0.0",
+        "report": "3.0.0",
+        "visual": "2.0.0"
+      },
+      "type": "RegisteredResources"
     }
-  }
+  },
+  "resourcePackages": [
+    {
+      "name": "RegisteredResources",
+      "type": "RegisteredResources",
+      "items": [
+        {
+          "name": "FunnelStreamTheme.json",
+          "path": "FunnelStreamTheme.json",
+          "type": "CustomTheme"
+        }
+      ]
+    }
+  ]
 }

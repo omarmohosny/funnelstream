@@ -85,3 +85,23 @@ relationship 94c5e7a1-e8a0-56c1-9ae7-c83dfc6794b7
 relationship c057fc35-64c6-5a63-9b86-faa4ef29f668
 	fromColumn: 'Marketing D1 Product'.product_id
 	toColumn: Product.product_id
+
+relationship c11fbb11-0bfe-5ee5-bead-e76edd26a46f
+	fromColumn: 'City Product Daily'.date_key
+	toColumn: Date.date_key
+
+relationship 611478d9-4ae5-5e10-a98a-d139f840c855
+	fromColumn: 'City Product Daily'.product_id
+	toColumn: Product.product_id
+
+relationship da51785c-710e-55d8-8914-0fedef17bfd4
+	fromColumn: 'Order Lines'.date_key
+	toColumn: Date.date_key
+
+relationship 5bb52f90-4673-5173-a504-e00701d00b9d
+	fromColumn: 'Order Lines'.product_id
+	toColumn: Product.product_id
+
+relationship 70e1423f-e32a-53e0-a1a8-a6ea53db8544
+	fromColumn: Orders.customer_id
+	toColumn: Customer.customer_id

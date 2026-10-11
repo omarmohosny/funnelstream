@@ -5,7 +5,9 @@
     "campaign",
     "funnel",
     "inventory",
-    "marketing_inventory"
+    "marketing_inventory",
+    "products",
+    "customers_delivery"
   ],
   "activePageName": "campaign"
 }

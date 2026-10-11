@@ -12,6 +12,9 @@ ref table 'Campaign Daily'
 ref table 'Funnel Daily'
 ref table 'Orders Daily'
 ref table Orders
+ref table 'City Product Daily'
+ref table 'Order Lines'
+ref table Customer
 ref table Store
 ref table 'Stock Now'
 ref table 'Inventory Daily'

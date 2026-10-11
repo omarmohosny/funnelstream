@@ -1,0 +1,77 @@
+table 'Order Lines'
+
+	column order_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: order_id
+
+	column line_no
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: line_no
+
+	column customer_key
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: customer_key
+
+	column customer_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: customer_id
+
+	column product_key
+		dataType: int64
+		formatString: 0
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_key
+
+	column product_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: date_key
+
+	column city
+		dataType: string
+		summarizeBy: none
+		sourceColumn: city
+
+	column district
+		dataType: string
+		summarizeBy: none
+		sourceColumn: district
+
+	column quantity
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: quantity
+
+	column line_total
+		dataType: double
+		summarizeBy: none
+		sourceColumn: line_total
+
+	partition 'Order Lines' = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "fact_order_lines", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city", "district", "quantity", "line_total"})
+			in
+				Selected

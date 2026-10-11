@@ -308,3 +308,48 @@ DIVIDE (
 
 Promise Met =
 IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Products and cities
+// 'City Product Daily' (Gold agg_city_product_daily) has one row per city, product and Cairo day; 'Order Lines'
+// (Gold fact_order_lines) has one row per order line. Both relate to 'Date' and 'Product'.
+// ---------------------------------------------------------------------------------------------------------------
+Product Sessions = SUM ( 'City Product Daily'[sessions_viewed] )
+
+Product Add to Carts = SUM ( 'City Product Daily'[add_to_cart] )
+
+Product Units = SUM ( 'City Product Daily'[units] )
+
+Product Revenue = SUM ( 'City Product Daily'[revenue] )
+
+Product Cart Rate =
+// Sessions that added the product to the cart, over sessions that viewed it.
+DIVIDE ( [Product Add to Carts], [Product Sessions] )
+
+Lines Revenue = SUM ( 'Order Lines'[line_total] )
+
+Units Ordered = SUM ( 'Order Lines'[quantity] )
+
+// ---------------------------------------------------------------------------------------------------------------
+// Display folder: Customers and delivery
+// 'Orders' (Gold fact_orders) has one row per order; 'Customer' (Gold dim_customer, current rows) relates to it.
+// ---------------------------------------------------------------------------------------------------------------
+Active Customers = DISTINCTCOUNT ( Orders[customer_id] )
+
+Average Delivery Hours =
+// Hours from order to delivery, over delivered orders only (undelivered orders have no delivery time).
+AVERAGE ( Orders[delivery_lead_hours] )
+
+First Attempt Delivery Rate =
+// Delivered orders that arrived on the first attempt, over all delivered orders.
+DIVIDE (
+    CALCULATE ( COUNTROWS ( Orders ), Orders[first_attempt_delivered] = TRUE () ),
+    CALCULATE ( COUNTROWS ( Orders ), Orders[is_delivered] = TRUE () )
+)
+
+Order Count =
+// One row per order in 'Orders', so it follows the city, carrier, status and customer filters that
+// 'Orders Daily' (no city) cannot answer.
+COUNTROWS ( Orders )
+
+Order Revenue = SUM ( Orders[order_total] )

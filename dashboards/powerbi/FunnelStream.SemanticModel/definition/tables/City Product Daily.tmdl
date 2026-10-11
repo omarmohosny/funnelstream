@@ -1,0 +1,53 @@
+table 'City Product Daily'
+
+	column city
+		dataType: string
+		summarizeBy: none
+		sourceColumn: city
+
+	column product_id
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: date_key
+
+	column sessions_viewed
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: sessions_viewed
+
+	column add_to_cart
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: add_to_cart
+
+	column units
+		dataType: int64
+		formatString: 0
+		summarizeBy: none
+		sourceColumn: units
+
+	column revenue
+		dataType: double
+		summarizeBy: none
+		sourceColumn: revenue
+
+	partition 'City Product Daily' = m
+		mode: import
+		source =
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "agg_city_product_daily", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"city", "product_id", "date_key", "sessions_viewed", "add_to_cart", "units", "revenue"})
+			in
+				Selected

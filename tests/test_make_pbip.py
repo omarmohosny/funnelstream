@@ -55,7 +55,7 @@ def test_every_table_is_in_the_model_and_has_a_source(project):
     d = project / "FunnelStream.SemanticModel" / "definition"
     listed = re.findall(r"^ref table (.+)$", (d / "model.tmdl").read_text(encoding="utf-8"), re.M)
     files = {f.stem for f in (d / "tables").glob("*.tmdl")}
-    assert {t.strip("'") for t in listed} == files and len(files) == 15
+    assert {t.strip("'") for t in listed} == files and len(files) == 18
     for f in (d / "tables").glob("*.tmdl"):
         assert "\tpartition " in f.read_text(encoding="utf-8"), f.name
 
@@ -81,7 +81,7 @@ def test_every_measure_of_measures_dax_is_in_the_model(project):
     generated = len(re.findall(r"^\tmeasure ", text, re.M))
     assert generated == len(make_pbip.parse_measures()) >= 80
     folders = set(re.findall(r"^\t\tdisplayFolder: (.+)$", text, re.M))
-    for needed in ("Inventory", "Marketing and inventory", "Express delivery (the 20-minute promise)"):
+    for needed in ("Inventory", "Marketing and inventory", "Express delivery (the 20-minute promise)", "Products and cities", "Customers and delivery"):
         assert any(f.startswith(needed) for f in folders), needed
 
 
@@ -89,19 +89,19 @@ def test_relationships_connect_existing_columns_and_stay_many_to_one(project):
     tables = model_columns(project)
     text = (project / "FunnelStream.SemanticModel" / "definition" / "relationships.tmdl").read_text(encoding="utf-8")
     pairs = re.findall(r"fromColumn: (.+?)\.(\w+)\n\ttoColumn: (.+?)\.(\w+)", text)
-    assert len(pairs) == len(make_pbip.RELS) == 22
+    assert len(pairs) == len(make_pbip.RELS) == 27
     seen = set()
     for ft, fc, tt, tc in pairs:
         ft, tt = ft.strip("'"), tt.strip("'")
         assert fc in tables[ft] and tc in tables[tt], (ft, fc, tt, tc)
-        assert tt in ("Date", "Campaign", "Product", "Store"), "the one side must be a dimension: " + tt
+        assert tt in ("Date", "Campaign", "Product", "Store", "Customer"), "the one side must be a dimension: " + tt
         assert (ft, fc) not in seen, "duplicate relationship from " + ft + "." + fc
         seen.add((ft, fc))
 
 
 def test_the_report_has_the_five_pages_of_the_guide(project):
     pages = (project / "FunnelStream.Report" / "definition" / "pages" / "pages.json").read_text(encoding="utf-8")
-    for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory"):
+    for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery"):
         assert '"%s"' % page in pages
         assert (project / "FunnelStream.Report" / "definition" / "pages" / page / "page.json").exists()
 
@@ -175,10 +175,11 @@ def fields_of(visual):
 
 def test_every_page_has_visuals_and_the_headline_numbers_of_the_guide(project):
     found = visuals(project)
-    assert set(found) == {"executive", "campaign", "funnel", "inventory", "marketing_inventory"}
+    assert set(found) == {"executive", "campaign", "funnel", "inventory", "marketing_inventory", "products", "customers_delivery"}
     assert all(len(v) >= 8 for v in found.values()), {k: len(v) for k, v in found.items()}
     wanted = {"executive": "Revenue Delivered", "campaign": "ROAS Placed", "funnel": "Cart Abandon Rate",
-              "inventory": "Out of Stock Lines", "marketing_inventory": "Exposed Spend"}
+              "inventory": "Out of Stock Lines", "marketing_inventory": "Exposed Spend", "products": "Product Revenue",
+              "customers_delivery": "Average Delivery Hours"}
     for page, measure in wanted.items():
         used = {prop for v in found[page] for kind, _, prop, _ in fields_of(v) if kind == "Measure"}
         assert measure in used, (page, measure)
@@ -216,6 +217,72 @@ def test_visuals_fit_the_page_and_have_unique_names(project):
 def test_every_visual_has_a_title_except_slicers(project):
     for page, items in visuals(project).items():
         for v in items:
-            if v["visual"]["visualType"] != "slicer":
+            if v["visual"]["visualType"] not in ("slicer", "card", "textbox"):
                 title = v["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"]
                 assert title.startswith("'") and len(title) > 3, (page, v["name"])
+
+
+def test_the_model_uses_the_demand_order_line_and_customer_tables(project):
+    """City x product demand, order lines and customers were in Gold but not in the model."""
+    tables = model_columns(project)
+    for name, needed in (("City Product Daily", {"city", "product_id", "units", "revenue", "sessions_viewed", "add_to_cart"}),
+                         ("Order Lines", {"product_id", "city", "quantity", "line_total"}),
+                         ("Customer", {"customer_id", "city", "primary_device", "signup_date"})):
+        assert needed <= {c.lower() for c in tables[name]}, name
+    for measure in ("Product Revenue", "Product Cart Rate", "Lines Revenue", "Active Customers", "Average Delivery Hours",
+                    "First Attempt Delivery Rate"):
+        assert measure in tables["_Measures"], measure
+
+
+PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+
+
+def test_every_page_has_a_header_band_with_its_title(project):
+    for page, items in visuals(project).items():
+        headers = [v for v in items if v["visual"]["visualType"] == "textbox"]
+        assert len(headers) == 1, page
+        pos = headers[0]["position"]
+        assert (pos["x"], pos["y"], pos["width"]) == (0, 0, 1280), page
+        text = json_dumps(headers[0])
+        assert "FunnelStream" in text, page
+
+
+def json_dumps(obj):
+    import json
+    return json.dumps(obj)
+
+
+def test_the_theme_carries_the_validated_palette_and_is_registered(project):
+    import json
+    theme_file = project / "FunnelStream.Report" / "StaticResources" / "RegisteredResources" / "FunnelStreamTheme.json"
+    theme = json.loads(theme_file.read_text(encoding="utf-8"))
+    assert theme["dataColors"] == PALETTE, "scripts/validate_palette.js of the dataviz skill was run on exactly this order"
+    assert theme["good"] == "#0ca30c" and theme["bad"] == "#d03b3b"
+    report = json.loads((project / "FunnelStream.Report" / "definition" / "report.json").read_text(encoding="utf-8"))
+    assert report["themeCollection"]["customTheme"]["name"] == "FunnelStreamTheme.json"
+    package, = report["resourcePackages"]
+    assert package["type"] == "RegisteredResources"
+    assert {"name": "FunnelStreamTheme.json", "path": "FunnelStreamTheme.json", "type": "CustomTheme"} in package["items"]
+
+
+def test_every_page_has_a_background_and_cards_are_styled(project):
+    import json
+    for page_json in (project / "FunnelStream.Report" / "definition" / "pages").glob("*/page.json"):
+        page = json.loads(page_json.read_text(encoding="utf-8"))
+        assert page["objects"]["background"][0]["properties"]["color"], page["name"]
+        assert page["objects"]["outspace"][0]["properties"]["color"], page["name"]
+    for page, items in visuals(project).items():
+        for v in items:
+            if v["visual"]["visualType"] in ("card", "tableEx", "lineChart", "clusteredBarChart", "clusteredColumnChart", "funnel", "treemap", "donutChart"):
+                obj = v["visual"]["visualContainerObjects"]
+                assert "background" in obj and "border" in obj, (page, v["name"])
+            if v["visual"]["visualType"] == "card":
+                assert "labels" in v["visual"]["objects"], (page, v["name"])
+
+
+def test_bar_and_column_charts_show_data_labels_because_three_palette_colours_are_light(project):
+    """The palette check warns that aqua, yellow and magenta are under 3:1 on white; visible labels are the relief."""
+    for page, items in visuals(project).items():
+        for v in items:
+            if v["visual"]["visualType"] in ("clusteredBarChart", "clusteredColumnChart"):
+                assert "labels" in v["visual"]["objects"], (page, v["name"])

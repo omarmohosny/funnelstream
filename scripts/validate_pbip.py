@@ -20,6 +20,9 @@ from referencing.jsonschema import DRAFT7
 
 ROOT = Path(__file__).resolve().parent.parent
 EXTENSIONS = (".json", ".pbir", ".pbip", ".pbism")
+# Theme files carry no "$schema" line; Microsoft publishes their schema in the Power BI Desktop samples repository.
+THEME_SCHEMA = ("https://raw.githubusercontent.com/microsoft/powerbi-desktop-samples/main/"
+                "Report%20Theme%20JSON%20Schema/reportThemeSchema-2.157.json")
 
 
 def main(argv=None):
@@ -39,7 +42,7 @@ def main(argv=None):
     files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in EXTENSIONS)
     for f in files:
         doc = json.loads(f.read_text(encoding="utf-8"))
-        uri = doc.get("$schema")
+        uri = doc.get("$schema") or (THEME_SCHEMA if "RegisteredResources" in f.parts and "dataColors" in doc else None)
         name = f.relative_to(root)
         if not uri:
             print("no $schema (not checked):", name)
