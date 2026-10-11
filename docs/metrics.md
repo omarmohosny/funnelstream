@@ -88,6 +88,40 @@ A session that spans midnight counts once on each Cairo `event_date`, so daily s
 | Cancel rate by carrier and city | Cancelled / placed, grouped by `carrier` and `city` | Placed orders |
 | Return rate by carrier and city | `is_returned` / placed, grouped by `carrier` and `city` | Placed orders |
 
+## Customer 360 (`customer_360`)
+
+One row per customer with their current state, built by `warehouse/gold/13_customer_360.sql`. Unlike the daily tables it is recomputed in full on every run, not by window. Customers come from the current rows of `dim_customer` (without the unknown member).
+
+| Column | Definition |
+|---|---|
+| `total_sessions` | Distinct sessions with an event of the customer. Bot sessions (more than 100 events of one session in 10 seconds) are excluded, as in `agg_funnel_daily`. |
+| `product_views`, `add_to_cart_count`, `checkouts_count` | Counts of the `product_view`, `add_to_cart` and `checkout_started` events of the customer. |
+| `last_seen_at` | Time of the customer's newest event. |
+| `orders_count`, `delivered_count`, `cancelled_count` | Placed orders, and those with the order's own delivered or cancelled flag. |
+| `total_spend` (EGP) | `order_total` of the orders that were neither cancelled nor returned. |
+| `avg_order_value` (EGP) | `total_spend` divided by the number of those orders; NULL when there are none. |
+| `first_order_at`, `last_order_at` | Oldest and newest `order_created_at`. |
+| `days_since_last_order` | Whole days from the last order to today (UTC); the only column that changes with the clock. |
+| `is_repeat_buyer` | At least two placed orders. |
+| `preferred_payment_method` | Most used payment method; ties go to the first alphabetically. |
+| `last_campaign_id` | Last-touch campaign of the newest order; NULL when that order was direct. |
+| `top_category` | Category with the highest `line_total` over the customer's order lines (cancelled orders included, as `revenue_placed` does); ties go to the first alphabetically. |
+
+A customer with no events and no orders still has a row: the counts are 0 and the dates and text columns are NULL.
+
+Power BI measures on this table (`'Customer 360'`):
+
+| Measure | Formula |
+|---|---|
+| `Customers on File` | distinct `customer_id` |
+| `Buyers` | distinct customers with `orders_count` above 0 |
+| `Repeat Buyers` | distinct customers with `is_repeat_buyer` true |
+| `Repeat Buyer Rate` | `Repeat Buyers` divided by `Buyers` |
+| `Lifetime Spend` | sum of `total_spend` |
+| `Average Spend per Buyer` | `Lifetime Spend` divided by `Buyers` |
+| `Browsers Without Order` | distinct customers with sessions and no order |
+| `Lapsed Buyers (30+ days)` | distinct customers whose `days_since_last_order` is 30 or more |
+
 ## Recommendation metrics (`rec_product`)
 
 | Metric | Definition |

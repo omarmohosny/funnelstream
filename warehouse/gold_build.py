@@ -36,7 +36,7 @@ FULL_TO = date(9999, 12, 31)
 STEPS = [
     "dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
     "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily",
-    "rec_product", "checks",
+    "rec_product", "customer_360", "checks",
 ]
 CHECKS_STEP = "checks"  # runs warehouse/checks.py instead of a SQL file
 _NO_TABLE = (CHECKS_STEP,)  # steps that have no target table to count

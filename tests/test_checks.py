@@ -111,7 +111,7 @@ def test_every_table_and_key_column_named_by_the_checks_exists():
         t.name: t.keys for t in GOLD_TABLES if t.name in ck.GOLD_KEYS}
     assert ck.SILVER_KEYS == {t.name: t.keys for t in SILVER_MIRROR_TABLES if t.keys}
     assert [t.name for t in SILVER_MIRROR_TABLES if not t.keys] == ["silver_quarantine"]
-    assert set(ck.GOLD_KEYS) == {t.name for t in GOLD_TABLES} - {"rec_product", "customer_360"}  # not built yet
+    assert set(ck.GOLD_KEYS) == {t.name for t in GOLD_TABLES} - {"rec_product"}  # not built yet
     for t, keys in list(ck.GOLD_KEYS.items()) + list(ck.SILVER_KEYS.items()):
         spec = gold.get(t) or silver[t]
         assert set(keys) <= set(spec.column_names()), t

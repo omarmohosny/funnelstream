@@ -32,7 +32,7 @@ from warehouse.gold_build import placeholders, run_build  # noqa: E402
 
 GOLD_ALL = ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
             "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily",
-            "agg_city_product_daily", "silver_quarantine")  # silver_quarantine: make_env creates it by name
+            "agg_city_product_daily", "customer_360", "silver_quarantine")  # silver_quarantine: make_env creates it by name
 FAIL_NAMES = [c.name for c in CHECKS if c.severity == "fail"]
 
 

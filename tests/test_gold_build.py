@@ -19,7 +19,8 @@ from warehouse.tables import gold_table
 GOLD_DIR = gb.GOLD_DIR
 SQL_FILES = sorted(f for f in os.listdir(GOLD_DIR) if f.endswith(".sql"))
 BUILT = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-         "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily"]
+         "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily",
+         "customer_360"]
 SLOTS = ["rec_product"]
 NO_CHECKS = [s for s in STEPS if s != "checks"]  # the checks step has its own tests (test_checks.py)
 
@@ -70,7 +71,7 @@ def expected_statements(**window):
 def test_steps_are_the_fixed_order_of_spec_16_2():
     assert STEPS == ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
                      "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily",
-                     "agg_city_product_daily", "rec_product", "checks"]
+                     "agg_city_product_daily", "rec_product", "customer_360", "checks"]
 
 
 def test_sql_files_are_named_by_step_position_and_slots_have_no_file_yet():
@@ -107,7 +108,9 @@ def test_a_step_file_dropped_into_a_slot_runs_at_its_position(tmp_path, monkeypa
     i = store.executed.index("SELECT 'rec funnelstream.gold';")
     assert store.executed[i - 1] == gb.TIME_ZONE_SQL
     assert store.executed[i - 2].startswith("MERGE INTO funnelstream.gold.agg_city_product_daily")
-    assert i + 1 == len(store.executed)  # nothing after it: the checks only query
+    assert store.executed[i + 1] == gb.TIME_ZONE_SQL  # customer_360 follows the slot
+    assert store.executed[i + 2].startswith("MERGE INTO funnelstream.gold.customer_360")
+    assert i + 3 == len(store.executed)  # nothing after it: the checks only query
     assert result["steps"]["rec_product"]["status"] == "ok"
 
 

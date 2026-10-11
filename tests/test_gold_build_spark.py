@@ -46,10 +46,11 @@ ORD = ["dim_customer", "dim_product", "fact_orders", "fact_order_lines", "agg_or
 MONTH = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
 NO_CHECKS = ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
              "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily",
-             "agg_city_product_daily", "rec_product"]  # every step but checks
+             "agg_city_product_daily", "rec_product", "customer_360"]  # every step but checks
 REBUILD = ["fact_orders", "fact_order_lines", "agg_orders_daily"]  # dimensions unchanged: skip them
 GOLD_NEEDED = ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
-               "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily")
+               "fact_attribution", "agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily",
+               "customer_360")
 
 
 class SparkStore(GoldStore):
@@ -196,13 +197,14 @@ def test_build_result_lists_every_step_in_order_with_counts(e2e):
     steps = e2e["result"]["steps"]
     assert list(steps) == ["dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders",
                            "fact_order_lines", "fact_attribution", "agg_orders_daily", "agg_funnel_daily",
-                           "agg_campaign_daily", "agg_city_product_daily", "rec_product", "checks"]
+                           "agg_campaign_daily", "agg_city_product_daily", "rec_product", "customer_360", "checks"]
     for name in ("dim_customer", "dim_product", "dim_campaign", "dim_date", "fact_orders", "fact_order_lines",
                  "fact_attribution", "agg_orders_daily", "agg_funnel_daily"):
         assert steps[name]["status"] == "ok" and steps[name]["rows"] > 0, name
     assert steps["agg_campaign_daily"]["status"] == "ok"  # no ad snapshots here: order-only rows
     assert steps["fact_attribution"]["rows"] == 2 * steps["fact_orders"]["rows"]
     assert steps["agg_city_product_daily"]["status"] == "ok"
+    assert steps["customer_360"]["status"] == "ok" and steps["customer_360"]["rows"] > 0
     assert steps["rec_product"]["status"] == "empty" and steps["checks"]["status"] == "skipped"
     assert steps["dim_date"]["rows"] == 1095  # 2025-01-01 .. 2027-12-31
     assert steps["dim_campaign"]["rows"] == 4  # three campaigns plus the unknown member

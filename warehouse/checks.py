@@ -59,6 +59,7 @@ GOLD_KEYS = {
     "agg_funnel_daily": ("event_date", "country", "channel", "platform"),
     "agg_campaign_daily": ("campaign_id", "report_date", "attribution_model"),
     "agg_city_product_daily": ("city", "product_id", "date_key"),
+    "customer_360": ("customer_id",),
 }
 
 

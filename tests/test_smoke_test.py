@@ -336,10 +336,11 @@ def _model_sources():
         return sm.parse_model_sources(fh.read())
 
 
-def test_model_md_lists_seven_gold_and_seven_postgres_source_tables():
+def test_model_md_lists_ten_gold_and_seven_postgres_source_tables():
     src = _model_sources()
     assert [t for t, _ in src["gold"]] == ["dim_date", "dim_campaign", "dim_product", "agg_campaign_daily", "agg_funnel_daily",
-                                           "agg_orders_daily", "fact_orders"]
+                                           "agg_orders_daily", "fact_orders", "agg_city_product_daily", "fact_order_lines",
+                                           "dim_customer"]
     assert [t for t, _ in src["postgres"]] == ["dim_store", "live_stock_now", "inventory_daily", "oos_demand_daily",
                                                "express_daily", "marketing_d1_campaign", "marketing_d1_product"]
     assert dict(src["postgres"])["live_stock_now"] == "Stock Now"
