@@ -377,6 +377,7 @@ def run_pipeline(*, seed, events, start, now, live, pub, config, manifest_path, 
         for hint, payload in apply_noise(stream, noise_rng, config, catalog_ids, counter, now=now, protect=protect):
             emit(hint, payload)
     pub.flush()
+    os.makedirs(os.path.dirname(os.path.abspath(manifest_path)), exist_ok=True)  # the benchmark deletes data/bench first
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(counter.to_manifest(), f, indent=2)
     return counts

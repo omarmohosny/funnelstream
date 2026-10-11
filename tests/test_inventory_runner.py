@@ -74,3 +74,11 @@ def test_the_demo_script_has_an_inventory_switch():
     assert "[int]$ExpressPromiseMinutes" in text and "[int]$LateExpressEvery" in text
     assert "--express-promise-minutes $ExpressPromiseMinutes" in text and "--late-express-every $LateExpressEvery" in text
     assert "-ExpressPromiseMinutes 2 -LateExpressEvery 15" in text  # the documented rehearsal
+
+
+def test_the_manifest_folder_is_created_when_it_does_not_exist(tmp_path):
+    """The benchmark deletes data/bench in its reset stage and then points the manifest into it."""
+    manifest = tmp_path / "gone" / "deeper" / "noise_manifest.json"
+    run_pipeline(seed=5, events=100, start=NOW - timedelta(days=3), now=NOW, live=False, pub=FakePub(),
+                 config=NoiseConfig.off(), manifest_path=str(manifest), sleep_fn=lambda s: None)
+    assert json.loads(manifest.read_text(encoding="utf-8"))["total_messages"] > 0
