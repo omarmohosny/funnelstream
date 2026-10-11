@@ -24,6 +24,8 @@ docker compose build spark
 
 `.env` is git-ignored. Never commit it. Edit the password if you like; the Spark pipeline below does not use it.
 
+**Upgrading an existing installation after pulling this branch:** the branch adds a fourth Kafka topic, `inventory.events`, and Bronze ingest subscribes to all four topics. Run `.venv\Scripts\python kafka/create_topics.py` once (Kafka running) so the topic exists with its three partitions; it only creates what is missing. Without it the subscribe either fails with "not present in metadata" or, if the broker auto-creates topics, makes a one-partition topic. Bronze, Silver and the benchmark create the missing empty Bronze Delta table `bronze_inventory_events` themselves, so an older lake needs no manual step.
+
 Check the setup:
 
 ```powershell
@@ -313,6 +315,49 @@ The same PC also had a wrong clock: after sleep and resume the hardware clock re
 
 The same views by hand: `streaming.jobs.pipeline --show [N]`, or `bronze_ingest --show [N]` and `silver_clean --show [N]` as two jobs (N = rows per batch, default 3), and `run_simulator.py --show [--show-every N]`. `--universe-seed 7` keeps the same customers and products on every run; `--seed` must be new on each run (the same seed regenerates the same ids and Silver drops them as duplicates).
 
+## Live inventory demo
+
+What it shows: simulated stock for the dark stores, seen by two users. The operations user watches the dashboard "FunnelStream: Operations, live inventory" (uid `fs-inventory-ops`) and the alert rules; the marketing user reads "FunnelStream: Marketing, D-1" and "FunnelStream: Inventory insights, daily" (uid `fs-inventory-daily`) the next morning. The inventory is simulated: the generator publishes opening snapshots, `received` and `sold` movements, and an order reserves stock when it is placed. Reservations (stock held for a basket before payment) are out of scope.
+
+Start (Docker running, `.env` set, as in "Failure demo (G3)"):
+
+```powershell
+.\scripts\watch_demo.ps1 -Rate 10 -SyncEvery 0 -Inventory
+```
+
+`-Inventory` makes the generator window add `--inventory --scenario hero-stockout --express-promise-minutes 20 --late-express-every 0`. The same flags exist on `scripts/run_simulator.py`: `--inventory`, `--scenario hero-stockout`, `--hero-units N` (the opening stock of each hero product; the default is 12), `--express-promise-minutes N` and `--late-express-every N`. Then open http://localhost:3000 (log in as `admin`) and the dashboards above.
+
+Expected timeline of the hero scenario at 10 events per second (the intended sequence from the plan, not yet measured):
+
+1. The first batch writes the opening snapshots, so the stock panels fill.
+2. After roughly one to two minutes a hero product runs out (`available = 0`).
+3. About two to three minutes after that the alert "Demand on out-of-stock products" (`fs-oos-demand`) fires: campaign traffic keeps landing on a product with no stock.
+4. A `received` movement follows 90 seconds after the stock-out and the panels recover.
+
+Express alert rehearsal: `-ExpressPromiseMinutes 2 -LateExpressEvery 15` shortens the express promise to 2 minutes (the express timeline is scaled with it) and delivers every 15th express order late, so the rule "An express order missed its delivery promise" (`fs-express-sla`) fires in about 3 minutes. Example: `.\scripts\watch_demo.ps1 -Rate 10 -SyncEvery 0 -Inventory -ExpressPromiseMinutes 2 -LateExpressEvery 15`.
+
+Day-after (D-1) marts. Both builders write Postgres tables that the dashboards read, run from the lake and the warehouse, and need no streaming job:
+
+```powershell
+docker compose run --rm spark python scripts/build_inventory_daily.py [--date today] [--days 2]   # inventory_daily, oos_demand_daily, express_daily (Cairo days)
+docker compose run --rm spark python scripts/build_d1_marketing.py [--date 2026-10-09]            # Marketing, D-1 (default: yesterday in Cairo)
+```
+
+How to read the numbers:
+
+- Day rule: ad spend belongs to the ad platform's UTC day; orders and demand belong to the Cairo day. The two differ by at most 3 hours, so a recent day can still move.
+- Exposed spend is an estimate. It is spend multiplied by the share of landing clicks that met an out-of-stock product, and it assumes spend is spread evenly over served landing clicks. It is not a measured loss.
+- The out-of-stock flag on a demand minute is the stock when the minute was written. A replay can change it.
+- Oversold units on the daily dashboard are a lower bound.
+
+Known limitations:
+
+- There is no stock reversal on cancellation: stock is reserved when the order is placed and a cancelled order does not give it back.
+- Express KPIs exist only in `express_daily` and `live_express_orders`, not in the Gold tables.
+- Store is conformed across the Postgres marts only, not in Gold.
+
+Status of the evidence: the end-to-end rehearsal with `-Inventory` has not been run yet, so there are no measured timings here; the timeline above is the plan. The Spark tests for the inventory jobs were not yet run either.
+
 ## Failure demo (G3)
 
 Story: kill the Spark job while data is flowing, watch Grafana and the alert notice, restart the job, and show that Silver has no duplicate events. Everything is a command the presenter types; nothing runs by itself. PowerShell may need `powershell -ExecutionPolicy Bypass -File .\scripts\failure_demo.ps1 <step>` if script execution is disabled on the machine.
@@ -341,7 +386,7 @@ What to say and look at:
 2. Kill: say that the job died without warning (`docker kill`, no clean shutdown) while the generator keeps publishing to Kafka. Within one minute the heartbeat panel turns amber (30 s) and then red (120 s); the events line falls to zero once the last minute with data is more than two minutes old.
 3. Alert: the rule "No events for 2 minutes" (`fs-no-events`) runs every minute, has no extra pending time (`for: 0s`) and counts the events of the last 2 minutes. After the kill it fires between about 1 and 3 minutes later: the last minute with data leaves the 2 minute window between 1 and 2 minutes after the kill, and the next one-minute check sees it. The webhook message follows after the group wait of 10 s and shows in the alert sink as FIRING (on the dashboard, Alerting > Alert rules, log in as `admin`). So "within 2 to 3 minutes" is correct as a promise; the worst case is just over 3 minutes. The two other rules stay quiet.
 4. Restart: say that the same command and the same checkpoint folder are used, so Spark resumes from the last Kafka offsets it committed and reads what Kafka kept while it was down. The new window needs about 1 minute to start Spark, then `[bronze]` and `[silver]` lines show the backlog. The events line comes back (a catch-up bump is normal because the generator kept publishing) and the heartbeat turns green. The alert resolves at the next one-minute check after events are back, roughly 2 to 4 minutes after the restart command, and the sink prints RESOLVED (resolved notifications wait up to the group interval of 1 minute).
-5. Verify: `scripts\check_duplicates.py` runs in the 1.5 GB `sync` container next to the pipeline container and prints one line per Silver table (`silver_events` by `event_id`, `silver_orders` by `order_id`, `silver_order_status` by `event_id`, `silver_order_items` by `order_id` and `line_no`) and `NO DUPLICATES` or `DUPLICATES FOUND`. Exit code 0 is clean, 1 duplicates, 2 a missing table or a wrong `--lake` path. It starts Spark, so it takes about a minute. It writes nothing and never blocks the pipeline: Delta reads a snapshot, so a batch that is being written at that moment is read at its last committed version.
+5. Verify: `scripts\check_duplicates.py` runs in the 1.5 GB `sync` container next to the pipeline container and prints one line per Silver table (`silver_events` by `event_id`, `silver_orders` by `order_id`, `silver_order_status` by `event_id`, `silver_order_items` by `order_id` and `line_no`, `silver_stock_movements` and `silver_stock_snapshots` by `event_id`, `silver_express_orders` by `order_id`) and `NO DUPLICATES` or `DUPLICATES FOUND`. Exit code 0 is clean, 1 duplicates, 2 a missing table or a wrong `--lake` path. It starts Spark, so it takes about a minute. It writes nothing and never blocks the pipeline: Delta reads a snapshot, so a batch that is being written at that moment is read at its last committed version.
 
 What the check proves and what it does not: it proves that the Silver tables hold no duplicate key after the crash and the restart, that is, the replayed batches after the restart did not add a second copy. It does not prove anything about Bronze. Bronze is append-only and may contain re-delivered messages (after a restart Spark can read the same offsets again); Silver is the layer that removes them with its MERGE on the key. It also does not check that no event was lost, and it does not look at Gold.
 
@@ -597,7 +642,7 @@ General:
 
 `scripts/benchmark.py` measures how fast the whole pipeline moves a given number of simulated events, stage by stage: Kafka reset, simulator, Bronze, reference seed, Silver, and (unless `--skip-gold`) the Databricks DDL, publish and Gold build with checks. It writes the result to `docs/benchmark.md`, only after a run that finished without a failed stage. Each stage is one timed command; `--events 1000000` is the intended size (1 to 2 million events).
 
-It is destructive on purpose and limited in scope: it recreates the Kafka container (every message in Kafka is lost), deletes and rewrites only `data/bench` (lake, checkpoints, export, noise manifest), and writes to the scratch Databricks catalog `workspace`. The demo lake `data/lake` and the real catalog `funnelstream` are never touched, and the script refuses `--lake` or `--checkpoints` outside `data/bench` and `--catalog funnelstream` (exit 3). The Spark stages run with an empty `PG_DSN`, so no benchmark data reaches the live Postgres tables.
+It is destructive on purpose and limited in scope: it recreates the Kafka container (every message in Kafka is lost), deletes and rewrites only `data/bench` (lake, checkpoints, export, noise manifest), and writes to the scratch Databricks catalog `workspace`. The demo lake `data/lake` and the real catalog `funnelstream` are never touched, and the script refuses `--lake` or `--checkpoints` outside `data/bench` and `--catalog funnelstream` (exit 3). The Spark stages run with an empty `PG_DSN`, so no benchmark data reaches the live Postgres tables. Because Kafka is recreated, the Bronze checkpoints of a real demo (`data/checkpoints`) point at offsets that no longer exist: after a real run, delete `data/checkpoints` (or start the demo on a fresh lake) before running `watch_demo.ps1` again.
 
 Stop the demo stack first, otherwise it would consume the benchmark messages (the script checks for the containers `fs-pipeline`, `fs-sync`, `fs-bronze` and `fs-silver` and exits 3 if one is running):
 
@@ -613,3 +658,43 @@ Other options: `--catalog` (default `workspace`), `--lake` and `--checkpoints` (
 Expected duration: to be measured: the first real run will record it in `docs/benchmark.md`.
 
 Afterwards the scratch tables stay in the catalog `workspace`. Drop them in the Databricks UI (Catalog Explorer, catalog `workspace`, schemas `gold` and `silver`). Do not use `apply_ddl.py --recreate` for this: it drops and recreates tables, it does not remove them.
+
+## Smoke test
+
+`scripts/smoke_test.py` assesses the whole project in one run, from the simulator to Grafana, Power BI's source tables and Databricks, and writes `docs/smoke-test.md`: one row per stage (pass, fail or skipped), the evidence number, the seconds, the failures in full and a verdict line, `SMOKE TEST PASSED` or `SMOKE TEST FAILED: <n> stages failed`. The exit code is 0 only when nothing failed. A smoke test finds out what is broken: it never retries a stage until it passes, never hides a failure and never edits data to make a check green. A failing stage does not stop the stages that do not depend on it; the ones that do are reported as `skipped: <prerequisite> failed`.
+
+```powershell
+.venv\Scripts\python scripts/smoke_test.py --dry-run     # prints the numbered plan with every command, runs nothing
+.venv\Scripts\python scripts/smoke_test.py --yes         # the real run; without --yes it prints the plan and exits 2
+.venv\Scripts\python scripts/smoke_test.py --yes --skip-gold --skip-spark-tests   # no Databricks, no Spark test files
+```
+
+Options: `--events` (default 20000), `--catalog` (scratch catalog, default `workspace`), `--seed` (default: unique, from the clock), `--lake` and `--checkpoints` (below `data/smoke`), `--skip-spark-tests`, `--skip-gold`, `--report`.
+
+### Safety
+
+The real run is destructive on purpose and limited in scope. It recreates the Kafka container, so every message in Kafka is lost; the product owner must confirm before the real run. It deletes and rewrites only `data/smoke`, drops and creates again the separate Postgres database `funnelstream_smoke` (so an earlier run cannot leak into the counts) and writes to the scratch Databricks catalog. The demo lake `data/lake`, the demo Postgres tables and the real catalog `funnelstream` are never touched. It refuses (exit 3) when a demo container is running (`fs-pipeline`, `fs-sync`, `fs-bronze`, `fs-silver`; stop them with `.\scripts\stop_demo.ps1`), when `--lake` or `--checkpoints` is outside `data/smoke`, and when `--catalog` is `funnelstream`. The Spark containers get `POSTGRES_DB=funnelstream_smoke`, so the live sink writes to the smoke database. Recreating Kafka also invalidates the Bronze checkpoints of a real demo: after a real smoke run delete `data/checkpoints` (or use a fresh demo lake) before starting the demo again; the "Repeat with --yes" message says so too. Needs `.env` with `PG_DSN`, `GRAFANA_DB_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` and (unless `--skip-gold`) the `DATABRICKS_*` settings, and the Grafana and Postgres containers running.
+
+### What each stage proves
+
+| # | Stage | What it proves |
+|---|---|---|
+| 1 | Preflight | The Docker engine answers; the host and Docker clocks agree within 2 seconds (the NTP status, host memory and Docker memory are reported); a real Kafka client handshake from the host works; Grafana answers and its data source `fs-postgres` is OK; Postgres answers; no `fs-` demo container runs |
+| 2 | Host tests | `pytest tests` has zero failures and zero errors |
+| 3 | Spark tests | Every `tests/test_*spark*.py` file passes in its own container, one result row per file |
+| 4 | Static checks | `gen_ddl.py --check`; valid dashboard JSON with unique panel ids; the builders in `monitoring/dashboards.py` equal the files; every alert rule has `condition: C` and a runbook |
+| 5 | Reset and generate | Kafka recreated, the four topics created, the smoke database and the live DDL in place, and the simulator (history mode, noise on, inventory on) published messages on every topic, `inventory.events` included |
+| 6 | Bronze and Silver | Bronze rows equal the simulator total; every Silver table exists and is non-empty, the stock and express tables included |
+| 7 | Data invariants | `live_express_orders` is first filled from all of Silver (`smoke_spark_checks.py express-backfill`, the same compute with a `since` far in the past): the live sink writes only the express orders of the last 3 hours of the wall clock and a history run is days old, so the table would otherwise be empty. Then: no duplicate Silver key; the quarantine count is within the manifest tolerance; the stock replay never goes below zero and equals the live rule for every store and product pair; `live_stock_now.available` is never negative; every express order has its promise and none missed it in the clean run; the live tables are populated and `silver_job` has a heartbeat |
+| 8 | Daily marts | `inventory_daily`, `oos_demand_daily` and `express_daily` are filled for the Cairo day of the data and its closing stock equals `live_stock_now`. Postgres only; the marketing D-1 mart needs the Gold tables and is stage 13 |
+| 9 | Dashboards run | Every panel query of the four provisioned dashboards, with the Grafana macros expanded, runs without an error as the read-only role `grafana_ro` (zero rows is fine). The time macros cover the last 30 days, because the smoke data is days old; the stage proves that the SQL parses and the grants work, not that every panel shows data |
+| 10 | Alert logic | The query A and the threshold of each of the six alert rules are evaluated. `fs-express-sla` is evaluated on the express orders backfilled from the clean run (it must not fire) and again after a second small run (hero scenario, a 2 minute promise, every express order late), where it must fire. The rule looks at the last 60 minutes of the wall clock and the simulated data is days old, so it is evaluated as of the end of its data (every `now()` of the query is replaced by that moment; after the small run, the end of the orders with the 2 minute promise). `fs-oos-demand` is checked on controlled rows: the stage writes two minutes of 5 add-to-carts for one pair flagged `oos_at_write` into the smoke database (it must fire), lowers them to 4 (it must stay quiet) and removes them. It is not asserted on the simulated run because `oos_at_write` is the stock when the sink wrote the minute: a history run is written in one or a few batches against the final stock, and the simulator restocks every pair before the run ends, so no minute is flagged. The flag logic itself is covered by `tests/test_live_stock_spark.py`. The other four rules are reported with their value and state, not asserted (history data is late by rule, so `fs-late-rate` fires) |
+| 11 | Replay safety | Deleting the Silver checkpoint and replaying all of Bronze leaves every table count and the duplicate check unchanged |
+| 12 | Databricks batch | `apply_ddl.py`, `publish_silver.py` and `run_batch.py --full --manifest` against the scratch catalog end with `BATCH OK` and every data quality check passing; if Databricks cannot be reached the stage fails with the connector's message |
+| 13 | Marketing D-1 mart | After the Databricks batch (it reads the ad spend of `agg_campaign_daily` from the scratch catalog, so it is skipped with `--skip-gold`): `build_d1_marketing.py` for the Cairo day of the data, and the rows in `marketing_d1_campaign` and `marketing_d1_product` equal what it prints. One campaign row is built per last-touch ad row of the day; an empty campaign mart is accepted only with the stated reason that `agg_campaign_daily` has no ad row for that day (the ad API pull covers its own dates), and no product rows only with the reason that no demand was flagged out of stock at write time |
+| 14 | Power BI source check | Every Postgres and Gold table that `dashboards/powerbi/MODEL.md` lists exists (Postgres in the smoke database, Gold in `warehouse/tables.py`) with the columns that `measures.dax` references (DAX names ignore case); a missing table fails the stage with its name, a missing column with the measure's name |
+| 15 | Report | `docs/smoke-test.md` is written by a real run only, never by `--dry-run` |
+
+Known limits of what is asserted: the out-of-stock flag of the demand rows (`oos_at_write`) is the stock when the minute was written (`docs/data-model-review.md`), so no stage asserts that a replay gives the same flags and the demand alert is checked on controlled rows, not on the simulated run. The stock check compares two replays of the same Silver events, it does not prove the simulator's ledger.
+
+Afterwards the scratch tables stay in the catalog `workspace` (see the Benchmark section for how to drop them), and the smoke database can be dropped with `DROP DATABASE funnelstream_smoke`. `docs/smoke-test.md` is not created by hand or by a dry run.

@@ -88,6 +88,8 @@ docker compose run --rm spark python scripts/seed_silver_reference.py --lake dat
 
 ## Demo
 
+- Live inventory demo: simulated stock for the dark stores, shown to two users: an operations dashboard with a "Demand on out-of-stock products" alert, and a marketing D-1 view with an estimate of the ad spend exposed to stock-outs. The inventory is simulated and reservations are out of scope. The rehearsal has not been run yet, so no timings are measured.
+- Start it with `.\scripts\watch_demo.ps1 -Rate 10 -SyncEvery 0 -Inventory`, then open http://localhost:3000 and the dashboards "Operations, live inventory" and "Marketing, D-1". Steps and the day-after commands: [docs/RUNNING.md](docs/RUNNING.md), section "Live inventory demo".
 - Failure demo: kill the Spark job, watch Grafana and the alert, restart, check for duplicates. See [docs/RUNNING.md](docs/RUNNING.md), section "Failure demo (G3)".
 - Sample data: CSV files of the Gold and Silver tables in [samples/](samples/) (see `samples/README.md`), so the project can be inspected without Databricks. Regenerate with `scripts/export_samples.py`.
 - Benchmark: once the benchmark has run, the report is `docs/benchmark.md`. It is produced by `scripts/benchmark.py`.

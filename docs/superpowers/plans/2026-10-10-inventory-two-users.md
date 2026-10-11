@@ -4,7 +4,7 @@
 
 **Goal:** Add simulated dark-store inventory to FunnelStream so one platform serves two users: an operations user who watches live traffic and real stock in Grafana, and a marketing user who reads yesterday's campaign numbers including the estimated ad spend exposed to out-of-stock products.
 
-**Architecture:** Two new event types (`stock_snapshot`, `stock_movement`) travel on a new Kafka topic `inventory.events` through the existing Bronze and Silver path (two new Silver tables). The live sink recomputes `live_stock_now` and `live_oos_demand_minute` in Postgres for the touched store and product pairs. Grafana reads those tables for an operations dashboard and one new alert. A daily job rolls the Silver stock tables and the minute demand table into two Postgres marts (`inventory_daily`, `oos_demand_daily`) that a second Grafana dashboard and Power BI both read. A daily job joins the Databricks `agg_campaign_daily` spend with the out-of-stock landing clicks into a Postgres mart that a second Grafana dashboard shows.
+**Architecture:** Two new event types (`stock_snapshot`, `stock_movement`) travel on a new Kafka topic `inventory.events` through the existing Bronze and Silver path (two new Silver tables). The live sink recomputes `live_stock_now` for the touched store and product pairs and upserts `live_oos_demand_minute` (all served demand per minute, flagged `oos_at_write` with the stock when the minute was written) in Postgres. Grafana reads those tables for an operations dashboard and one new alert. A daily job rolls the Silver stock tables and the minute demand table into two Postgres marts (`inventory_daily`, `oos_demand_daily`) that a second Grafana dashboard and Power BI both read. A daily job joins the Databricks `agg_campaign_daily` spend with the out-of-stock and served landing clicks of `live_oos_demand_minute` into a Postgres mart that a second Grafana dashboard shows. `dim_product_current` gives Grafana tables product names.
 
 **Tech Stack:** Python 3.11, PySpark 3.5 with Delta (in Docker), Kafka (confluent-kafka), Postgres 16 (psycopg 3), Grafana 11.3 provisioning, Power BI Desktop (reads the same Postgres marts), pytest.
 
@@ -19,7 +19,11 @@
 - `available = on_hand - reserved_qty`; `reserved_qty` is 0 by assumption. Out of stock means `available <= 0`; low stock means `0 < available < reorder_point`.
 - No noise injection on inventory events. Inventory is opt-in (`--inventory`, `--scenario hero-stockout`); with the flags off the simulator stream and every existing count must stay byte for byte identical.
 - Stock now is a full recompute per touched `(store_id, product_id)`: the latest snapshot (by `event_time`, ties by `event_id`) plus the sum of `qty_delta` of movements with `event_time` strictly after that snapshot. A replay or a late event never double counts.
-- The marketing metric is titled "estimated spend exposed to out-of-stock". Spend is allocated per click: `exposed_spend = spend * oos_clicks / clicks`.
+- The marketing metric is titled "estimated spend exposed to out-of-stock". `exposed_spend = spend x oos_clicks / served_clicks`, both counts from the same table (`live_oos_demand_minute` / `oos_demand_daily`), served districts only; it is an estimate that assumes spend is spread evenly over served landing clicks (never called an upper bound).
+- Day rule: ad spend and ad clicks are the ad API's UTC day; orders and demand are the Cairo day; `agg_campaign_daily.report_date` is the ad day; the D-1 job takes yesterday in Cairo for the demand and the ad row with the same date value; the mismatch (at most 3 hours) is accepted and written down.
+- `live_oos_demand_minute` keeps ALL served demand per minute and a flag `oos_at_write` ("stock when the minute was written"); the flag is not replay-safe and every dashboard and document says so. `campaign_id` (resolved from `utm_campaign`; `'direct'` when none) is the campaign key; `utm_campaign` is only an attribute.
+- `LIVE_TABLES` (Postgres, `warehouse/live_tables.py`) has 9 entries after Task 7 (the four health tables, `dim_store`, `dim_store_district`, `dim_product_current`, `live_stock_now`, `live_oos_demand_minute`), 10 after Task 8B, 13 after Task 9A and 15 after Task 9B. This counts `dim_product_current` (Ruling 3 of the ledger said 8, 9, 12 before that table was added).
+- Known limitations, written in the spec and in MODEL.md: express KPIs exist only in `express_daily` and `live_express_orders` and the Gold delivery metrics include express orders; there is no stock reversal on cancellation (reserve-on-order); Store is conformed across the Postgres marts only (Gold has City).
 - The live-inventory section is an **express** service with a hard **20-minute** delivery promise (`promised_minutes`, default 20, carried by every express order). Normal express orders take 8 to 17.5 minutes and never more than 19.5 in the simulator; the platform monitors the promise live and alerts on ANY breach (Task 8B). Express timing is never time-compressed in live mode.
 - Never commit `data/`, `.venv`, `.env` or secrets. Destructive Databricks actions and lake resets need the user's explicit say-so.
 - Run only ONE Spark container at a time (Docker has 8 GB). Spark tests run in Docker per file: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/<file>.py -q -p no:cacheprovider`. Host tests: `.venv\Scripts\python -m pytest -q`. Two host tests fail before this work and are not yours: `tests/test_checks.py::test_expected_quarantine_is_the_sum_of_the_nine_kinds_and_ignores_the_rest` and `::test_the_repo_manifest_loads` (they expect `duplicate=25` in the git-ignored `noise_manifest.json`).
@@ -1449,8 +1453,9 @@ Run the host suite, the new Spark file and the existing Silver Spark files one a
 **Interfaces:**
 - Consumes: Task 2 (Silver stock tables, `stats["stock_pairs"]`), Task 3 (`store_rows`, `district_rows`).
 - Produces:
-  - Postgres tables: `dim_store(store_id, store_name, city)`, `dim_store_district(city, district, store_id)`, `live_stock_now(store_id, product_id, on_hand, reserved_qty, available, reorder_point, updated_at)` key `(store_id, product_id)`, `live_oos_demand_minute(minute_start, store_id, product_id, utm_campaign, views, add_to_cart, landing_clicks)` key `(minute_start, store_id, product_id, utm_campaign)` where `utm_campaign` is `''` when the event has none.
-  - `compute_stock_rows(spark, silver_root, pairs, now) -> list[dict]`, `compute_demand_rows(spark, silver_root, minutes) -> list[dict]`, `write_oos_demand(store, rows) -> int`.
+  - Postgres tables: `dim_store(store_id, store_name, city)`, `dim_store_district(city, district, store_id)`, `dim_product_current(product_id, name, category, price)` (the latest version of every product, so Grafana tables show names), `live_stock_now(store_id, product_id, on_hand, reserved_qty, available, reorder_point, updated_at)` key `(store_id, product_id)`, `live_oos_demand_minute(minute_start, store_id, product_id, campaign_id, utm_campaign, views, add_to_cart, landing_clicks, oos_at_write)` key `(minute_start, store_id, product_id, campaign_id)`.
+  - `live_oos_demand_minute` stores ALL served demand of a minute: there is no write-time out-of-stock filter. `campaign_id` is resolved from `utm_campaign` through the static campaign list (`simulator.campaigns.CAMPAIGNS`): `'direct'` when the event has no campaign, `'unknown'` for a utm_campaign that is not in the list; `utm_campaign` is kept only as an attribute (`''` when none). `oos_at_write` is true when the pair's available stock was zero when the sink wrote the minute ("stock when the minute was written"). The sink upserts the touched minutes. **Limitation, stated on every dashboard and doc:** this flag is not replay-safe; a replay, a late event or a rewrite after a restock can flag a minute differently, and a stock-out that starts mid-minute credits the whole minute.
+  - `compute_stock_rows(spark, silver_root, pairs, now) -> list[dict]`, `compute_demand_rows(spark, silver_root, minutes) -> list[dict]` (all served demand, without the flag), `write_oos_demand(store, rows) -> int` (sets `oos_at_write` from `live_stock_now`, upserts every row), `compute_product_rows(spark, silver_root) -> list[dict]` (latest `silver_products` version per product).
   - `LiveSink.on_batch(spark, batch_id, event_minutes, arrival_minutes=(), quarantine_minutes=(), now=None, stock_pairs=())`.
 
 - [ ] **Step 1: Write the failing Spark test for the two computes**
@@ -1458,8 +1463,9 @@ Run the host suite, the new Spark file and the existing Silver Spark files one a
 `tests/test_live_stock_spark.py`:
 
 ```python
-"""Spark tests (Docker, RUN_SPARK_TESTS=1) for stock now and out-of-stock demand."""
+"""Spark tests (Docker, RUN_SPARK_TESTS=1) for stock now, served demand and the product dimension."""
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -1544,19 +1550,40 @@ def test_without_the_stock_tables_nothing_is_computed(spark, tmp_path):
     assert live_stock.compute_stock_rows(spark, str(tmp_path / "empty"), [K], NOW) == []
 
 
-def test_demand_is_counted_per_minute_store_product_and_campaign(spark, tmp_path):
+def test_demand_is_counted_per_minute_store_product_and_campaign_for_every_served_event(spark, tmp_path):
     lake = str(tmp_path / "lake")
     rows = [dict(ev(1, 0, "EG", "product_view"), product_id="prod_1", city="Cairo", district="Maadi", utm_campaign="eid_sale_1"),
             dict(ev(2, 0, "EG", "product_view"), product_id="prod_1", city="Cairo", district="Zamalek", utm_campaign=None),
             dict(ev(3, 0, "EG", "add_to_cart"), product_id="prod_1", city="Cairo", district="Maadi", utm_campaign=None),
             dict(ev(4, 0, "EG", "product_view"), product_id="prod_1", city="Assiut", district="Assiut First"),  # not served
-            dict(ev(5, 0, "EG", "page_view"), product_id=None, city="Cairo", district="Maadi")]  # not a product event
+            dict(ev(5, 0, "EG", "page_view"), product_id=None, city="Cairo", district="Maadi"),  # not a product event
+            dict(ev(6, 0, "EG", "product_view"), product_id="prod_2", city="Cairo", district="Maadi",
+                 utm_campaign="mystery_1")]  # a utm_campaign that is not in the campaign list
     write_events(spark, lake, rows)
     out = live_stock.compute_demand_rows(spark, lake, [T0])
-    got = {(r["store_id"], r["product_id"], r["utm_campaign"]): (r["views"], r["add_to_cart"], r["landing_clicks"]) for r in out}
-    assert got == {("store_cairo_maadi", "prod_1", "eid_sale_1"): (1, 0, 1),
-                   ("store_cairo_maadi", "prod_1", ""): (1, 1, 0)}
-    assert all(r["minute_start"] == T0 for r in out)
+    got = {(r["store_id"], r["product_id"], r["campaign_id"]): (r["views"], r["add_to_cart"], r["landing_clicks"]) for r in out}
+    assert got == {("store_cairo_maadi", "prod_1", "camp_201"): (1, 0, 1),
+                   ("store_cairo_maadi", "prod_1", "direct"): (1, 1, 0),
+                   ("store_cairo_maadi", "prod_2", "unknown"): (1, 0, 1)}
+    utm = {r["campaign_id"]: r["utm_campaign"] for r in out if r["product_id"] == "prod_1"}
+    assert utm == {"camp_201": "eid_sale_1", "direct": ""}  # the utm_campaign is only an attribute
+    assert all(r["minute_start"] == T0 and "oos_at_write" not in r for r in out)  # the writer sets the flag, not the compute
+
+
+def test_the_current_product_dimension_keeps_the_latest_version_of_each_product(spark, tmp_path):
+    lake = str(tmp_path / "lake")
+
+    def prod(pid, name, price, at, category="dairy"):
+        return {"product_id": pid, "updated_at": at, "name": name, "category": category, "price": Decimal(price),
+                "is_active": True}
+
+    write(spark, lake, "silver_products", [prod("prod_1", "Milk 1L", "30.00", T0),
+                                           prod("prod_1", "Milk 1L Full Fat", "32.50", T0 + timedelta(hours=1)),
+                                           prod("prod_2", "Rice 1kg", "40.00", T0, "grocery")])
+    rows = {r["product_id"]: r for r in live_stock.compute_product_rows(spark, lake)}
+    assert set(rows) == {"prod_1", "prod_2"}
+    assert (rows["prod_1"]["name"], rows["prod_1"]["price"], rows["prod_1"]["category"]) == ("Milk 1L Full Fat", Decimal("32.50"), "dairy")
+    assert live_stock.compute_product_rows(spark, str(tmp_path / "empty")) == []
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1569,18 +1596,21 @@ Expected: collection error (`cannot import name 'live_stock'`).
 ```python
 """Live stock and out-of-stock demand (inventory design, sections 7 and 8).
 
-Two Spark computes (no database) and one Postgres writer. The computes run in the live sink's thread pool beside the
-live-metrics and health computes; the writer runs on the sink's single connection.
+Three Spark computes (no database: stock now, served demand, current products) and one Postgres writer. The stock and
+demand computes run in the live sink's thread pool beside the live-metrics and health computes; the writer runs on the
+sink's single connection.
 """
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from pyspark.sql import Window, functions as F
 
 from contracts.stores import district_rows
+from simulator.campaigns import CAMPAIGNS
 from streaming.gold.live import MAX_MINUTE_LIST, minute_epochs
 from warehouse.live_common import _read, _utc
 
-DEMAND_KEYS = ["minute_start", "store_id", "product_id", "utm_campaign"]
+DEMAND_KEYS = ["minute_start", "store_id", "product_id", "campaign_id"]
 
 
 def _stock_levels(spark, silver_root, pairs=None, as_of=None):
@@ -1640,8 +1670,11 @@ def compute_stock_rows(spark, silver_root, pairs, now):
 def compute_demand_rows(spark, silver_root, minutes):
     """Product views and add-to-carts per (minute, store, product, campaign) for the event-time `minutes`.
 
-    The store comes from the customer's city and district through the one store map. A landing click is a product
-    view that carries a utm_campaign. Events of a place without a store are left out. Bots are not removed (v1)."""
+    ALL demand of served districts is returned, whatever the stock was: there is no out-of-stock filter here, and no
+    flag (write_oos_demand sets `oos_at_write`). The store comes from the customer's city and district through the one
+    store map. `campaign_id` comes from the utm_campaign through the static campaign list ('direct' when the event has
+    none, 'unknown' when the utm_campaign is not listed); `utm_campaign` stays as an attribute. A landing click is a
+    product view that carries a utm_campaign. Events of a place without a store are left out. Bots are not removed (v1)."""
     epochs = minute_epochs(minutes)
     if not epochs:
         return []
@@ -1650,6 +1683,8 @@ def compute_demand_rows(spark, silver_root, minutes):
         return []
     mapping = spark.createDataFrame([(r["city"], r["district"], r["store_id"]) for r in district_rows()],
                                     "city string, district string, store_id string")
+    campaigns = spark.createDataFrame([(c["utm_campaign"], c["campaign_id"]) for c in CAMPAIGNS],
+                                      "utm_campaign string, _cid string")
     sec = F.unix_timestamp("event_time")
     minute = sec - (sec % 60)
     if len(epochs) <= MAX_MINUTE_LIST:
@@ -1657,28 +1692,52 @@ def compute_demand_rows(spark, silver_root, minutes):
     else:
         in_window = (sec >= epochs[0]) & (sec < epochs[-1] + 60)
     is_view, is_cart = F.col("event_type") == "product_view", F.col("event_type") == "add_to_cart"
+    has_utm = F.col("utm_campaign").isNotNull() & (F.col("utm_campaign") != "")
+    campaign_id = F.when(~has_utm, F.lit("direct")).otherwise(F.coalesce(F.col("_cid"), F.lit("unknown")))
     df = (events.where((is_view | is_cart) & F.col("product_id").isNotNull() & in_window)
           .join(F.broadcast(mapping), ["city", "district"], "inner")
-          .groupBy(minute.alias("m"), "store_id", "product_id", F.coalesce(F.col("utm_campaign"), F.lit("")).alias("utm"))
+          .join(F.broadcast(campaigns), ["utm_campaign"], "left")
+          .groupBy(minute.alias("m"), "store_id", "product_id", campaign_id.alias("cid"))
           .agg(F.sum(is_view.cast("int")).alias("views"), F.sum(is_cart.cast("int")).alias("carts"),
-               F.sum((is_view & F.col("utm_campaign").isNotNull()).cast("int")).alias("clicks")))
-    return [dict(minute_start=_utc(r["m"]), store_id=r["store_id"], product_id=r["product_id"], utm_campaign=r["utm"],
-                 views=int(r["views"] or 0), add_to_cart=int(r["carts"] or 0), landing_clicks=int(r["clicks"] or 0))
+               F.sum((is_view & has_utm).cast("int")).alias("clicks"),
+               F.min(F.coalesce(F.col("utm_campaign"), F.lit(""))).alias("utm")))
+    return [dict(minute_start=_utc(r["m"]), store_id=r["store_id"], product_id=r["product_id"], campaign_id=r["cid"],
+                 utm_campaign=r["utm"], views=int(r["views"] or 0), add_to_cart=int(r["carts"] or 0),
+                 landing_clicks=int(r["clicks"] or 0))
             for r in df.collect()]
 
 
 def write_oos_demand(store, rows):
-    """Upsert the demand rows of the products that are out of stock right now (point in time of the sink)."""
+    """Upsert the demand rows of the touched minutes, every one of them, each flagged `oos_at_write`.
+
+    The flag is true when the pair had no available stock in live_stock_now at the moment the sink writes: it is the
+    stock when the minute was written, not the stock at event time. Nothing is filtered out. Known limitation: the flag
+    is not replay-safe; a replay, a late event or a rewrite of the minute after a restock can flag it differently, and a
+    stock-out that starts in the middle of a minute credits the whole minute."""
     if not rows:
         return 0
-    out_of_stock = {(a, b) for a, b in store.query("SELECT store_id, product_id FROM live_stock_now WHERE available <= 0")}
-    keep = [r for r in rows if (r["store_id"], r["product_id"]) in out_of_stock]
-    return store.upsert("live_oos_demand_minute", keep, DEMAND_KEYS) if keep else 0
+    empty = {(a, b) for a, b in store.query("SELECT store_id, product_id FROM live_stock_now WHERE available <= 0")}
+    flagged = [dict(r, oos_at_write=(r["store_id"], r["product_id"]) in empty) for r in rows]
+    return store.upsert("live_oos_demand_minute", flagged, DEMAND_KEYS)
+
+
+def compute_product_rows(spark, silver_root):
+    """dim_product_current rows: the latest silver_products version of every product ([] without the table).
+
+    Written by scripts/apply_live_ddl.py next to dim_store so Grafana tables can show names instead of ids."""
+    products = _read(spark, silver_root, "silver_products")
+    if products is None:
+        return []
+    latest = Window.partitionBy("product_id").orderBy(F.col("updated_at").desc())
+    rows = (products.withColumn("_rn", F.row_number().over(latest)).where("_rn = 1")
+            .select("product_id", "name", "category", "price").collect())
+    return [dict(product_id=r["product_id"], name=r["name"], category=r["category"],
+                 price=None if r["price"] is None else Decimal(str(r["price"]))) for r in rows]
 ```
 
 - [ ] **Step 4: Run the Spark test to verify it passes**
 
-Run the same command as Step 2. Expected: 7 passed. (`warehouse/live_common.py` is created in Step 7; create it first if the import fails here.)
+Run the same command as Step 2. Expected: 8 passed. (`warehouse/live_common.py` is created in Step 7; create it first if the import fails here.)
 
 - [ ] **Step 5: Write the failing host test for the DDL, the specs, the seeding and the sink wiring**
 
@@ -1688,6 +1747,7 @@ Run the same command as Step 2. Expected: 7 passed. (`warehouse/live_common.py` 
 import logging
 import re
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 from scripts import apply_live_ddl
@@ -1697,7 +1757,7 @@ from test_g1_live_store import MemStore  # records upserts by primary key, recor
 
 NOW = datetime(2026, 10, 10, 12, 0, 5, tzinfo=timezone.utc)
 DDL = (Path(__file__).parent.parent / "warehouse" / "live_ddl.sql").read_text(encoding="utf-8")
-NEW = ["dim_store", "dim_store_district", "live_stock_now", "live_oos_demand_minute"]
+NEW = ["dim_store", "dim_store_district", "dim_product_current", "live_stock_now", "live_oos_demand_minute"]
 
 
 class StockStore(MemStore):
@@ -1716,13 +1776,16 @@ class StockStore(MemStore):
 
 
 def test_the_new_tables_are_specified_created_and_granted():
-    assert set(NEW) <= set(LIVE_TABLE_NAMES) and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 8
+    assert set(NEW) <= set(LIVE_TABLE_NAMES) and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 9
     for name in NEW:
         assert re.search(r"CREATE TABLE IF NOT EXISTS %s \(" % name, DDL), name
         assert name in DDL.split("GRANT SELECT ON")[1].split("TO grafana_ro")[0], name
     spec = {t.name: t for t in LIVE_TABLES}
     assert spec["live_stock_now"].keys == ("store_id", "product_id")
-    assert spec["live_oos_demand_minute"].keys == ("minute_start", "store_id", "product_id", "utm_campaign")
+    assert spec["live_oos_demand_minute"].keys == ("minute_start", "store_id", "product_id", "campaign_id")
+    assert spec["dim_product_current"].keys == ("product_id",)
+    flag = [c for c in spec["live_oos_demand_minute"].columns if c.name == "oos_at_write"]
+    assert flag and flag[0].type == "boolean" and re.search(r"oos_at_write\s+boolean", DDL)
 
 
 def test_apply_live_ddl_seeds_the_store_dimensions():
@@ -1733,6 +1796,18 @@ def test_apply_live_ddl_seeds_the_store_dimensions():
     again = {k: dict(v) for k, v in store.tables["dim_store"].items()}
     apply_live_ddl.main(["--role", "grafana_scratch"], env={"GRAFANA_DB_PASSWORD": "x"}, store=store)
     assert store.tables["dim_store"] == again  # running it twice changes nothing
+
+
+def test_apply_live_ddl_fills_dim_product_current_from_the_given_rows_and_is_idempotent():
+    store = StockStore()
+    rows = [dict(product_id="p1", name="Milk 1L", category="dairy", price=Decimal("32.50")),
+            dict(product_id="p2", name="Rice 1kg", category="grocery", price=None)]
+    env = {"GRAFANA_DB_PASSWORD": "x"}
+    apply_live_ddl.main(["--role", "grafana_scratch"], env=env, store=store, product_rows=rows)
+    assert sorted(r["name"] for r in store.tables["dim_product_current"].values()) == ["Milk 1L", "Rice 1kg"]
+    rows[0] = dict(rows[0], name="Milk 1L Full Fat")  # the catalog changed: the same call updates the row
+    apply_live_ddl.main(["--role", "grafana_scratch"], env=env, store=store, product_rows=rows)
+    assert sorted(r["name"] for r in store.tables["dim_product_current"].values()) == ["Milk 1L Full Fat", "Rice 1kg"]
 
 
 def stub(monkeypatch, stock_rows=None, demand_rows=None, fail_stock=None):
@@ -1764,21 +1839,39 @@ def stub(monkeypatch, stock_rows=None, demand_rows=None, fail_stock=None):
 K = ("store_a", "prod_1")
 STOCK = [dict(store_id="store_a", product_id="prod_1", on_hand=0, reserved_qty=0, available=0, reorder_point=10,
               updated_at=NOW)]
-DEMAND = [dict(minute_start=NOW, store_id="store_a", product_id="prod_1", utm_campaign="eid_sale_1", views=3, add_to_cart=2,
-               landing_clicks=1),
-          dict(minute_start=NOW, store_id="store_a", product_id="prod_2", utm_campaign="", views=9, add_to_cart=1,
-               landing_clicks=0)]
+DEMAND = [dict(minute_start=NOW, store_id="store_a", product_id="prod_1", campaign_id="camp_201", utm_campaign="eid_sale_1",
+               views=3, add_to_cart=2, landing_clicks=1),
+          dict(minute_start=NOW, store_id="store_a", product_id="prod_2", campaign_id="direct", utm_campaign="", views=9,
+               add_to_cart=1, landing_clicks=0)]
 
 
-def test_stock_rows_are_written_before_the_demand_rows_and_only_out_of_stock_demand_is_kept(monkeypatch):
+def test_stock_rows_are_written_before_the_demand_rows_and_all_served_demand_is_kept_with_the_flag(monkeypatch):
     stub(monkeypatch, STOCK, DEMAND)
     store = StockStore(oos=[K])
     sink = live_store.LiveSink("lake", store=store, job_run_id="run-1")
     assert sink.on_batch(None, 1, [1_000_000_020], [], [], now=NOW, stock_pairs=[K]) is not None
     tables = [c[0] for c in store.calls]
     assert tables.index("live_stock_now") < tables.index("live_oos_demand_minute")
-    [(key, row)] = store.tables["live_oos_demand_minute"].items()
-    assert key[2] == "prod_1" and (row["views"], row["add_to_cart"], row["landing_clicks"]) == (3, 2, 1)  # prod_2 is in stock
+    rows = {key[2]: row for key, row in store.tables["live_oos_demand_minute"].items()}  # key[2] is the product
+    assert set(rows) == {"prod_1", "prod_2"}  # nothing is filtered out at write time
+    assert rows["prod_1"]["oos_at_write"] is True and rows["prod_2"]["oos_at_write"] is False
+    assert (rows["prod_1"]["views"], rows["prod_1"]["add_to_cart"], rows["prod_1"]["landing_clicks"]) == (3, 2, 1)
+    assert rows["prod_1"]["campaign_id"] == "camp_201" and rows["prod_2"]["campaign_id"] == "direct"
+
+
+def test_a_rewritten_minute_takes_its_flag_from_the_stock_of_that_moment(monkeypatch):
+    stub(monkeypatch, STOCK, DEMAND)
+    store = StockStore(oos=[K])
+    sink = live_store.LiveSink("lake", store=store, job_run_id="run-1")
+    sink.on_batch(None, 1, [1_000_000_020], [], [], now=NOW, stock_pairs=[K])
+
+    def flags():
+        return {key[2]: row["oos_at_write"] for key, row in store.tables["live_oos_demand_minute"].items()}
+
+    assert flags() == {"prod_1": True, "prod_2": False}
+    store.oos = []  # restocked, then the same minute is written again (a late event or a replay)
+    sink.on_batch(None, 2, [1_000_000_020], [], [], now=NOW, stock_pairs=[K])
+    assert flags() == {"prod_1": False, "prod_2": False}  # known limitation: the flag is the stock when written
 
 
 def test_without_stock_events_the_inventory_work_is_skipped(monkeypatch):
@@ -1818,8 +1911,9 @@ _DIM_STORE = "store_id:string store_name:string city:string"
 _DIM_STORE_DISTRICT = "city:string district:string store_id:string"
 _STOCK_NOW = ("store_id:string product_id:string on_hand:int reserved_qty:int available:int reorder_point:int "
               "updated_at:timestamp")
-_OOS_DEMAND = ("minute_start:timestamp store_id:string product_id:string utm_campaign:string views:bigint "
-               "add_to_cart:bigint landing_clicks:bigint")
+_DIM_PRODUCT_CURRENT = "product_id:string name:string? category:string? price:decimal(10,2)?"
+_OOS_DEMAND = ("minute_start:timestamp store_id:string product_id:string campaign_id:string utm_campaign:string "
+               "views:bigint add_to_cart:bigint landing_clicks:bigint oos_at_write:boolean")
 ```
 
 and append to `LIVE_TABLES`:
@@ -1827,10 +1921,11 @@ and append to `LIVE_TABLES`:
 ```python
     Table("dim_store", "gold", _parse(_DIM_STORE, ["store_id"]), ("store_id",)),
     Table("dim_store_district", "gold", _parse(_DIM_STORE_DISTRICT, ["city", "district"]), ("city", "district")),
+    Table("dim_product_current", "gold", _parse(_DIM_PRODUCT_CURRENT, ["product_id"]), ("product_id",)),
     Table("live_stock_now", "gold", _parse(_STOCK_NOW, ["store_id", "product_id"]), ("store_id", "product_id")),
     Table("live_oos_demand_minute", "gold",
-          _parse(_OOS_DEMAND, ["minute_start", "store_id", "product_id", "utm_campaign"]),
-          ("minute_start", "store_id", "product_id", "utm_campaign")),
+          _parse(_OOS_DEMAND, ["minute_start", "store_id", "product_id", "campaign_id"]),
+          ("minute_start", "store_id", "product_id", "campaign_id")),
 ```
 
 `warehouse/live_ddl.sql`: add before the `-- BEGIN grafana_ro` line
@@ -1849,6 +1944,13 @@ CREATE TABLE IF NOT EXISTS dim_store_district (
     PRIMARY KEY (city, district)
 );
 
+CREATE TABLE IF NOT EXISTS dim_product_current (     -- latest version of each product (from silver_products), so Grafana shows names
+    product_id  text PRIMARY KEY,
+    name        text,
+    category    text,
+    price       numeric(10,2)
+);
+
 CREATE TABLE IF NOT EXISTS live_stock_now (          -- one row per store and product, recomputed from Silver (simulated stock)
     store_id       text        NOT NULL,
     product_id     text        NOT NULL,
@@ -1860,15 +1962,17 @@ CREATE TABLE IF NOT EXISTS live_stock_now (          -- one row per store and pr
     PRIMARY KEY (store_id, product_id)
 );
 
-CREATE TABLE IF NOT EXISTS live_oos_demand_minute (  -- demand on products that were out of stock when the sink wrote it
+CREATE TABLE IF NOT EXISTS live_oos_demand_minute (  -- ALL served demand per minute, store, product and campaign
     minute_start   timestamptz NOT NULL,
     store_id       text        NOT NULL,
     product_id     text        NOT NULL,
-    utm_campaign   text        NOT NULL DEFAULT '',  -- '' when the event has no campaign
+    campaign_id    text        NOT NULL,             -- from utm_campaign via the campaign list; 'direct' when none, 'unknown' when not listed
+    utm_campaign   text        NOT NULL DEFAULT '',  -- attribute only; '' when the event has no campaign
     views          bigint      NOT NULL DEFAULT 0,
     add_to_cart    bigint      NOT NULL DEFAULT 0,
     landing_clicks bigint      NOT NULL DEFAULT 0,   -- product views that carry a utm_campaign
-    PRIMARY KEY (minute_start, store_id, product_id, utm_campaign)
+    oos_at_write   boolean     NOT NULL DEFAULT false, -- stock was zero when the sink wrote this minute (not replay-safe)
+    PRIMARY KEY (minute_start, store_id, product_id, campaign_id)
 );
 ```
 
@@ -1876,7 +1980,7 @@ and replace the GRANT line with
 
 ```sql
 GRANT SELECT ON live_metrics_minute, pipeline_health_minute, pipeline_batch_log, pipeline_heartbeat,
-    dim_store, dim_store_district, live_stock_now, live_oos_demand_minute TO grafana_ro;
+    dim_store, dim_store_district, dim_product_current, live_stock_now, live_oos_demand_minute TO grafana_ro;
 ```
 
 `scripts/apply_live_ddl.py`: import `from contracts.stores import district_rows, store_rows`, add
@@ -1886,9 +1990,29 @@ def seed_store_dims(store):
     """The store map is data: written from the one Python source every time, so the SQL joins and the simulator agree."""
     store.upsert("dim_store", store_rows(), ["store_id"])
     store.upsert("dim_store_district", district_rows(), ["city", "district"])
+
+
+def seed_product_dim(store, rows):
+    """dim_product_current: the latest silver_products version of each product, filled by the same job as dim_store so
+    Grafana tables show names. Run the script again after the catalog changes (seed_silver_reference.py)."""
+    if rows:
+        store.upsert("dim_product_current", rows, ["product_id"])
+    return len(rows)
+
+
+def read_product_rows(lake):
+    """Rows from local Silver through Spark; [] and a warning on stderr when Spark or the table is not available."""
+    try:
+        from streaming.common.spark import get_spark
+        from warehouse.live_stock import compute_product_rows
+        return compute_product_rows(get_spark("apply_live_ddl"), lake)
+    except Exception as e:  # the DDL must still be applied; the dimension is filled on the next run
+        print("warning: dim_product_current not filled (%s)" % type(e).__name__, file=sys.stderr)
+        return []
 ```
 
-and call `seed_store_dims(store)` in `main` right after `store.execute(sql)`.
+Give `main` the signature `main(argv=None, env=None, store=None, product_rows=None)`, add `ap.add_argument("--lake", default="data/lake")`, and call `seed_store_dims(store)` right after `store.execute(sql)`, then
+`rows = product_rows if product_rows is not None else (read_product_rows(os.path.abspath(args.lake)) if own else [])` and `seed_product_dim(store, rows)` (tests inject a store, so they never start Spark). Print `dim_product_current: N products` after the `table ... ready` lines.
 
 First create `warehouse/live_common.py` and MOVE `_utc` and `_read` into it unchanged (with their imports: `datetime`, `timezone`, `DeltaTable`, `silver_path`). `warehouse/live_store.py` imports them back (`from warehouse.live_common import _read, _utc`), so the names `live_store._read` and `live_store._utc` still exist and the existing tests that monkeypatch `live_store._read` keep working; `warehouse/live_stock.py` imports from `live_common`, which avoids a circular import. Then add to `live_store.py`: `from warehouse.live_stock import compute_demand_rows, compute_stock_rows, write_oos_demand`.
 
@@ -1935,13 +2059,13 @@ After a successful batch clear `self._pending_stock = set()` together with the o
 - [ ] **Step 8: Run all affected tests**
 
 Host: `.venv\Scripts\python -m pytest -q` (expected: the new file passes; `tests/test_g1_live_store.py` may pin the number of live tables or compare the DDL file with the specs: update the expected counts, and if the DDL comparison fails, align DDL column names and types with the specs).
-Spark, one file at a time: `tests/test_live_stock_spark.py` (7), `tests/test_g1_live_spark.py` (10), `tests/test_live_sink_parallel_spark.py` (4), `tests/test_silver_parallel_spark.py` (4).
+Spark, one file at a time: `tests/test_live_stock_spark.py` (8), `tests/test_g1_live_spark.py` (10), `tests/test_live_sink_parallel_spark.py` (4), `tests/test_silver_parallel_spark.py` (4).
 Expected: all PASS.
 
 - [ ] **Step 9: Apply the DDL to the running Postgres**
 
 Run: `docker compose run --rm spark python scripts/apply_live_ddl.py`
-Expected: 8 `table ... ready` lines and exit 0. Then `"SELECT count(*) FROM dim_store;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'` prints 8.
+Expected: 9 `table ... ready` lines, a line `dim_product_current: N products` (N is about 200 once `scripts/seed_silver_reference.py` has run; with no Silver products yet it prints a warning and the table stays empty) and exit 0. Then `"SELECT count(*) FROM dim_store;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'` prints 8.
 
 - [ ] **Step 10: Commit** (only when told to commit)
 
@@ -1975,7 +2099,8 @@ from monitoring.dashboards import build_inventory_ops
 
 ROOT = Path(__file__).parent.parent
 DASH = ROOT / "monitoring" / "grafana" / "dashboards" / "inventory-ops.json"
-ALLOWED = {"live_stock_now", "live_oos_demand_minute", "live_metrics_minute", "dim_store", "dim_store_district"}
+ALLOWED = {"live_stock_now", "live_oos_demand_minute", "live_metrics_minute", "dim_store", "dim_store_district",
+           "dim_product_current"}
 
 
 def sqls(d):
@@ -2021,12 +2146,13 @@ def test_time_series_queries_use_the_grafana_time_macros():
             assert "$__timeFilter(" in p["targets"][0]["rawSql"] and "$__timeGroupAlias(" in p["targets"][0]["rawSql"]
 ```
 
-Append to `tests/test_grafana_provisioning.py` `test_alert_rules`: extend `CONTRACT_TABLES` with `"live_stock_now", "live_oos_demand_minute", "dim_store", "dim_store_district"`, change the set of expected rule uids to include `fs-oos-demand`, and the count to 5, and add
+Append to `tests/test_grafana_provisioning.py` `test_alert_rules`: extend `CONTRACT_TABLES` with `"live_stock_now", "live_oos_demand_minute", "dim_store", "dim_store_district", "dim_product_current"`, change the set of expected rule uids to include `fs-oos-demand`, and the count to 5, and add
 
 ```python
     oos = rules["fs-oos-demand"]
     assert threshold(oos) == ("gt", 0) and oos["noDataState"] == "OK"
-    assert "interval '3 minutes'" in sql(oos) and "add_to_cart >= 5" in sql(oos) and "count(*) >= 2" in sql(oos)
+    assert "interval '3 minutes'" in sql(oos) and "count(*) >= 2" in sql(oos)
+    assert "oos_at_write" in sql(oos) and "sum(add_to_cart) AS carts" in sql(oos) and "carts >= 5" in sql(oos)  # per minute, flagged
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -2111,27 +2237,33 @@ def build_inventory_ops():
              (12, 0, 6, 5), _steps(None, 30, 60), unit="s"),
         text(4, "About this data",
              "All stock numbers are **simulated**: the simulator sells and restocks eight dark stores. "
-             "Available stock is on-hand stock; order reservations are out of scope.", (18, 0, 6, 5)),
+             "Available stock is on-hand stock; order reservations are out of scope. Demand on empty shelves is flagged "
+             "with the stock when the minute was written: an estimate that a replay can change.", (18, 0, 6, 5)),
         timeseries(5, "Demand on out-of-stock products per minute",
-                   "Product views and add-to-carts that arrived for a store and product that was out of stock. "
-                   "This is demand the shelf could not serve.",
+                   "Product views and add-to-carts that arrived for a store and product with zero stock when the minute "
+                   "was written (the stock when the minute was written, not at event time). Demand the shelf could not serve.",
                    "SELECT $__timeGroupAlias(minute_start, '1m', 0), sum(views) AS \"views\", "
-                   "sum(add_to_cart) AS \"add to cart\" FROM live_oos_demand_minute WHERE $__timeFilter(minute_start) "
-                   "GROUP BY 1 ORDER BY 1", (0, 5, 12, 8)),
+                   "sum(add_to_cart) AS \"add to cart\" FROM live_oos_demand_minute "
+                   "WHERE oos_at_write AND $__timeFilter(minute_start) GROUP BY 1 ORDER BY 1", (0, 5, 12, 8)),
         timeseries(6, "App traffic: events per minute",
                    "Non-late, non-bot events per minute from live_metrics_minute (all countries).",
                    "SELECT $__timeGroupAlias(minute_start, '1m', 0), sum(events) AS \"events\" FROM live_metrics_minute "
                    "WHERE $__timeFilter(minute_start) GROUP BY 1 ORDER BY 1", (12, 5, 12, 8)),
         table(7, "Lowest stock now (20 products)",
               "The twenty store and product pairs with the least available stock.",
-              "SELECT s.store_name AS \"store\", l.product_id AS \"product\", l.available AS \"available\", "
-              "l.reorder_point AS \"reorder point\" FROM live_stock_now l JOIN dim_store s ON s.store_id = l.store_id "
+              "SELECT s.store_name AS \"store\", coalesce(p.name, l.product_id) AS \"product\", "
+              "l.available AS \"available\", l.reorder_point AS \"reorder point\" FROM live_stock_now l "
+              "JOIN dim_store s ON s.store_id = l.store_id "
+              "LEFT JOIN dim_product_current p ON p.product_id = l.product_id "
               "ORDER BY l.available ASC, l.store_id, l.product_id LIMIT 20", (0, 13, 12, 9)),
         table(8, "Lost demand now (last 15 minutes)",
-              "Products with the most add-to-carts while out of stock in the last 15 minutes.",
-              "SELECT s.store_name AS \"store\", d.product_id AS \"product\", sum(d.add_to_cart) AS \"add to cart\", "
-              "sum(d.views) AS \"views\" FROM live_oos_demand_minute d JOIN dim_store s ON s.store_id = d.store_id "
-              "WHERE d.minute_start >= now() - interval '15 minutes' GROUP BY 1, 2 ORDER BY 3 DESC, 4 DESC LIMIT 10",
+              "Products with the most add-to-carts while out of stock in the last 15 minutes (stock when the minute was written).",
+              "SELECT s.store_name AS \"store\", coalesce(p.name, d.product_id) AS \"product\", "
+              "sum(d.add_to_cart) AS \"add to cart\", sum(d.views) AS \"views\" FROM live_oos_demand_minute d "
+              "JOIN dim_store s ON s.store_id = d.store_id "
+              "LEFT JOIN dim_product_current p ON p.product_id = d.product_id "
+              "WHERE d.oos_at_write AND d.minute_start >= now() - interval '15 minutes' "
+              "GROUP BY d.store_id, s.store_name, d.product_id, p.name ORDER BY 3 DESC, 4 DESC LIMIT 10",
               (12, 13, 12, 9)),
     ]
     return dashboard("fs-inventory-ops", "FunnelStream: Operations, live inventory", panels)
@@ -2200,8 +2332,13 @@ In `monitoring/grafana/provisioning/alerting/alerting.yaml` add a fifth rule to 
                 SELECT now() AS time, count(*) AS products
                 FROM (
                   SELECT store_id, product_id
-                  FROM live_oos_demand_minute
-                  WHERE minute_start >= now() - interval '3 minutes' AND add_to_cart >= 5
+                  FROM (
+                    SELECT minute_start, store_id, product_id, sum(add_to_cart) AS carts
+                    FROM live_oos_demand_minute
+                    WHERE minute_start >= now() - interval '3 minutes' AND oos_at_write
+                    GROUP BY minute_start, store_id, product_id
+                  ) m
+                  WHERE carts >= 5
                   GROUP BY store_id, product_id
                   HAVING count(*) >= 2
                 ) t
@@ -2226,7 +2363,7 @@ In `monitoring/grafana/provisioning/alerting/alerting.yaml` add a fifth rule to 
               datasource: {type: __expr__, uid: __expr__}
 ```
 
-Also update the header comment of the file: the list of rules now has five.
+The inner query sums the campaigns of one minute first (the table has one row per campaign) and only minutes flagged `oos_at_write` count. Also update the header comment of the file: the list of rules now has five.
 
 - [ ] **Step 5: Run the tests**
 
@@ -2255,25 +2392,25 @@ git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m 
 **Interfaces:**
 - Consumes: Task 6B (`silver_express_orders`), Task 7 (the sink and its thread pool), Task 8 (the dashboard builder and the alert file).
 - Produces:
-  - Postgres table `live_express_orders(order_id, store_id, promised_minutes, created_at, delivered_at)`, key `order_id`; `delivered_at` is NULL until the order's first `delivered` status. Grafana computes elapsed time and state from these columns with `now()`, so the state moves even between Silver batches.
-  - `compute_express_rows(spark, silver_root, since) -> list[dict]`: every express order created at or after `since`, joined to its first `delivered` status time (`silver_order_status`), as `live_express_orders` rows. The sink calls it each batch with `since = now - 3 hours` (so an order that is still open is refreshed until it is delivered or older than three hours).
+  - Postgres table `live_express_orders(order_id, store_id, promised_minutes, created_at, delivered_at, closed_without_delivery)`, key `order_id`; `delivered_at` is NULL until the order's first `delivered` status; `closed_without_delivery` is true when the order's latest status is `order_cancelled` or `order_returned` and it has no `delivered_at`. Grafana computes elapsed time and state from these columns with `now()`, so the state moves even between Silver batches.
+  - `compute_express_rows(spark, silver_root, since) -> list[dict]`: every express order created at or after `since`, joined to its first `delivered` status time and to its latest status (`silver_order_status`: greatest `status_time`, ties by `status_rank`), as `live_express_orders` rows. The sink calls it each batch with `since = now - 3 hours` (so an order that is still open is refreshed until it is delivered or older than three hours).
   - Grafana: a row "Express delivery, 20-minute promise" on the Operations dashboard and the alert rule `fs-express-sla`.
 
-Definitions used everywhere (the dashboard prints them): an express order is **on time** if `delivered_at - created_at <= promised_minutes`; it is **breached** if it was delivered later than its promise, or if it is still undelivered and `now() - created_at > promised_minutes`; it is **at risk** if undelivered and `now() - created_at >= 0.75 x promised_minutes` (15 minutes for the standard promise). The promise is always the order's own `promised_minutes`.
+Definitions used everywhere (the dashboard prints them): an express order is **on time** if `delivered_at - created_at <= promised_minutes`; it is **breached** if it was delivered later than its promise, or if it is still undelivered, is not `closed_without_delivery` and `now() - created_at > promised_minutes + 1 minute` (a one-minute grace, so a `delivered` event that reaches the sink a batch late does not raise a false alarm); it is **at risk** if undelivered, not closed and `now() - created_at >= 0.75 x promised_minutes` and not yet breached (15 minutes for the standard promise). An order whose latest status is cancelled or returned is never "undelivered past its promise": it has no delivery to be late. The promise is always the order's own `promised_minutes`. The SLA clock compares the `order_created` time with the `delivered` event time; both are simulator event times, so there is no clock skew between the customer side and the courier side.
 
 Behaviour to implement, test first:
 
-- **Table and DDL.** `live_express_orders` in `live_tables.py`, `live_ddl.sql` (primary key `order_id`, `delivered_at` nullable) and the `GRANT SELECT` list; table counts in the pinned tests move accordingly.
-- **Compute (Spark test).** Orders created before `since` are excluded; an order with a `delivered` status gets the earliest delivered time (a replayed or duplicated status row does not change it); an order without one has `delivered_at` NULL; two stores and a promise of 2 minutes are carried unchanged. Without the `silver_express_orders` table the result is `[]`.
+- **Table and DDL.** `live_express_orders` in `live_tables.py`, `live_ddl.sql` (primary key `order_id`, `delivered_at` nullable, `closed_without_delivery boolean NOT NULL DEFAULT false`) and the `GRANT SELECT` list; `LIVE_TABLES` goes from 9 to 10 entries in the pinned tests of `tests/test_live_stock_sink.py`.
+- **Compute (Spark test).** Orders created before `since` are excluded; an order with a `delivered` status gets the earliest delivered time (a replayed or duplicated status row does not change it); an order without one has `delivered_at` NULL; an undelivered order whose latest status is `order_cancelled` or `order_returned` has `closed_without_delivery` true, while an order that was delivered and later returned keeps its `delivered_at` and has the flag false; two stores and a promise of 2 minutes are carried unchanged. Without the `silver_express_orders` table the result is `[]`.
 - **Sink (host test, same stub style as Task 7).** With stock or express activity seen, the express compute runs in the sink's thread pool with the others and its rows are upserted; a failing express compute makes `on_batch` return None without raising and the work stays pending (the Task 7 failure test pattern); when no express order was ever seen the express compute is skipped (no extra Spark job per batch).
 - **Panels** (extend `build_inventory_ops`; every query reads only `live_express_orders` and `dim_store`):
-  - stat "Express orders at risk now": `SELECT count(*) AS "orders" FROM live_express_orders WHERE delivered_at IS NULL AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute'`, thresholds orange at 1, red at 3.
-  - stat "Express breaches, last hour": delivered later than the promise, or undelivered past the promise, among orders created in the last hour; thresholds red at 1 (any breach is red).
-  - stat "On-time rate, last hour": on-time orders divided by orders that are either delivered or past their promise, as a percentage, unit percent, red below 100.
-  - stat "Slowest express delivery, last hour (minutes)": the maximum of elapsed minutes (delivery time for delivered orders, age for open ones), thresholds orange at 15, red at 20.
-  - table "Slowest express orders, last hour": store, order id, promise, elapsed minutes, state, ten rows ordered by elapsed minutes descending.
+  - stat "Express orders at risk now": `SELECT count(*) AS "orders" FROM live_express_orders WHERE delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute' + interval '1 minute'`, thresholds orange at 1, red at 3.
+  - stat "Express breaches, last hour": delivered later than the promise, or undelivered, not closed and older than `promised_minutes + 1 minute`, among orders created in the last hour; thresholds red at 1 (any breach is red).
+  - stat "On-time rate, last hour": on-time orders divided by orders that are either delivered or breached (cancelled and returned undelivered orders are in neither count), as a percentage, unit percent, red below 100.
+  - stat "Slowest express delivery, last hour (minutes)": the maximum of elapsed minutes (delivery time for delivered orders, age for open ones that are not closed), thresholds orange at 15, red at 20.
+  - table "Slowest express orders, last hour": store, order id, promise, elapsed minutes, state (on time, at risk, breached, closed without delivery), ten rows ordered by elapsed minutes descending.
   The dashboard test of Task 8 extends: the new panels exist, use the allowed tables, and the stat thresholds are as above.
-- **Alert `fs-express-sla`** (severity critical, evaluated every minute, `for: 0s`, `noDataState: OK`): fires when at least one express order created in the last 60 minutes is breached. Summary "An express order missed its delivery promise"; runbook "Open 'Operations, live inventory', table 'Slowest express orders': find the store, check its stock and riders, call the customer, and record the cause." The provisioning test pins the rule's uid, threshold (`gt 0`), severity and that its SQL contains `promised_minutes` and `live_express_orders`.
+- **Alert `fs-express-sla`** (severity critical, evaluated every minute, `for: 0s`, `noDataState: OK`): fires when at least one express order created in the last 60 minutes is breached (the breach test of the definitions above: a delivery later than the promise, or `now() - created_at > promised_minutes + 1 minute` for an undelivered order that is not `closed_without_delivery`). Summary "An express order missed its delivery promise"; runbook "Open 'Operations, live inventory', table 'Slowest express orders': find the store, check its stock and riders, call the customer, and record the cause." The provisioning test pins the rule's uid, threshold (`gt 0`), severity and that its SQL contains `promised_minutes`, `live_express_orders`, `closed_without_delivery` and `interval '1 minute'` (the grace).
 - **Rehearsal.** `.\scripts\watch_demo.ps1 -Inventory -ExpressPromiseMinutes 2 -LateExpressEvery 15` runs the whole path with a 2-minute promise and every 15th express order late, so the alert fires within about 3 minutes; the same command without the two options shows no breach in the normal case. Add both switches to the demo script (they pass `--express-promise-minutes` and `--late-express-every` to the runner) and extend the script test of Task 6.
 
 Run the host suite and the Spark files one at a time. Commit only when told to commit: `Add the live express delivery SLA table, panels and the any-breach alert`.
@@ -2289,16 +2426,16 @@ Run the host suite and the Spark files one at a time. Commit only when told to c
 **Interfaces:**
 - Consumes: Task 7 (`_stock_levels(spark, silver_root, pairs=None, as_of=None)`, the Silver stock tables, `live_oos_demand_minute`, `dim_store`).
 - Produces:
-  - Postgres tables `inventory_daily(report_date, store_id, product_id, closing_on_hand, units_sold, units_received, units_shrunk, units_adjusted, oversold_units, ended_out_of_stock)`, key `(report_date, store_id, product_id)`, and `oos_demand_daily(report_date, store_id, product_id, utm_campaign, views, add_to_cart, landing_clicks)`, key `(report_date, store_id, product_id, utm_campaign)`. Power BI reads both (`Inventory Daily` and `OOS Demand Daily`).
+  - Postgres tables `inventory_daily(report_date, store_id, product_id, closing_on_hand, units_sold, units_received, units_shrunk, units_adjusted, oversold_units, ended_out_of_stock)`, key `(report_date, store_id, product_id)`, and `oos_demand_daily(report_date, store_id, product_id, campaign_id, utm_campaign, served_views, served_add_to_cart, served_clicks, oos_views, oos_add_to_cart, oos_clicks)`, key `(report_date, store_id, product_id, campaign_id)`. Power BI reads both (`Inventory Daily` and `OOS Demand Daily`). `oos_demand_daily` is rolled up from `live_oos_demand_minute` (Task 7): `served_*` sum ALL served demand of the Cairo day, `oos_*` sum only the minutes flagged `oos_at_write`; `served_clicks` (all landing clicks in served districts) is the denominator of the exposed-spend share and `oos_clicks` its numerator, both from this one table. `campaign_id` is the campaign of the click (`'direct'` when none); `utm_campaign` is an attribute.
   - `cairo_day_bounds(report_date) -> (start, end)` aware UTC datetimes, end exclusive.
   - `compute_inventory_daily(spark, silver_root, report_date) -> list[dict]`.
   - `rollup_oos_demand_daily(pg_store, report_date) -> None`.
-  - `scripts/build_inventory_daily.py [--date today|yesterday|YYYY-MM-DD] [--days N]` (needs Spark and Postgres only, no Databricks).
+  - `scripts/build_inventory_daily.py [--date today|yesterday|YYYY-MM-DD] [--days N]` (needs Spark and Postgres only, no Databricks). `--date` defaults to yesterday and `--days` to **2**: the last two Cairo days are rebuilt on every run, so a late event or an express order that was still open at midnight is corrected by the next run. This script is the one writer of `inventory_daily`, `oos_demand_daily` and `express_daily`.
   - `monitoring.dashboards.build_inventory_daily()` and the dashboard uid `fs-inventory-daily`.
 
-**Express addition (the 20-minute promise).** Task 9A also builds a third Postgres table, `express_daily(report_date, store_id, orders, delivered, on_time, breached, avg_delivery_minutes, max_delivery_minutes)`, key `(report_date, store_id)`, with `compute_express_daily(spark, silver_root, report_date) -> list[dict]` in `warehouse/inventory_daily.py` and a call in `scripts/build_inventory_daily.py`. Per Cairo day of `silver_express_orders.created_at` and store: `orders` counts express orders; `delivered` those with a `delivered` status (earliest per order); `on_time` the delivered ones with `delivered_at - created_at <= promised_minutes`; `breached` the delivered-late ones plus the undelivered ones whose age at the end of the day exceeds their promise; the two minute columns are the average and maximum of `delivered_at - created_at` in minutes over delivered orders (NULL when none). Spark tests (write them first): a mix of on-time, late and open orders over two stores and a Cairo midnight split; the maximum is the slowest delivered order; a replayed status row changes nothing; a day without express orders gives `[]`. DDL, `LIVE_TABLES` entry and `GRANT` as for the other two tables (the table count becomes 11 in Task 9A's pinned tests). The Grafana daily page gets two more panels: stat "Express on-time rate, latest day" (`SELECT coalesce(round(100.0 * sum(on_time) / nullif(sum(on_time) + sum(breached), 0), 1), 100) AS "percent" FROM express_daily WHERE report_date = (SELECT max(report_date) FROM express_daily)`, unit percent, red below 100) and timeseries "Slowest express delivery per day (minutes)" (`SELECT report_date::timestamp AS "time", max(max_delivery_minutes) AS "slowest", 20 AS "promise" FROM express_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`). Power BI reads the table as `Express Daily`.
+**Express addition (the 20-minute promise).** Task 9A also builds a third Postgres table, `express_daily(report_date, store_id, orders, delivered, on_time, breached, avg_delivery_minutes, max_delivery_minutes)`, key `(report_date, store_id)`, with `compute_express_daily(spark, silver_root, report_date, now=None) -> list[dict]` in `warehouse/inventory_daily.py` (`now` defaults to the current UTC time; tests pass a fixed one) and a call in `scripts/build_inventory_daily.py`. Per Cairo day of `silver_express_orders.created_at` and store: `orders` counts express orders; `delivered` those with a `delivered` status (earliest per order); `on_time` the delivered ones with `delivered_at - created_at <= promised_minutes`; `breached` the delivered-late ones plus the undelivered ones whose latest status is NOT `order_cancelled` or `order_returned` and whose age at `now` (the build time) exceeds `promised_minutes + 1 minute`; an undelivered order that was cancelled or returned is counted in `orders` only; the two minute columns are the average and maximum of `delivered_at - created_at` in minutes over delivered orders (NULL when none). The SLA clock compares the `order_created` time with the `delivered` event time, both simulator event times. Spark tests (write them first): a mix of on-time, late and open orders over two stores and a Cairo midnight split; the maximum is the slowest delivered order; a replayed status row changes nothing; a day without express orders gives `[]`; a cancelled undelivered order past its promise is not breached; an order created at 23:55 and still open is not breached with `now` at 00:00 and is breached when the same day is built again with a later `now` (this is why the script rebuilds two days). Spec string `_EXPRESS_DAILY = "report_date:date store_id:string orders:int delivered:int on_time:int breached:int avg_delivery_minutes:decimal(8,2)? max_delivery_minutes:decimal(8,2)?"`, key `(report_date, store_id)`; the DDL, the `LIVE_TABLES` entry and the `GRANT` go in with the other two tables (`LIVE_TABLES` has 13 entries after Task 9A: 10 after Task 8B plus these three). The Grafana daily page gets two more panels: stat "Express on-time rate, latest day" (`SELECT coalesce(round(100.0 * sum(on_time) / nullif(sum(on_time) + sum(breached), 0), 1), 100) AS "percent" FROM express_daily WHERE report_date = (SELECT max(report_date) FROM express_daily)`, unit percent, red below 100) and timeseries "Slowest express delivery per day (minutes)" (`SELECT report_date::timestamp AS "time", max(max_delivery_minutes) AS "slowest", 20 AS "promise" FROM express_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`). Power BI reads the table as `Express Daily`.
 
-Definitions (also printed on the dashboard): `closing_on_hand` is the stock at the end of the Cairo day (latest snapshot plus the movements after it, before midnight, never below zero); `units_sold`, `units_received`, `units_shrunk` and `units_adjusted` sum the movements of that day by reason; `oversold_units` is the sum over sold movements of `requested_qty` minus the units taken (a sale of zero units emits no movement, so fully oversold lines are not counted: a lower bound); `ended_out_of_stock` is `closing_on_hand - reserved <= 0`.
+Definitions (also printed on the dashboard): `closing_on_hand` is the stock at the end of the Cairo day (latest snapshot plus the movements after it, before midnight, never below zero); `units_sold`, `units_received`, `units_shrunk` and `units_adjusted` sum the movements of that day by reason; `oversold_units` is the sum over sold movements of `requested_qty` minus the units taken (a sale of zero units emits no movement, so fully oversold lines are not counted: a lower bound); `ended_out_of_stock` is `closing_on_hand - reserved <= 0`. The model is reserve-on-order: a cancelled or returned order does not put stock back (known limitation, spec section 14), so stock drifts down with every cancellation. The out-of-stock flag of the demand columns is the stock when the minute was written; it is not replay-safe (known limitation).
 
 - [ ] **Step 1: Write the failing host test**
 
@@ -2326,10 +2463,13 @@ def test_the_cairo_day_in_utc_follows_the_clock_of_egypt():
 
 def test_the_new_tables_are_specified_created_and_granted():
     spec = {t.name: t for t in LIVE_TABLES}
-    assert {"inventory_daily", "oos_demand_daily"} <= set(LIVE_TABLE_NAMES)
+    assert {"inventory_daily", "oos_demand_daily", "express_daily"} <= set(LIVE_TABLE_NAMES)
     assert spec["inventory_daily"].keys == ("report_date", "store_id", "product_id")
-    assert spec["oos_demand_daily"].keys == ("report_date", "store_id", "product_id", "utm_campaign")
-    for name in ("inventory_daily", "oos_demand_daily"):
+    assert spec["oos_demand_daily"].keys == ("report_date", "store_id", "product_id", "campaign_id")
+    assert spec["express_daily"].keys == ("report_date", "store_id")
+    cols = {c.name for c in spec["oos_demand_daily"].columns}
+    assert {"campaign_id", "utm_campaign", "served_clicks", "oos_clicks", "oos_views", "oos_add_to_cart"} <= cols
+    for name in ("inventory_daily", "oos_demand_daily", "express_daily"):
         assert re.search(r"CREATE TABLE IF NOT EXISTS %s \(" % name, DDL), name
         assert name in DDL.split("GRANT SELECT ON")[1].split("TO grafana_ro")[0], name
 
@@ -2346,9 +2486,11 @@ def test_the_rollup_sums_the_minutes_of_one_cairo_day_and_is_idempotent():
     store = RecordingStore()
     rollup_oos_demand_daily(store, date(2026, 10, 10))
     [sql] = store.executed
-    assert "FROM live_oos_demand_minute" in sql and "ON CONFLICT (report_date, store_id, product_id, utm_campaign)" in sql
+    assert "FROM live_oos_demand_minute" in sql and "ON CONFLICT (report_date, store_id, product_id, campaign_id)" in sql
     assert "AT TIME ZONE 'Africa/Cairo'" in sql and "DATE'2026-10-10'" in sql
-    assert "DO UPDATE SET views = EXCLUDED.views" in sql  # a total is replaced, never incremented
+    assert "FILTER (WHERE oos_at_write)" in sql  # the oos_* columns are the flagged minutes, the served_* columns all of them
+    assert "DO UPDATE SET utm_campaign = EXCLUDED.utm_campaign" in sql
+    assert "served_clicks = EXCLUDED.served_clicks" in sql and "oos_clicks = EXCLUDED.oos_clicks"  in sql  # a total is replaced, never incremented
     rollup_oos_demand_daily(store, date(2026, 10, 10))
     assert store.executed[0] == store.executed[1]
 ```
@@ -2365,8 +2507,11 @@ Expected: collection error (`warehouse.inventory_daily` missing).
 ```python
 _INV_DAILY = ("report_date:date store_id:string product_id:string closing_on_hand:int units_sold:int "
               "units_received:int units_shrunk:int units_adjusted:int oversold_units:int ended_out_of_stock:boolean")
-_OOS_DAILY = ("report_date:date store_id:string product_id:string utm_campaign:string views:bigint "
-              "add_to_cart:bigint landing_clicks:bigint")
+_OOS_DAILY = ("report_date:date store_id:string product_id:string campaign_id:string utm_campaign:string "
+              "served_views:bigint served_add_to_cart:bigint served_clicks:bigint oos_views:bigint "
+              "oos_add_to_cart:bigint oos_clicks:bigint")
+_EXPRESS_DAILY = ("report_date:date store_id:string orders:int delivered:int on_time:int breached:int "
+                  "avg_delivery_minutes:decimal(8,2)? max_delivery_minutes:decimal(8,2)?")
 ```
 
 and append to `LIVE_TABLES`:
@@ -2375,8 +2520,9 @@ and append to `LIVE_TABLES`:
     Table("inventory_daily", "gold", _parse(_INV_DAILY, ["report_date", "store_id", "product_id"]),
           ("report_date", "store_id", "product_id")),
     Table("oos_demand_daily", "gold",
-          _parse(_OOS_DAILY, ["report_date", "store_id", "product_id", "utm_campaign"]),
-          ("report_date", "store_id", "product_id", "utm_campaign")),
+          _parse(_OOS_DAILY, ["report_date", "store_id", "product_id", "campaign_id"]),
+          ("report_date", "store_id", "product_id", "campaign_id")),
+    Table("express_daily", "gold", _parse(_EXPRESS_DAILY, ["report_date", "store_id"]), ("report_date", "store_id")),
 ```
 
 `warehouse/live_ddl.sql`: add before the `-- BEGIN grafana_ro` line
@@ -2397,18 +2543,34 @@ CREATE TABLE IF NOT EXISTS inventory_daily (          -- one row per store, prod
 );
 
 CREATE TABLE IF NOT EXISTS oos_demand_daily (         -- live_oos_demand_minute summed per Cairo day
-    report_date    date   NOT NULL,
-    store_id       text   NOT NULL,
-    product_id     text   NOT NULL,
-    utm_campaign   text   NOT NULL DEFAULT '',
-    views          bigint NOT NULL DEFAULT 0,
-    add_to_cart    bigint NOT NULL DEFAULT 0,
-    landing_clicks bigint NOT NULL DEFAULT 0,
-    PRIMARY KEY (report_date, store_id, product_id, utm_campaign)
+    report_date        date   NOT NULL,
+    store_id           text   NOT NULL,
+    product_id         text   NOT NULL,
+    campaign_id        text   NOT NULL,                -- 'direct' when the click had no campaign
+    utm_campaign       text   NOT NULL DEFAULT '',     -- attribute only
+    served_views       bigint NOT NULL DEFAULT 0,      -- all demand in served districts
+    served_add_to_cart bigint NOT NULL DEFAULT 0,
+    served_clicks      bigint NOT NULL DEFAULT 0,      -- all landing clicks in served districts (denominator of the share)
+    oos_views          bigint NOT NULL DEFAULT 0,      -- the part of the minutes flagged oos_at_write (stock when written)
+    oos_add_to_cart    bigint NOT NULL DEFAULT 0,
+    oos_clicks         bigint NOT NULL DEFAULT 0,      -- numerator of the share
+    PRIMARY KEY (report_date, store_id, product_id, campaign_id)
+);
+
+CREATE TABLE IF NOT EXISTS express_daily (            -- one row per store and Cairo day, express orders and the promise
+    report_date          date    NOT NULL,
+    store_id             text    NOT NULL,
+    orders               integer NOT NULL DEFAULT 0,
+    delivered            integer NOT NULL DEFAULT 0,
+    on_time              integer NOT NULL DEFAULT 0,
+    breached             integer NOT NULL DEFAULT 0,
+    avg_delivery_minutes numeric(8,2),
+    max_delivery_minutes numeric(8,2),
+    PRIMARY KEY (report_date, store_id)
 );
 ```
 
-and add `inventory_daily, oos_demand_daily` to the GRANT list (the line already lists the Task 7 tables).
+and add `inventory_daily, oos_demand_daily, express_daily` to the GRANT list (the line already lists the Task 7 and Task 8B tables).
 
 `warehouse/inventory_daily.py`:
 
@@ -2416,7 +2578,8 @@ and add `inventory_daily, oos_demand_daily` to the GRANT list (the line already 
 """Daily inventory mart (inventory design, section 9, and the Power BI and Grafana inventory pages).
 
 inventory_daily: one row per store, product and Cairo day, computed from the Silver stock tables.
-oos_demand_daily: live_oos_demand_minute summed per Cairo day (plain SQL in Postgres).
+oos_demand_daily: live_oos_demand_minute summed per Cairo day (plain SQL in Postgres): all served demand, and the part
+flagged out of stock when the minute was written.
 """
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -2478,21 +2641,30 @@ def rollup_oos_demand_daily(pg_store, report_date):
     """Replace the oos_demand_daily rows of one Cairo day with the sums of live_oos_demand_minute (idempotent)."""
     day = report_date.isoformat()  # a date object: nothing else can reach the SQL text
     pg_store.execute(
-        "INSERT INTO oos_demand_daily (report_date, store_id, product_id, utm_campaign, views, add_to_cart, landing_clicks) "
-        "SELECT (minute_start AT TIME ZONE 'Africa/Cairo')::date, store_id, product_id, utm_campaign, "
-        "sum(views), sum(add_to_cart), sum(landing_clicks) FROM live_oos_demand_minute "
+        "INSERT INTO oos_demand_daily (report_date, store_id, product_id, campaign_id, utm_campaign, served_views, "
+        "served_add_to_cart, served_clicks, oos_views, oos_add_to_cart, oos_clicks) "
+        "SELECT (minute_start AT TIME ZONE 'Africa/Cairo')::date, store_id, product_id, campaign_id, min(utm_campaign), "
+        "sum(views), sum(add_to_cart), sum(landing_clicks), "
+        "coalesce(sum(views) FILTER (WHERE oos_at_write), 0), "
+        "coalesce(sum(add_to_cart) FILTER (WHERE oos_at_write), 0), "
+        "coalesce(sum(landing_clicks) FILTER (WHERE oos_at_write), 0) FROM live_oos_demand_minute "
         "WHERE (minute_start AT TIME ZONE 'Africa/Cairo')::date = DATE'%s' GROUP BY 1, 2, 3, 4 "
-        "ON CONFLICT (report_date, store_id, product_id, utm_campaign) DO UPDATE SET views = EXCLUDED.views, "
-        "add_to_cart = EXCLUDED.add_to_cart, landing_clicks = EXCLUDED.landing_clicks" % day)
+        "ON CONFLICT (report_date, store_id, product_id, campaign_id) DO UPDATE SET "
+        "utm_campaign = EXCLUDED.utm_campaign, served_views = EXCLUDED.served_views, "
+        "served_add_to_cart = EXCLUDED.served_add_to_cart, served_clicks = EXCLUDED.served_clicks, "
+        "oos_views = EXCLUDED.oos_views, oos_add_to_cart = EXCLUDED.oos_add_to_cart, "
+        "oos_clicks = EXCLUDED.oos_clicks" % day)
 ```
 
 `scripts/build_inventory_daily.py`:
 
 ```python
-"""Build inventory_daily and oos_demand_daily in Postgres for one or more Cairo days.
+"""Build inventory_daily, oos_demand_daily and express_daily in Postgres for one or more Cairo days.
 
-Needs Spark (the Silver stock tables) and PG_DSN, not Databricks: run it in the spark container:
-  docker compose run --rm spark python scripts/build_inventory_daily.py [--date today] [--days 1]
+Needs Spark (the Silver tables) and PG_DSN, not Databricks: run it in the spark container:
+  docker compose run --rm spark python scripts/build_inventory_daily.py [--date today] [--days 2]
+By default it rebuilds the last 2 Cairo days (yesterday and the day before), so late events and express orders that
+were still open at midnight are corrected by the next run.
 """
 import argparse
 import os
@@ -2505,7 +2677,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from streaming.common.spark import get_spark
-from warehouse.inventory_daily import compute_inventory_daily, rollup_oos_demand_daily
+from warehouse.inventory_daily import compute_express_daily, compute_inventory_daily, rollup_oos_demand_daily
 from warehouse.store import get_store
 
 
@@ -2520,7 +2692,7 @@ def parse_day(text, today):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--date", default="yesterday", help="last Cairo day to build: today, yesterday or YYYY-MM-DD")
-    ap.add_argument("--days", type=int, default=1, help="how many days to build, ending at --date")
+    ap.add_argument("--days", type=int, default=2, help="how many days to build, ending at --date (default 2)")
     ap.add_argument("--lake", default="data/lake")
     args = ap.parse_args(argv)
     if args.days < 1:
@@ -2537,8 +2709,11 @@ def main(argv=None):
             rows = compute_inventory_daily(spark, lake, day)
             if rows:
                 pg.upsert("inventory_daily", rows, ["report_date", "store_id", "product_id"])
+            express = compute_express_daily(spark, lake, day)
+            if express:
+                pg.upsert("express_daily", express, ["report_date", "store_id"])
             rollup_oos_demand_daily(pg, day)
-            print("%s: %d inventory rows" % (day, len(rows)))
+            print("%s: %d inventory rows, %d express rows" % (day, len(rows), len(express)))
     finally:
         pg.close()
     return 0
@@ -2550,7 +2725,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run the host tests**
 
-Run: `.venv\Scripts\python -m pytest tests\test_inventory_daily.py -q`, then the full host suite (update the table counts in `tests/test_live_stock_sink.py` to 10). Expected: PASS.
+Run: `.venv\Scripts\python -m pytest tests\test_inventory_daily.py -q`, then the full host suite (update the table counts in `tests/test_live_stock_sink.py` from 10 to 13: the three tables of this task, express_daily included). Expected: PASS.
 
 - [ ] **Step 5: Write the failing Spark test and run it**
 
@@ -2626,7 +2801,7 @@ def test_without_the_stock_tables_nothing_is_computed(spark, tmp_path):
 ```
 
 Run: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/test_inventory_daily_spark.py tests/test_live_stock_spark.py -q -p no:cacheprovider` (one file after the other if memory is short).
-Expected before Step 3 is complete: FAIL (`compute_inventory_daily` missing); after: 5 plus 7 passed. If `test_live_stock_spark.py` fails after the `_stock_levels` refactor, the refactor changed the live behaviour: fix the refactor, not the test.
+Expected before Step 3 is complete: FAIL (`compute_inventory_daily` missing); after: 5 plus 8 passed (the express Spark tests of the addition above are in `tests/test_inventory_daily_spark.py` too and raise the first number). If `test_live_stock_spark.py` fails after the `_stock_levels` refactor, the refactor changed the live behaviour: fix the refactor, not the test.
 
 - [ ] **Step 6: The Grafana inventory-insights page**
 
@@ -2638,15 +2813,15 @@ In `monitoring/dashboards.py` add `build_inventory_daily()` returning `dashboard
 4. stat "Shrinkage share of units out, latest day": `SELECT coalesce(round(100.0 * sum(units_shrunk) / nullif(sum(units_sold) + sum(units_shrunk), 0), 1), 0) AS "percent" FROM inventory_daily WHERE report_date = (SELECT max(report_date) FROM inventory_daily)`, unit `"percent"`, thresholds `_steps(None, 3, 6)`.
 5. timeseries "Closing stock by store (units)": `SELECT i.report_date::timestamp AS "time", s.store_name AS "metric", sum(i.closing_on_hand) AS "units" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id WHERE $__timeFilter(i.report_date::timestamp) GROUP BY 1, 2 ORDER BY 1`
 6. timeseries "Units sold, received and shrunk per day": `SELECT report_date::timestamp AS "time", sum(units_sold) AS "sold", sum(units_received) AS "received", sum(units_shrunk) AS "shrunk" FROM inventory_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`
-7. table "Lowest days of cover, latest day (20 products)": `SELECT s.store_name AS "store", i.product_id AS "product", i.closing_on_hand AS "closing stock", round(a.per_day, 1) AS "sold per day", round(i.closing_on_hand / nullif(a.per_day, 0), 1) AS "days of cover" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id JOIN (SELECT store_id, product_id, sum(units_sold)::numeric / 7 AS per_day FROM inventory_daily WHERE report_date > (SELECT max(report_date) FROM inventory_daily) - 7 GROUP BY 1, 2) a ON a.store_id = i.store_id AND a.product_id = i.product_id WHERE i.report_date = (SELECT max(report_date) FROM inventory_daily) AND a.per_day > 0 ORDER BY 5 ASC NULLS LAST LIMIT 20`
-8. timeseries "Demand on empty shelves per day": `SELECT report_date::timestamp AS "time", sum(views) AS "views", sum(add_to_cart) AS "add to cart" FROM oos_demand_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`
-9. text note: "Simulated stock. Closing stock is the end of the Cairo day; oversold units are a lower bound; demand on empty shelves is decided by the stock the live sink saw."
+7. table "Lowest days of cover, latest day (20 products)": `SELECT s.store_name AS "store", coalesce(p.name, i.product_id) AS "product", i.closing_on_hand AS "closing stock", round(a.per_day, 1) AS "sold per day", round(i.closing_on_hand / nullif(a.per_day, 0), 1) AS "days of cover" FROM inventory_daily i JOIN dim_store s ON s.store_id = i.store_id LEFT JOIN dim_product_current p ON p.product_id = i.product_id JOIN (SELECT store_id, product_id, sum(units_sold)::numeric / 7 AS per_day FROM inventory_daily WHERE report_date > (SELECT max(report_date) FROM inventory_daily) - 7 GROUP BY 1, 2) a ON a.store_id = i.store_id AND a.product_id = i.product_id WHERE i.report_date = (SELECT max(report_date) FROM inventory_daily) AND a.per_day > 0 ORDER BY 5 ASC NULLS LAST LIMIT 20`
+8. timeseries "Demand on empty shelves per day": `SELECT report_date::timestamp AS "time", sum(oos_views) AS "views", sum(oos_add_to_cart) AS "add to cart" FROM oos_demand_daily WHERE $__timeFilter(report_date::timestamp) GROUP BY 1 ORDER BY 1`
+9. text note: "Simulated stock. Closing stock is the end of the Cairo day; oversold units are a lower bound; cancelled orders do not return stock (reserve-on-order); demand on empty shelves is flagged with the stock when the minute was written, which a replay can change."
 
-Add `"inventory-daily.json": dashboards.build_inventory_daily` to `FILES` in `scripts/gen_dashboards.py`, run it, and extend `tests/test_inventory_dashboards.py`: the file equals the builder; unique panel ids; every panel on `fs-postgres`; the tables found after `from` or `join` are within `{inventory_daily, oos_demand_daily, dim_store}`; the four stat titles above exist with the threshold lists above; each time series query contains `$__timeFilter(`.
+Add `"inventory-daily.json": dashboards.build_inventory_daily` to `FILES` in `scripts/gen_dashboards.py`, run it, and extend `tests/test_inventory_dashboards.py`: the file equals the builder; unique panel ids; every panel on `fs-postgres`; the tables found after `from` or `join` are within `{inventory_daily, oos_demand_daily, express_daily, dim_store, dim_product_current}`; the four stat titles above exist with the threshold lists above; each time series query contains `$__timeFilter(`.
 
 - [ ] **Step 7: Run everything and check by eye**
 
-Host suite; the Spark files of Step 5; then `.venv\Scripts\python scripts\gen_dashboards.py`, `docker compose up -d --force-recreate grafana`, `docker compose run --rm spark python scripts/apply_live_ddl.py` (expect 10 tables ready), and after a demo run with `-Inventory`: `docker compose run --rm spark python scripts/build_inventory_daily.py --date today` (expect `<date>: N inventory rows`). Open the dashboard "FunnelStream: Inventory insights, daily": no red triangle on any panel.
+Host suite; the Spark files of Step 5; then `.venv\Scripts\python scripts\gen_dashboards.py`, `docker compose up -d --force-recreate grafana`, `docker compose run --rm spark python scripts/apply_live_ddl.py` (expect 13 tables ready), and after a demo run with `-Inventory`: `docker compose run --rm spark python scripts/build_inventory_daily.py --date today` (expect two lines, today and yesterday: `<date>: N inventory rows, M express rows`). Open the dashboard "FunnelStream: Inventory insights, daily": no red triangle on any panel.
 
 - [ ] **Step 8: Commit** (only when told to commit)
 
@@ -2660,33 +2835,55 @@ git -c user.name=FunnelStream -c user.email=finalprojectnti@gmail.com commit -m 
 ### Task 9B: Marketing D-1 mart and its Grafana page (stretch: cut first)
 
 **Files:**
-- Create: `warehouse/d1_marketing.py`, `scripts/build_d1_marketing.py`, `tests/test_d1_marketing.py`, `tests/test_d1_marketing_spark.py`, `monitoring/grafana/dashboards/marketing-d1.json` (generated)
+- Create: `warehouse/d1_marketing.py`, `scripts/build_d1_marketing.py`, `tests/test_d1_marketing.py`, `monitoring/grafana/dashboards/marketing-d1.json` (generated)
 - Modify: `warehouse/live_ddl.sql`, `warehouse/live_tables.py`, `monitoring/dashboards.py`, `scripts/gen_dashboards.py`, `tests/test_live_stock_sink.py` (table count), `tests/test_inventory_dashboards.py`
 
 **Interfaces:**
-- Consumes: Task 7 (`live_oos_demand_minute` with `utm_campaign` and `landing_clicks`), the Databricks `agg_campaign_daily`, the local Silver `silver_events` and `silver_products`.
+- Consumes: Task 7 (`live_oos_demand_minute` with `campaign_id`, `landing_clicks` and `oos_at_write`; `dim_product_current` for prices) and the Databricks `agg_campaign_daily`. There is no Silver read and no Spark in this task: both sides of the exposed-spend ratio come from the same Postgres table.
 - Produces:
-  - `exposed_spend(spend, oos_clicks, clicks) -> Decimal | None`.
-  - `assemble_campaign_rows(report_date, today, campaigns, spend_rows, clicks_by_utm, oos_by_utm) -> list[dict]`.
-  - `assemble_product_rows(report_date, oos_carts_by_product, price_by_product, limit=5) -> list[dict]`.
-  - Postgres tables `marketing_d1_campaign` (key `report_date, campaign_id`) and `marketing_d1_product` (key `report_date, product_id`).
+  - `exposed_spend(spend, oos_clicks, served_clicks) -> Decimal | None`.
+  - `assemble_campaign_rows(report_date, today, campaigns, spend_rows, served_by_campaign, oos_by_campaign) -> list[dict]` (both click dicts are keyed by `campaign_id`).
+  - `assemble_product_rows(report_date, oos_demand_by_pair, price_by_product) -> list[dict]`: EVERY (store, product) pair with demand flagged out of stock on the day, no limit; the Grafana and Power BI visuals do Top N.
+  - `cairo_yesterday(now) -> date`, `read_spend_rows(dbx_store, report_date)`, `read_oos_demand(pg_store, report_date)`, `read_prices(pg_store)`.
+  - Postgres tables `marketing_d1_campaign` (key `report_date, campaign_id`) and `marketing_d1_product` (key `report_date, store_id, product_id`).
   - `scripts/build_d1_marketing.py [--date YYYY-MM-DD]` (default: yesterday in Cairo).
+
+**Day rule (the same sentence is in spec section 9, `dashboards/powerbi/MODEL.md` and `docs/metrics.md`).** Ad spend and ad clicks are the ad API's UTC day. Orders and demand are the Cairo day. `agg_campaign_daily.report_date` is the ad day. The D-1 job takes yesterday in Cairo for the demand (`live_oos_demand_minute`, Cairo day) and reads the ad row whose `report_date` has the same date value. The two days differ by at most 3 hours (Cairo is UTC+3 in summer and UTC+2 in winter); the mismatch is accepted and the page says so.
+
+**Exposed spend (one definition).** `exposed_spend = spend x oos_clicks / served_clicks`. `served_clicks` is the number of landing clicks (product views that carry a campaign) in served districts, `oos_clicks` the part of them in minutes flagged `oos_at_write` (stock when the minute was written). Both come from `live_oos_demand_minute` (equal to the sums of `oos_demand_daily`), so numerator and denominator have the same population and click definition. It is an estimate, assuming spend is spread evenly over served landing clicks. It is not an upper bound and the pages never call it one.
 
 - [ ] **Step 1: Write the failing host test**
 
 `tests/test_d1_marketing.py`:
 
 ```python
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from warehouse.d1_marketing import assemble_campaign_rows, assemble_product_rows, exposed_spend
+from warehouse.d1_marketing import (assemble_campaign_rows, assemble_product_rows, cairo_yesterday, exposed_spend,
+                                    read_oos_demand, read_prices)
 
 D = date(2026, 10, 9)
 CAMPAIGNS = [{"campaign_id": "camp_201", "utm_campaign": "eid_sale_1"}, {"campaign_id": "camp_202", "utm_campaign": "ramadan_offer_1"}]
 SPEND = [dict(campaign_id="camp_201", spend=Decimal("1000.0000"), clicks=500, orders_placed=20,
               revenue_placed=Decimal("5000.00"), revenue_delivered=Decimal("4000.00"), cpa=Decimal("50.00"),
               roas_placed=Decimal("5.00"), roas_delivered=Decimal("4.00"))]
+SERVED, OOS = {"camp_201": 120}, {"camp_201": 30}
+
+
+class FakePg:
+    """Answers the three queries of the readers and records their text."""
+
+    def __init__(self):
+        self.sql = []
+
+    def query(self, sql, params=None):
+        self.sql.append(sql)
+        if "dim_product_current" in sql:
+            return [("p1", Decimal("100.00"))]
+        if "GROUP BY campaign_id" in sql:
+            return [("camp_201", 120, 30), ("direct", 0, 0)]
+        return [("store_a", "p1", 7, 4)]
 
 
 def test_exposed_spend_is_spend_times_the_out_of_stock_click_share():
@@ -2695,16 +2892,16 @@ def test_exposed_spend_is_spend_times_the_out_of_stock_click_share():
     assert exposed_spend(Decimal("1000"), 0, 120) == Decimal("0.00")
 
 
-def test_exposed_spend_is_none_without_clicks_or_spend():
+def test_exposed_spend_is_none_without_served_clicks_or_spend():
     assert exposed_spend(Decimal("1000"), 5, 0) is None
     assert exposed_spend(None, 5, 10) is None
 
 
-def test_the_campaign_row_joins_spend_with_the_click_counts_through_the_utm_name():
-    rows = assemble_campaign_rows(D, date(2026, 10, 10), CAMPAIGNS, SPEND, {"eid_sale_1": 120}, {"eid_sale_1": 30})
+def test_the_campaign_row_joins_spend_with_the_click_counts_through_the_campaign_id():
+    rows = assemble_campaign_rows(D, date(2026, 10, 10), CAMPAIGNS, SPEND, SERVED, OOS)
     [row] = rows  # camp_202 has no spend row: it is not reported
     assert row["campaign_id"] == "camp_201" and row["utm_campaign"] == "eid_sale_1"
-    assert (row["landing_clicks"], row["oos_clicks"]) == (120, 30)
+    assert (row["served_clicks"], row["oos_clicks"]) == (120, 30)
     assert row["oos_click_share"] == Decimal("0.2500")
     assert row["exposed_spend"] == Decimal("250.00")
     assert row["spend"] == Decimal("1000.00") and row["roas_delivered"] == Decimal("4.00")
@@ -2712,22 +2909,39 @@ def test_the_campaign_row_joins_spend_with_the_click_counts_through_the_utm_name
 
 
 def test_a_recent_day_is_provisional_and_an_old_one_is_not():
-    recent = assemble_campaign_rows(D, date(2026, 10, 10), CAMPAIGNS, SPEND, {"eid_sale_1": 10}, {})[0]
-    old = assemble_campaign_rows(D, date(2026, 10, 14), CAMPAIGNS, SPEND, {"eid_sale_1": 10}, {})[0]
+    recent = assemble_campaign_rows(D, date(2026, 10, 10), CAMPAIGNS, SPEND, {"camp_201": 10}, {})[0]
+    old = assemble_campaign_rows(D, date(2026, 10, 14), CAMPAIGNS, SPEND, {"camp_201": 10}, {})[0]
     assert recent["provisional"] is True and old["provisional"] is False
 
 
-def test_a_campaign_without_clicks_has_no_share_and_no_exposed_spend():
+def test_a_campaign_without_served_clicks_has_no_share_and_no_exposed_spend():
     [row] = assemble_campaign_rows(D, date(2026, 10, 10), CAMPAIGNS, SPEND, {}, {})
-    assert row["landing_clicks"] == 0 and row["oos_click_share"] is None and row["exposed_spend"] is None
+    assert row["served_clicks"] == 0 and row["oos_click_share"] is None and row["exposed_spend"] is None
 
 
-def test_the_top_products_by_revenue_at_risk():
-    rows = assemble_product_rows(D, {"p1": 10, "p2": 3, "p3": 8, "p4": 1, "p5": 2, "p6": 4},
-                                 {"p1": Decimal("100.00"), "p2": Decimal("900.00"), "p3": Decimal("50.00"),
-                                  "p4": Decimal("10.00"), "p5": Decimal("5.00")})  # p6 has no price: skipped
-    assert [r["product_id"] for r in rows] == ["p2", "p1", "p3", "p4", "p5"]
+def test_every_out_of_stock_product_of_the_day_is_kept_per_store():
+    demand = {("s1", "p1"): (4, 10), ("s2", "p1"): (1, 2), ("s1", "p2"): (6, 3), ("s1", "p6"): (2, 4), ("s1", "p7"): (5, 0)}
+    prices = {"p1": Decimal("100.00"), "p2": Decimal("900.00"), "p7": Decimal("5.00")}  # p6 has no price
+    rows = assemble_product_rows(D, demand, prices)
+    assert len(rows) == 5  # no Top N here: the visual does it
+    assert [(r["store_id"], r["product_id"]) for r in rows] == [("s1", "p2"), ("s1", "p1"), ("s2", "p1"), ("s1", "p7"), ("s1", "p6")]
     assert rows[0]["oos_add_to_carts"] == 3 and rows[0]["revenue_at_risk"] == Decimal("2700.00")
+    assert rows[3]["revenue_at_risk"] == Decimal("0.00") and rows[4]["revenue_at_risk"] is None  # kept, but unpriced
+
+
+def test_the_default_day_is_yesterday_on_the_cairo_calendar():
+    assert cairo_yesterday(datetime(2026, 10, 9, 22, 30, tzinfo=timezone.utc)) == date(2026, 10, 9)  # 01:30 on the 10th in Cairo
+    assert cairo_yesterday(datetime(2026, 10, 9, 20, 30, tzinfo=timezone.utc)) == date(2026, 10, 8)  # 23:30 on the 9th in Cairo
+
+
+def test_both_sides_of_the_share_and_the_prices_come_from_postgres_not_from_silver():
+    pg = FakePg()
+    served, oos, pairs = read_oos_demand(pg, D)
+    assert served == {"camp_201": 120, "direct": 0} and oos == {"camp_201": 30, "direct": 0}
+    assert pairs == {("store_a", "p1"): (7, 4)}
+    assert read_prices(pg) == {"p1": Decimal("100.00")}
+    assert all("live_oos_demand_minute" in s or "dim_product_current" in s for s in pg.sql)
+    assert not any("silver" in s.lower() for s in pg.sql)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -2742,57 +2956,77 @@ Expected: collection error (`warehouse.d1_marketing` missing).
 ```python
 """Marketing D-1 mart (inventory design, section 9).
 
-The pure functions turn yesterday's numbers into the rows of two Postgres tables. The three readers (Databricks spend,
-local Silver clicks, Postgres out-of-stock demand) are thin and live below. The metric is an ESTIMATE: spend is only
-known per campaign and day, so it is spread over clicks, and a customer who met an empty shelf may have bought a
-substitute. It is titled "estimated spend exposed to out-of-stock" everywhere.
+The pure functions turn yesterday's numbers into the rows of two Postgres tables. The readers (Databricks spend,
+Postgres demand and prices) are thin and live below.
+
+Day rule: ad spend and ad clicks are the ad API's UTC day; orders and demand are the Cairo day;
+agg_campaign_daily.report_date is the ad day. The job takes yesterday in Cairo for the demand and the ad row with the
+same date value; the mismatch is at most 3 hours and is accepted.
+
+The metric is an ESTIMATE: exposed_spend = spend x oos_clicks / served_clicks, both counts from live_oos_demand_minute
+(served districts only, the same landing-click definition), assuming spend is spread evenly over served landing clicks.
+The out-of-stock flag is the stock when the minute was written (not replay-safe). It is titled "estimated spend exposed
+to out-of-stock" everywhere.
 """
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from zoneinfo import ZoneInfo
 
 PROVISIONAL_DAYS = 3  # ROAS delivered matures one to three days after the order day
+CAIRO = ZoneInfo("Africa/Cairo")
 _CENT, _SHARE = Decimal("0.01"), Decimal("0.0001")
 
 
-def exposed_spend(spend, oos_clicks, clicks):
-    """spend * oos_clicks / clicks to two decimals; None when there are no clicks or no spend."""
-    if spend is None or not clicks:
+def cairo_yesterday(now):
+    """The default D-1 date: yesterday on the Cairo calendar (`now` is an aware datetime)."""
+    return now.astimezone(CAIRO).date() - timedelta(days=1)
+
+
+def exposed_spend(spend, oos_clicks, served_clicks):
+    """spend * oos_clicks / served_clicks to two decimals; None when there are no served clicks or no spend."""
+    if spend is None or not served_clicks:
         return None
-    return (Decimal(str(spend)) * oos_clicks / clicks).quantize(_CENT, rounding=ROUND_HALF_UP)
+    return (Decimal(str(spend)) * oos_clicks / served_clicks).quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def assemble_campaign_rows(report_date, today, campaigns, spend_rows, clicks_by_utm, oos_by_utm):
+def assemble_campaign_rows(report_date, today, campaigns, spend_rows, served_by_campaign, oos_by_campaign):
     """One row per campaign that has a spend row for the day (campaigns: dicts with campaign_id and utm_campaign)."""
     utm_of = {c["campaign_id"]: c["utm_campaign"] for c in campaigns}
     provisional = (today - report_date) < timedelta(days=PROVISIONAL_DAYS)
     out = []
     for s in spend_rows:
-        utm = utm_of.get(s["campaign_id"], "")
-        clicks, oos = int(clicks_by_utm.get(utm, 0)), int(oos_by_utm.get(utm, 0))
-        share = (Decimal(oos) / Decimal(clicks)).quantize(_SHARE, rounding=ROUND_HALF_UP) if clicks else None
-        out.append(dict(report_date=report_date, campaign_id=s["campaign_id"], utm_campaign=utm,
+        cid = s["campaign_id"]
+        served, oos = int(served_by_campaign.get(cid, 0)), int(oos_by_campaign.get(cid, 0))
+        share = (Decimal(oos) / Decimal(served)).quantize(_SHARE, rounding=ROUND_HALF_UP) if served else None
+        out.append(dict(report_date=report_date, campaign_id=cid, utm_campaign=utm_of.get(cid, ""),
                         spend=None if s["spend"] is None else Decimal(str(s["spend"])).quantize(_CENT),
                         ad_clicks=s["clicks"], orders_placed=s["orders_placed"], revenue_placed=s["revenue_placed"],
                         revenue_delivered=s["revenue_delivered"], cpa=s["cpa"], roas_placed=s["roas_placed"],
-                        roas_delivered=s["roas_delivered"], landing_clicks=clicks, oos_clicks=oos,
-                        oos_click_share=share, exposed_spend=exposed_spend(s["spend"], oos, clicks),
+                        roas_delivered=s["roas_delivered"], served_clicks=served, oos_clicks=oos,
+                        oos_click_share=share, exposed_spend=exposed_spend(s["spend"], oos, served),
                         provisional=provisional))
     return out
 
 
-def assemble_product_rows(report_date, oos_carts_by_product, price_by_product, limit=5):
-    """The `limit` products with the most revenue at risk (add-to-carts on empty stock times price)."""
-    rows = [dict(report_date=report_date, product_id=pid, oos_add_to_carts=int(n),
-                 revenue_at_risk=(Decimal(str(price_by_product[pid])) * int(n)).quantize(_CENT))
-            for pid, n in oos_carts_by_product.items() if pid in price_by_product]
-    rows.sort(key=lambda r: (-r["revenue_at_risk"], r["product_id"]))
-    return rows[:limit]
+def assemble_product_rows(report_date, oos_demand_by_pair, price_by_product):
+    """One row per (store, product) with demand flagged out of stock that day; every pair is kept, the visual does Top N.
+
+    oos_demand_by_pair: {(store_id, product_id): (oos_views, oos_add_to_carts)}. revenue_at_risk is add-to-carts times
+    price, NULL when the product has no price. Sorted by revenue at risk, then store and product."""
+    rows = []
+    for (store_id, product_id), (views, carts) in oos_demand_by_pair.items():
+        price = price_by_product.get(product_id)
+        rows.append(dict(report_date=report_date, store_id=store_id, product_id=product_id, oos_views=int(views),
+                         oos_add_to_carts=int(carts),
+                         revenue_at_risk=None if price is None else (Decimal(str(price)) * int(carts)).quantize(_CENT)))
+    rows.sort(key=lambda r: (r["revenue_at_risk"] is None, -(r["revenue_at_risk"] or 0), r["store_id"], r["product_id"]))
+    return rows
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run the pure tests**
 
-Run: `.venv\Scripts\python -m pytest tests\test_d1_marketing.py -q`
-Expected: 7 passed.
+Run: `.venv\Scripts\python -m pytest tests	est_d1_marketing.py -q`
+Expected: collection error `cannot import name 'read_oos_demand'`: the readers are added in Step 5, and the whole file passes in Step 6. (To see the pure functions pass first, temporarily comment out the last test and its two imports.)
 
 - [ ] **Step 5: Tables, readers and the script**
 
@@ -2801,18 +3035,22 @@ Expected: 7 passed.
 ```python
 _D1_CAMPAIGN = ("report_date:date campaign_id:string utm_campaign:string spend:decimal(12,2)? ad_clicks:bigint? "
                 "orders_placed:bigint? revenue_placed:decimal(12,2)? revenue_delivered:decimal(12,2)? cpa:decimal(12,2)? "
-                "roas_placed:decimal(12,2)? roas_delivered:decimal(12,2)? landing_clicks:bigint oos_clicks:bigint "
+                "roas_placed:decimal(12,2)? roas_delivered:decimal(12,2)? served_clicks:bigint oos_clicks:bigint "
                 "oos_click_share:decimal(8,4)? exposed_spend:decimal(12,2)? provisional:boolean")
-_D1_PRODUCT = "report_date:date product_id:string oos_add_to_carts:bigint revenue_at_risk:decimal(12,2)"
+_D1_PRODUCT = ("report_date:date store_id:string product_id:string oos_views:bigint oos_add_to_carts:bigint "
+               "revenue_at_risk:decimal(12,2)?")
 ```
 
-and the two `Table(...)` entries (keys `("report_date", "campaign_id")` and `("report_date", "product_id")`). In `warehouse/live_ddl.sql` add the matching `CREATE TABLE IF NOT EXISTS marketing_d1_campaign (...)` and `marketing_d1_product (...)` with the same column names, `numeric(12,2)` / `numeric(8,4)` for the decimals, `date` for `report_date`, and primary keys as above, and add both names to the GRANT list. Update the table count (`10`) in `tests/test_live_stock_sink.py`.
+and the two `Table(...)` entries (keys `("report_date", "campaign_id")` and `("report_date", "store_id", "product_id")`). In `warehouse/live_ddl.sql` add the matching `CREATE TABLE IF NOT EXISTS marketing_d1_campaign (...)` and `marketing_d1_product (...)` with the same column names, `numeric(12,2)` / `numeric(8,4)` for the decimals, `date` for `report_date`, and primary keys as above, and add both names to the GRANT list. Update the table count in `tests/test_live_stock_sink.py` from 13 to 15.
 
 Append the readers to `warehouse/d1_marketing.py`:
 
 ```python
+_CAIRO_DAY = "(minute_start AT TIME ZONE 'Africa/Cairo')::date = %s"
+
+
 def read_spend_rows(dbx_store, report_date):
-    """D-1 rows of agg_campaign_daily (last touch) from Databricks."""
+    """D-1 rows of agg_campaign_daily (last touch) from Databricks: the ad row whose report_date has the same date value."""
     sql = ("SELECT campaign_id, spend, clicks, orders_placed, revenue_placed, revenue_delivered, cpa, roas_placed, "
            "roas_delivered FROM %s WHERE report_date = DATE'%s' AND attribution_model = 'last_touch'"
            % (dbx_store.qualified("agg_campaign_daily"), report_date.isoformat()))
@@ -2821,85 +3059,68 @@ def read_spend_rows(dbx_store, report_date):
     return [dict(zip(cols, r)) for r in dbx_store.query(sql)]
 
 
-def read_landing_clicks(spark, silver_root, report_date):
-    """{utm_campaign: landing clicks} of the Cairo day, from local Silver (product views that carry a campaign)."""
-    from pyspark.sql import functions as F
-    from warehouse.live_common import _read
-    events = _read(spark, silver_root, "silver_events")
-    if events is None:
-        return {}
-    rows = (events.where((F.col("event_date") == F.lit(report_date.isoformat()).cast("date"))
-                         & (F.col("event_type") == "product_view") & F.col("utm_campaign").isNotNull())
-            .groupBy("utm_campaign").count().collect())
-    return {r["utm_campaign"]: int(r["count"]) for r in rows}
-
-
 def read_oos_demand(pg_store, report_date):
-    """(oos landing clicks by utm_campaign, oos add-to-carts by product) of the Cairo day from live_oos_demand_minute."""
-    day = "(minute_start AT TIME ZONE 'Africa/Cairo')::date = %s"
-    clicks = {u: int(n) for u, n in pg_store.query(
-        "SELECT utm_campaign, sum(landing_clicks) FROM live_oos_demand_minute WHERE " + day + " AND utm_campaign <> '' "
-        "GROUP BY utm_campaign", (report_date,))}
-    carts = {p: int(n) for p, n in pg_store.query(
-        "SELECT product_id, sum(add_to_cart) FROM live_oos_demand_minute WHERE " + day + " GROUP BY product_id",
-        (report_date,))}
-    return clicks, carts
+    """(served clicks by campaign_id, out-of-stock clicks by campaign_id, {(store, product): (oos views, oos add-to-carts)}).
+
+    All three come from live_oos_demand_minute for the Cairo day, so numerator and denominator of the share have the same
+    population: landing clicks in served districts. 'Out of stock' is the oos_at_write flag."""
+    served, oos = {}, {}
+    for cid, n_served, n_oos in pg_store.query(
+            "SELECT campaign_id, sum(landing_clicks), coalesce(sum(landing_clicks) FILTER (WHERE oos_at_write), 0) "
+            "FROM live_oos_demand_minute WHERE " + _CAIRO_DAY + " GROUP BY campaign_id", (report_date,)):
+        served[cid], oos[cid] = int(n_served), int(n_oos)
+    pairs = {(store_id, product_id): (int(views), int(carts)) for store_id, product_id, views, carts in pg_store.query(
+        "SELECT store_id, product_id, sum(views), sum(add_to_cart) FROM live_oos_demand_minute WHERE " + _CAIRO_DAY
+        + " AND oos_at_write GROUP BY store_id, product_id", (report_date,))}
+    return served, oos, pairs
 
 
-def read_prices(spark, silver_root):
-    """{product_id: price} from local silver_products (latest version per product)."""
-    from pyspark.sql import Window, functions as F
-    from warehouse.live_common import _read
-    products = _read(spark, silver_root, "silver_products")
-    if products is None:
-        return {}
-    w = Window.partitionBy("product_id").orderBy(F.col("updated_at").desc())
-    rows = products.withColumn("_rn", F.row_number().over(w)).where("_rn = 1").select("product_id", "price").collect()
-    return {r["product_id"]: Decimal(str(r["price"])) for r in rows}
+def read_prices(pg_store):
+    """{product_id: price} from dim_product_current (filled by scripts/apply_live_ddl.py from silver_products)."""
+    return {pid: Decimal(str(price)) for pid, price in
+            pg_store.query("SELECT product_id, price FROM dim_product_current WHERE price IS NOT NULL")}
 ```
 
 `scripts/build_d1_marketing.py`:
 
 ```python
-"""Build the marketing D-1 mart in Postgres for one Cairo day (default: yesterday).
+"""Build the marketing D-1 mart in Postgres for one Cairo day (default: yesterday in Cairo).
 
-Needs Databricks settings (the spend) and PG_DSN: run it in the spark container:
+Day rule: the demand is the Cairo day, the ad row is the row whose report_date (the ad API's UTC day) has the same date
+value; the mismatch of at most 3 hours is accepted. Needs Databricks settings (the spend) and PG_DSN, not Spark:
   docker compose run --rm spark python scripts/build_d1_marketing.py [--date 2026-10-09]
 """
 import argparse
 import os
 import sys
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timezone
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from simulator.campaigns import CAMPAIGNS
-from streaming.common.spark import get_spark
 from warehouse import d1_marketing as d1
 from warehouse.store import get_store
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--date", help="Cairo day to report, YYYY-MM-DD (default yesterday)")
-    ap.add_argument("--lake", default="data/lake")
+    ap.add_argument("--date", help="Cairo day to report, YYYY-MM-DD (default yesterday in Cairo)")
     args = ap.parse_args(argv)
-    today = datetime.now(ZoneInfo("Africa/Cairo")).date()
-    report_date = date.fromisoformat(args.date) if args.date else today - timedelta(days=1)
-    lake = os.path.abspath(args.lake)
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(d1.CAIRO).date()
+    report_date = date.fromisoformat(args.date) if args.date else d1.cairo_yesterday(now)
     dbx, pg = get_store("databricks"), get_store("postgres")
     try:
-        spark = get_spark("d1_marketing")
         spend = d1.read_spend_rows(dbx, report_date)
-        clicks = d1.read_landing_clicks(spark, lake, report_date)
-        oos_clicks, oos_carts = d1.read_oos_demand(pg, report_date)
-        campaign_rows = d1.assemble_campaign_rows(report_date, today, CAMPAIGNS, spend, clicks, oos_clicks)
-        product_rows = d1.assemble_product_rows(report_date, oos_carts, d1.read_prices(spark, lake))
-        pg.upsert("marketing_d1_campaign", campaign_rows, ["report_date", "campaign_id"])
-        pg.upsert("marketing_d1_product", product_rows, ["report_date", "product_id"])
+        served, oos, pairs = d1.read_oos_demand(pg, report_date)
+        campaign_rows = d1.assemble_campaign_rows(report_date, today, CAMPAIGNS, spend, served, oos)
+        product_rows = d1.assemble_product_rows(report_date, pairs, d1.read_prices(pg))
+        if campaign_rows:
+            pg.upsert("marketing_d1_campaign", campaign_rows, ["report_date", "campaign_id"])
+        if product_rows:
+            pg.upsert("marketing_d1_product", product_rows, ["report_date", "store_id", "product_id"])
     finally:
         dbx.close()
         pg.close()
@@ -2911,37 +3132,10 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 6: Spark test for the Silver reader**
+- [ ] **Step 6: Run the host test again**
 
-`tests/test_d1_marketing_spark.py`:
-
-```python
-from datetime import date
-
-import pytest
-
-pytestmark = pytest.mark.spark
-
-from test_g1_live_spark import ev, write_events  # noqa: E402
-from warehouse import d1_marketing as d1  # noqa: E402
-
-
-def test_landing_clicks_count_product_views_with_a_campaign_on_the_cairo_day(spark, tmp_path):
-    lake = str(tmp_path / "lake")
-    rows = [dict(ev(1, 0, "EG", "product_view"), product_id="prod_1", utm_campaign="eid_sale_1"),
-            dict(ev(2, 1, "EG", "product_view"), product_id="prod_2", utm_campaign="eid_sale_1"),
-            dict(ev(3, 1, "EG", "product_view"), product_id="prod_2", utm_campaign=None),
-            dict(ev(4, 2, "EG", "add_to_cart"), product_id="prod_2", utm_campaign="eid_sale_1"),
-            dict(ev(5, 2, "EG", "product_view"), product_id="prod_3", utm_campaign="ramadan_offer_1")]
-    write_events(spark, lake, rows)
-    day = rows[0]["event_date"]
-    assert d1.read_landing_clicks(spark, lake, day) == {"eid_sale_1": 2, "ramadan_offer_1": 1}
-    assert d1.read_landing_clicks(spark, lake, date(2020, 1, 1)) == {}
-    assert d1.read_landing_clicks(spark, str(tmp_path / "empty"), day) == {}
-```
-
-Run: `docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/test_d1_marketing_spark.py -q -p no:cacheprovider`
-Expected: PASS.
+Run: `.venv\Scripts\python -m pytest tests\test_d1_marketing.py -q`
+Expected: 8 passed. There is no Spark test in this task: the Silver reader of the first draft is gone, so no Silver denominator can disagree with the Postgres numerator.
 
 - [ ] **Step 7: The Grafana page**
 
@@ -2951,16 +3145,16 @@ In `monitoring/dashboards.py` add `build_marketing_d1()` returning `dashboard("f
 3. stat "ROAS placed": `SELECT coalesce(sum(revenue_placed) / nullif(sum(spend), 0), 0) AS "roas placed" ...`
 4. stat "ROAS delivered (provisional for recent days)": same with `revenue_delivered`.
 5. stat "Estimated spend exposed to out-of-stock (EGP)": `sum(exposed_spend)`.
-6. stat "Out-of-stock click share": `coalesce(sum(oos_clicks)::numeric / nullif(sum(landing_clicks), 0), 0)` with `unit="percentunit"`.
-7. table "Campaigns, sorted by exposed spend": `SELECT campaign_id, utm_campaign, spend, orders_placed, cpa, roas_placed, roas_delivered, landing_clicks, oos_clicks, oos_click_share, exposed_spend, provisional FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign) ORDER BY exposed_spend DESC NULLS LAST`
-8. table "Top 5 products by revenue at risk": `SELECT product_id, oos_add_to_carts, revenue_at_risk FROM marketing_d1_product WHERE report_date = (SELECT max(report_date) FROM marketing_d1_product) ORDER BY revenue_at_risk DESC`
-9. text note: "Simulated data. Exposed spend = spend x share of landing clicks that met an out-of-stock product; it is an estimate and an upper bound (a customer may buy a substitute). Recent days are provisional: ROAS delivered matures after 1 to 3 days."
+6. stat "Out-of-stock click share": `coalesce(sum(oos_clicks)::numeric / nullif(sum(served_clicks), 0), 0)` with `unit="percentunit"`.
+7. table "Campaigns, sorted by exposed spend": `SELECT campaign_id, utm_campaign, spend, orders_placed, cpa, roas_placed, roas_delivered, served_clicks, oos_clicks, oos_click_share, exposed_spend, provisional FROM marketing_d1_campaign WHERE report_date = (SELECT max(report_date) FROM marketing_d1_campaign) ORDER BY exposed_spend DESC NULLS LAST`
+8. table "Top 5 products by revenue at risk": `SELECT s.store_name AS "store", coalesce(p.name, m.product_id) AS "product", m.oos_add_to_carts, m.revenue_at_risk FROM marketing_d1_product m JOIN dim_store s ON s.store_id = m.store_id LEFT JOIN dim_product_current p ON p.product_id = m.product_id WHERE m.report_date = (SELECT max(report_date) FROM marketing_d1_product) ORDER BY m.revenue_at_risk DESC NULLS LAST LIMIT 5` (the mart keeps every out-of-stock product; the limit is the panel's, so the card sums stay whole).
+9. text note: "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend is the ad platform's UTC day, orders and demand are the Cairo day: they differ by at most 3 hours. Recent days are provisional: ROAS delivered matures after 1 to 3 days."
 
-Add `"marketing-d1.json": dashboards.build_marketing_d1` to `FILES` in `scripts/gen_dashboards.py`, run it, and extend `tests/test_inventory_dashboards.py` with the same drift, datasource and table-allow-list checks for the marketing dashboard (allowed tables: `marketing_d1_campaign`, `marketing_d1_product`; the sub-select `FROM marketing_d1_campaign` inside the query is found by the same regex).
+Add `"marketing-d1.json": dashboards.build_marketing_d1` to `FILES` in `scripts/gen_dashboards.py`, run it, and extend `tests/test_inventory_dashboards.py` with the same drift, datasource and table-allow-list checks for the marketing dashboard (allowed tables: `marketing_d1_campaign`, `marketing_d1_product`, `dim_store`, `dim_product_current`; the sub-select `FROM marketing_d1_campaign` inside the query is found by the same regex), plus: no panel text or description contains the words "upper bound".
 
 - [ ] **Step 8: Run everything and try it on the real data**
 
-Host suite and the two new Spark files. Then, with the real stack and a day of data: `docker compose run --rm spark python scripts/apply_live_ddl.py`, `docker compose run --rm spark python scripts/build_d1_marketing.py --date <a day that has data>`. Expected: `D-1 <date>: N campaign rows, M product rows` and rows visible in the Grafana page. (The Databricks read needs the real workspace; if it is unreachable, report that, do not fake rows.)
+Host suite. Then, with the real stack and a day of data: `docker compose run --rm spark python scripts/apply_live_ddl.py` (expect 15 tables ready), `docker compose run --rm spark python scripts/build_d1_marketing.py --date <a day that has data>`. Expected: `D-1 <date>: N campaign rows, M product rows` and rows visible in the Grafana page. (The Databricks read needs the real workspace; if it is unreachable, report that, do not fake rows.)
 
 - [ ] **Step 9: Commit** (only when told to commit)
 
@@ -3048,7 +3242,7 @@ Run the real smoke test only after Tasks 1 to 10 (and 9B) are verified and the p
 ## Self-review
 
 1. **Spec coverage.** Purpose and success criteria: Tasks 7, 8, 9, 10. Contracts (section 4): Tasks 1, 2. Store map (section 5): Task 3. Simulator model and scenario (section 6): Tasks 5, 6. Silver and live serving (section 7): Tasks 2, 4, 7. Operations dashboard and alert (section 8): Task 8. Marketing D-1 (section 9): Task 9. Testing (section 10): every task is test first; Spark tests per file. Order and risks (section 11): the header order and Task 9 as the cut candidate. Assumptions (section 12): written into Global Constraints and the Task 7 definitions. Not covered on purpose: the Databricks mirror and `agg_oos_demand_daily` (spec says only if time remains).
-2. **One deliberate change against the spec.** The spec computes the D-1 out-of-stock clicks from "hourly stock state". This plan reuses the out-of-stock demand the live sink already records minute by minute (`landing_clicks` and `utm_campaign` columns on `live_oos_demand_minute`), which needs no extra Spark logic and keeps the live and D-1 numbers identical. The cost: the D-1 number is point in time at sink writing time, accurate to about one Silver batch, which the dashboards state. Spec section 12 already allows an approximate D-1.
+2. **Spec and plan agree.** The D-1 out-of-stock clicks are not computed from an hourly stock state: the plan reuses the demand the live sink records minute by minute in `live_oos_demand_minute` (all served demand, `campaign_id`, `landing_clicks`, `oos_at_write`), and spec sections 7 and 9 now say so. Both sides of the exposed-spend ratio come from that table. The cost: the flag is the stock when the minute was written, not replay-safe, which the dashboards and documents state as a limitation.
 3. **Placeholders.** None: every step has code or an exact command. The only value that depends on running code is `DEFAULT_HERO_UNITS`, with a test that fails if it is wrong and a rule for fixing it (lower the constant, never the test).
 4. **Type and name consistency.** `StockLedger` methods `opening/order/due/finish` are used identically in `iter_batch` (Task 5) and `add_inventory` (Task 6). `compute_stock_rows(spark, root, pairs, now)` and `compute_demand_rows(spark, root, minutes)` match between `live_stock.py`, the stubs in `test_live_stock_sink.py` and `LiveSink`. `DEMAND_KEYS` equals the table key in `live_tables.py` and the DDL. `stats["stock_pairs"]` (Task 2) is what `silver_clean.handle` passes to `on_batch(stock_pairs=...)` (Task 7).
 5. **Review Focus.** All five lines have a test: replay (Task 2 Spark, Task 7), late movement (Task 7), unserved customers (Tasks 3 and 5), oversold clamp (Task 5), failing compute (Task 7).

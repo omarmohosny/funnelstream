@@ -25,6 +25,11 @@
 //  5. Stock is semi-additive: closing stock is never summed over days (see "Closing Stock"); sales and receipts are
 //     flows and add normally.
 //  6. All inventory data is SIMULATED. Reservations are out of scope, so available stock equals on-hand stock.
+//  7. Day rule: ad measures (Spend, Impressions, Ad Clicks) are the ad API's UTC day; order and demand measures are the
+//     Cairo day; 'Campaign Daily'[report_date] is the ad day. The mismatch is at most 3 hours and is accepted
+//     (MODEL.md, section 3). ROAS is a period ratio: read it over a week or a campaign flight, not as a daily truth.
+//  8. "Out of stock" in the demand measures is the stock when the live sink wrote the minute (oos_at_write); it is not
+//     replay-safe (MODEL.md, section 3).
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Campaign \ Base
@@ -239,26 +244,30 @@ RETURN
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Inventory \ Demand on empty shelves
-// 'OOS Demand Daily' keeps only demand that met a store and product with zero available stock when the sink wrote it.
+// 'OOS Demand Daily' has one row per day, store, product and campaign. The served_* columns hold ALL served demand; the
+// oos_* columns hold the part in minutes flagged out of stock when the sink wrote them (stock when the minute was written).
 // ---------------------------------------------------------------------------------------------------------------
-OOS Views = SUM ( 'OOS Demand Daily'[views] )
+OOS Views = SUM ( 'OOS Demand Daily'[oos_views] )
 
-OOS Add to Cart = SUM ( 'OOS Demand Daily'[add_to_cart] )
+OOS Add to Cart = SUM ( 'OOS Demand Daily'[oos_add_to_cart] )
 
-OOS Landing Clicks = SUM ( 'OOS Demand Daily'[landing_clicks] )
+Served Demand Clicks = SUM ( 'OOS Demand Daily'[served_clicks] )   // all landing clicks in served districts
+
+OOS Demand Clicks = SUM ( 'OOS Demand Daily'[oos_clicks] )   // the flagged part of the same clicks
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Marketing and inventory
-// 'Marketing D1 Campaign' is the daily mart: campaign spend joined with the share of landing clicks on empty shelves.
+// 'Marketing D1 Campaign' is the daily mart: campaign spend joined with the share of served landing clicks on empty shelves.
 // ---------------------------------------------------------------------------------------------------------------
-Landing Clicks = SUM ( 'Marketing D1 Campaign'[landing_clicks] )
+Served Clicks = SUM ( 'Marketing D1 Campaign'[served_clicks] )   // landing clicks in served districts: the denominator
 
-OOS Clicks = SUM ( 'Marketing D1 Campaign'[oos_clicks] )
+OOS Clicks = SUM ( 'Marketing D1 Campaign'[oos_clicks] )   // the part in minutes flagged out of stock: the numerator
 
-OOS Click Share = DIVIDE ( [OOS Clicks], [Landing Clicks] )
+OOS Click Share = DIVIDE ( [OOS Clicks], [Served Clicks] )   // both counts come from the same table and population
 
 Exposed Spend =
-// Estimated spend exposed to out-of-stock: spend x share of landing clicks on an empty shelf. An upper bound.
+// Estimated spend exposed to out-of-stock: spend x oos_clicks / served_clicks per campaign and day (the column is summed).
+// An estimate that assumes spend is spread evenly over served landing clicks; the flag is the stock when the minute was written.
 SUM ( 'Marketing D1 Campaign'[exposed_spend] )
 
 Campaign Spend D1 = SUM ( 'Marketing D1 Campaign'[spend] )
@@ -266,7 +275,8 @@ Campaign Spend D1 = SUM ( 'Marketing D1 Campaign'[spend] )
 Exposed Share of Spend = DIVIDE ( [Exposed Spend], [Campaign Spend D1] )
 
 Revenue at Risk =
-// Add-to-carts on empty shelves times price (top products of the day). Revenue the shelf could not serve, not lost revenue.
+// Add-to-carts on empty shelves times price. 'Marketing D1 Product' keeps EVERY out-of-stock product per store, so the total
+// is the whole day's; put the Top N in the visual filter. Revenue the shelf could not serve, not lost revenue.
 SUM ( 'Marketing D1 Product'[revenue_at_risk] )
 
 // ---------------------------------------------------------------------------------------------------------------
