@@ -241,3 +241,14 @@ def test_successful_main_writes_the_report_once(tmp_path, capsys):
     assert rc == 0
     text = report.read_text(encoding="utf-8")
     assert "abc1234" in text and "--events 20000" in text
+
+
+def test_ddl_stage_starts_the_scratch_silver_mirror_empty():
+    """Publish only inserts and a quarantine id is not the same across runs, so rows left by the previous run
+    made the manifest check fail (expected 6053, observed 9013). The ddl stage recreates the mirror tables."""
+    argv = {s.name: s for s in bm.plan(_args())}["ddl"].argv
+    assert "--yes" in argv
+    tables = argv[argv.index("--recreate") + 1].split(",")
+    assert {"silver_events", "silver_orders", "silver_order_status", "silver_order_items", "silver_quarantine",
+            "silver_products", "silver_customers", "silver_campaign_snapshots"} == set(tables)
+    assert "DATABRICKS_CATALOG=workspace" in argv and argv[argv.index("--catalog") + 1] == "workspace"

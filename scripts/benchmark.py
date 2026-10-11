@@ -25,6 +25,10 @@ BENCH_DIR = os.path.join(ROOT, "data", "bench")
 REAL_CATALOG = "funnelstream"
 DEMO_CONTAINERS = ("fs-pipeline", "fs-sync", "fs-bronze", "fs-silver")
 KAFKA_WAIT_SECONDS = 90
+# Silver mirror tables the benchmark publishes into; publish only inserts and a quarantine id is not the same across
+# runs, so rows of the previous run would break the manifest check. Dropped only in the scratch catalog (guard()).
+MIRROR_TABLES = ["silver_events", "silver_orders", "silver_order_status", "silver_order_items", "silver_quarantine",
+                 "silver_products", "silver_customers", "silver_campaign_snapshots"]
 KAFKA_LIST = ["docker", "compose", "exec", "-T", "kafka", "/opt/kafka/bin/kafka-topics.sh",
               "--bootstrap-server", "kafka:19092", "--list"]
 
@@ -133,7 +137,8 @@ def plan(args):
         Stage("silver", [_spark(args, "-m", "streaming.jobs.silver_clean", "--once", "--lake", lake,
                                 "--checkpoints", ck)], rows="messages"),
         Stage("ddl", [_spark(args, "scripts/apply_ddl.py", "--backend", "databricks", "--catalog", args.catalog,
-                             databricks=True)], skip=gold),
+                             "--recreate", ",".join(MIRROR_TABLES), "--yes", databricks=True)], skip=gold,
+              note="recreates the Silver mirror tables of the scratch catalog, so no row of an earlier run is left"),
         Stage("publish", [_spark(args, "scripts/publish_silver.py", "--lake", lake, "--export-dir",
                                  BENCH_REL + "/export", databricks=True)], rows="publish", skip=gold),
         Stage("gold", [_spark(args, "scripts/run_batch.py", "--skip-publish", "--full", "--manifest", manifest,
