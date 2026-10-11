@@ -36,7 +36,9 @@ def pipeline(spark, lake, ckpt, out):
     run(lake, ckpt, once=True).awaitTermination()
     gold = build_all(spark, lake, out)
     return {
-        "silver": {t: _count(spark, silver_path(lake, t)) for t in SILVER_TABLES},
+        # the stock and express tables exist only after inventory events (a run without them never creates them)
+        "silver": {t: _count(spark, silver_path(lake, t)) if os.path.isdir(silver_path(lake, t)) else 0
+                   for t in SILVER_TABLES},
         "reference": {t: _count(spark, silver_path(lake, t)) for t in ("silver_products", "silver_customers")},
         "gold": {t: gold[t].count() for t in GOLD},
     }

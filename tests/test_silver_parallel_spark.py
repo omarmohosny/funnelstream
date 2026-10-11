@@ -15,7 +15,7 @@ import streaming.jobs.silver_clean as silver_clean  # noqa: E402
 from streaming.jobs.silver_clean import process_batch  # noqa: E402
 from test_silver_clean_spark import NOW, bronze_df, silver_counts, simulated  # noqa: E402
 
-JOB_BUDGET = 64  # Spark jobs for one warm batch of the 6,000-event dataset (67 before the fix: 3 extra distinct jobs)
+JOB_BUDGET = 65  # Spark jobs for one warm batch of the 6,000-event dataset: 64 plus one job that lists the tables with rows (empty stock and express tables then cost no job)
 
 
 def _jobs_started(spark, work):

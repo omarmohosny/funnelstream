@@ -19,6 +19,8 @@ if _ROOT not in sys.path:
 # does not have, so the tables to check are named here and their keys are read from SILVER_KEYS at run time.
 TABLES = ["silver_events", "silver_orders", "silver_order_status", "silver_order_items",
           "silver_stock_movements", "silver_stock_snapshots", "silver_express_orders"]
+# Tables that exist only in a lake that ever saw inventory events: absent is normal for a run without --inventory.
+OPTIONAL = {"silver_stock_movements", "silver_stock_snapshots", "silver_express_orders"}
 
 
 def check_lake(spark, lake):
@@ -57,6 +59,10 @@ def run(lake, spark=None, out=print):
     results, missing = check_lake(spark, lake)
     for r in results:
         out(format_line(*r))
+    absent_optional = [t for t in missing if t in OPTIONAL]
+    missing = [t for t in missing if t not in OPTIONAL]
+    if absent_optional:
+        out("Not present (no inventory data in this lake): %s" % ", ".join(absent_optional))
     if missing:
         out("Missing Silver table(s): %s" % ", ".join(missing))
         return 2

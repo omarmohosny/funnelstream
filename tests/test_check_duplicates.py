@@ -79,3 +79,10 @@ def test_failure_demo_parses():
            "if ($e -and $e.Count) { $e | ForEach-Object { $_.Message }; exit 1 }" % DEMO)
     r = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_inventory_and_express_tables_are_optional_but_the_core_tables_are_not():
+    from scripts.check_duplicates import OPTIONAL, TABLES
+    assert OPTIONAL == {"silver_stock_movements", "silver_stock_snapshots", "silver_express_orders"}
+    assert OPTIONAL < set(TABLES)
+    assert {"silver_events", "silver_orders", "silver_order_status", "silver_order_items"}.isdisjoint(OPTIONAL)

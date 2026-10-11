@@ -97,6 +97,10 @@ def _values(pair):
     return pair[1]
 
 
+def _table_name(pair):
+    return pair[0]
+
+
 def load_known_products(lake_root, spark=None):
     """Set of product_ids from silver_products, or None (check skipped, warned once) if it is missing."""
     global _warned_no_products
@@ -248,7 +252,13 @@ def process_batch(spark, bronze_df, lake_root, known_products, now=None, stats=N
         want_minutes = stats is not None and stats.get("collect_minutes")
         to_merge = {}
         stock_pairs = set()
+        # one small job tells which tables the batch has rows for, so empty tables (the stock and express tables in a
+        # run without inventory) cost no persist and no count job; quarantine and status may gain rows from
+        # _cancel_after_ship, so they are always processed
+        present = set(pairs.map(_table_name).distinct().collect()) | {"silver_quarantine", "silver_order_status"}
         for table in SILVER_TABLES:
+            if table not in present:
+                continue
             df = frames[table].dropDuplicates(SILVER_KEYS[table]).persist(StorageLevel.MEMORY_AND_DISK)
             deduped.append(df)
             n, partitions = _count_and_partitions(df, PARTITION_COLS.get(table))

@@ -31,7 +31,8 @@ def test_clean_tables_report_no_duplicates(spark, tmp_path):
     out = []
     assert run(lake, spark, out.append) == 0
     assert out[-1] == "NO DUPLICATES"
-    assert len(out) == 5 and all("duplicate_keys=0" in l for l in out[:4])
+    assert len(out) == 6 and all("duplicate_keys=0" in l for l in out[:4])
+    assert out[4].startswith("Not present (no inventory data in this lake)")  # optional tables, not an error
     assert any(l.startswith("silver_events") and "rows=2" in l for l in out)
 
 

@@ -10,6 +10,9 @@ from streaming.jobs.silver_clean import SILVER_TABLES, process_batch  # noqa: E4
 from warehouse.publish import (PUBLISH_ALLOWLIST, build_publish_statements, export_table,  # noqa: E402
                                publish, upload_directory)
 
+# the stock and express Silver tables are not mirrored to Databricks (they are not in PUBLISH_ALLOWLIST)
+PUBLISHED = [t for t in SILVER_TABLES if t in PUBLISH_ALLOWLIST]
+
 
 class FakeStore:
     def __init__(self):
@@ -82,13 +85,13 @@ def test_publish_end_to_end_with_fakes_and_repeat(spark, tmp_path):
         store, up = FakeStore(), FakeUploader()
         res = publish(spark, lake, str(tmp_path / "export"), store, up, "funnelstream", "silver_upload")
         runs.append((res, list(store.executed)))
-        for table in SILVER_TABLES:
+        for table in PUBLISHED:
             assert res[table]["rows"] == counts[table], table
             assert res[table]["merged"] is True and res[table]["files"] >= 1
         # uploaded files' row total equals the Silver rows per table
         import io
         import pyarrow.parquet as pq
-        for table in SILVER_TABLES:
+        for table in PUBLISHED:
             prefix = "/Volumes/funnelstream/silver/silver_upload/%s/" % table
             total = sum(pq.read_table(io.BytesIO(data)).num_rows for p, data in up.files.items()
                         if p.startswith(prefix))
@@ -98,7 +101,7 @@ def test_publish_end_to_end_with_fakes_and_repeat(spark, tmp_path):
         assert store.executed == [build_publish_statements(t, "funnelstream", "silver_upload")[0]
                                   for t in PUBLISH_ALLOWLIST if t in SILVER_TABLES]
     assert runs[0] == runs[1]  # second publish: same counts, same statements
-    print("\nP2 rows %s statements=%d" % ({t: runs[0][0][t]["rows"] for t in SILVER_TABLES}, len(runs[0][1])))
+    print("\nP2 rows %s statements=%d" % ({t: runs[0][0][t]["rows"] for t in PUBLISHED}, len(runs[0][1])))
 
 
 def test_upload_directory_over_real_export_skips_spark_metadata(spark, tmp_path):

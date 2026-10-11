@@ -1,0 +1,308 @@
+<title>FunnelStream Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: a left-to-right flow in two lanes (live and batch) over a shared spine, then value cards per user.
+   Colour: one hue per stage so a reader can follow data by colour; NEW pieces carry a badge and a stronger ring. */
+:root {
+  --bg: #f4f6fb; --panel: #ffffff; --ink: #14182b; --muted: #5b6380; --line: #d9deee;
+  --src: #7c3aed; --src-bg: #efe7ff;
+  --kafka: #d97706; --kafka-bg: #fff1d6;
+  --bronze: #b4532a; --bronze-bg: #ffe6d9;
+  --silver: #0e7490; --silver-bg: #d9f3f9;
+  --live: #15803d; --live-bg: #dcf6e5;
+  --gold: #a16207; --gold-bg: #fdf0b8;
+  --serve: #be185d; --serve-bg: #ffe0ef;
+  --new: #e11d48; --ok: #15803d; --warn: #b45309;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1122; --panel: #171b33; --ink: #eef0fb; --muted: #a2a9c9; --line: #2b3157;
+    --src: #b79bff; --src-bg: #2a2150; --kafka: #fbbf24; --kafka-bg: #3a2c0c;
+    --bronze: #ff9d72; --bronze-bg: #3d2318; --silver: #5fd3ee; --silver-bg: #0f3340;
+    --live: #5fe08e; --live-bg: #11351f; --gold: #f5d04a; --gold-bg: #3a3009;
+    --serve: #ff7eb8; --serve-bg: #40142c; --new: #ff5c7c; --ok: #5fe08e; --warn: #fbbf24;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1122; --panel: #171b33; --ink: #eef0fb; --muted: #a2a9c9; --line: #2b3157;
+  --src: #b79bff; --src-bg: #2a2150; --kafka: #fbbf24; --kafka-bg: #3a2c0c;
+  --bronze: #ff9d72; --bronze-bg: #3d2318; --silver: #5fd3ee; --silver-bg: #0f3340;
+  --live: #5fe08e; --live-bg: #11351f; --gold: #f5d04a; --gold-bg: #3a3009;
+  --serve: #ff7eb8; --serve-bg: #40142c; --new: #ff5c7c; --ok: #5fe08e; --warn: #fbbf24;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin-inline: auto; padding-inline: 16px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 36px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2rem, 5vw, 3.4rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); font-weight: 700; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+.lede { max-width: 66ch; color: var(--muted); font-size: 1.05rem; margin-top: 12px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.hero { display: flex; flex-direction: column; gap: 6px; }
+.hero h1 span { background: linear-gradient(90deg, var(--src), var(--serve), var(--kafka)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 12px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.stat b { display: block; font-family: var(--font-display); font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 0.85rem; }
+.stat:nth-child(1) b { color: var(--kafka); } .stat:nth-child(2) b { color: var(--silver); }
+.stat:nth-child(3) b { color: var(--live); } .stat:nth-child(4) b { color: var(--serve); }
+.stat:nth-child(5) b { color: var(--gold); } .stat:nth-child(6) b { color: var(--src); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls .eyebrow { margin-right: 6px; }
+.chip { font: inherit; font-size: 0.85rem; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip:focus-visible, .node:focus-visible { outline: 3px solid var(--serve); outline-offset: 2px; }
+.flow { display: flex; flex-direction: column; gap: 14px; }
+.lane { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lane-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.lane-head .eyebrow { margin-left: auto; }
+.row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 26px; align-items: stretch; }
+.row.spine { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row; }
+.row.live { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row; }
+.row.batch { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row; }
+.node { position: relative; text-align: left; font: inherit; color: var(--ink); background: var(--tint); border: 2px solid var(--hue); border-radius: 12px; padding: 12px 14px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; transition: opacity .15s, transform .15s; }
+.node:hover { transform: translateY(-2px); }
+.node::after { content: "\2192"; position: absolute; right: -22px; top: 50%; translate: 0 -50%; color: var(--muted); font-size: 1.2rem; }
+.node.last::after { content: none; }
+.node .kind { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hue); font-weight: 500; }
+.node strong { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; }
+.node small { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+.node .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.tag { font-family: var(--font-mono); font-size: 0.68rem; padding: 2px 7px; border-radius: 6px; background: var(--panel); border: 1px solid var(--hue); color: var(--ink); }
+.tag.new { background: var(--new); border-color: var(--new); color: #fff; font-weight: 500; }
+.node.is-new { box-shadow: 0 0 0 3px color-mix(in srgb, var(--new) 35%, transparent); }
+.src { --hue: var(--src); --tint: var(--src-bg); } .kafka { --hue: var(--kafka); --tint: var(--kafka-bg); }
+.bronze { --hue: var(--bronze); --tint: var(--bronze-bg); } .silver { --hue: var(--silver); --tint: var(--silver-bg); }
+.live { --hue: var(--live); --tint: var(--live-bg); } .gold { --hue: var(--gold); --tint: var(--gold-bg); }
+.serve { --hue: var(--serve); --tint: var(--serve-bg); }
+.dim { opacity: 0.18; }
+.detail { background: var(--panel); border: 2px solid var(--hue, var(--line)); border-radius: 14px; padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 28px; }
+.detail h3 { grid-column: 1 / -1; color: var(--hue); }
+.detail dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.detail dd { margin: 2px 0 10px; }
+.users { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 14px; }
+.user { background: var(--panel); border: 1px solid var(--line); border-top: 6px solid var(--hue); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.user h3 { color: var(--hue); font-size: 1.25rem; }
+.user ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.user li { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: 8px; }
+.user li i { font-style: normal; font-weight: 700; color: var(--hue); }
+.user .win { background: var(--tint); border-radius: 10px; padding: 10px 12px; font-size: 0.9rem; }
+.honest { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 12px; }
+.honest div { background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--warn); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.honest b { display: block; margin-bottom: 4px; }
+.trust { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 12px; }
+.trust div { background: var(--panel); border: 1px solid var(--line); border-top: 5px solid var(--ok); border-radius: 12px; padding: 14px; min-width: 0; }
+.trust b { display: block; font-family: var(--font-display); margin-bottom: 4px; }
+.sec { display: flex; flex-direction: column; gap: 14px; }
+.foot { color: var(--muted); font-size: 0.85rem; }
+@media (max-width: 860px) {
+  .row.spine, .row.live, .row.batch { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .node::after { content: "\2193"; right: auto; left: 50%; top: auto; bottom: -21px; translate: -50% 0; }
+  .detail { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .node { transition: none; } .node:hover { transform: none; } }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">Graduation project, defense 13 October 2026</div>
+    <h1>FunnelStream, <span>from a click to a decision</span></h1>
+    <p class="lede">A quick-commerce style event pipeline. Customer events and orders flow through Kafka and a Bronze and Silver lake. One lane feeds live Grafana dashboards within a minute. The other builds trusted daily tables in Databricks for Power BI. The new inventory work adds stock, express delivery and campaign insight on top of the same pipeline. All inventory data is simulated.</p>
+  </header>
+
+  <section class="stats" aria-label="Key numbers">
+    <div class="stat"><b>4</b><span>Kafka topics, one new for stock</span></div>
+    <div class="stat"><b>10</b><span>Silver tables, three new</span></div>
+    <div class="stat"><b>15</b><span>live Postgres tables for Grafana</span></div>
+    <div class="stat"><b>6</b><span>alert rules, two new</span></div>
+    <div class="stat"><b>63</b><span>Gold data quality checks</span></div>
+    <div class="stat"><b>8</b><span>simulated dark stores</span></div>
+  </section>
+
+  <section class="sec" aria-labelledby="flow-h">
+    <h2 id="flow-h">How the data moves</h2>
+    <div class="controls" role="group" aria-label="Filter the diagram">
+      <span class="eyebrow">Show</span>
+      <button class="chip" type="button" data-f="all" aria-pressed="true">Everything</button>
+      <button class="chip" type="button" data-f="new" aria-pressed="false">Only the new inventory work</button>
+      <button class="chip" type="button" data-f="live" aria-pressed="false">Live lane</button>
+      <button class="chip" type="button" data-f="batch" aria-pressed="false">Batch lane</button>
+    </div>
+
+    <div class="flow">
+      <div class="lane">
+        <div class="lane-head"><h3>Shared spine</h3><span class="eyebrow">every event takes this path</span></div>
+        <div class="row spine">
+          <button class="node src is-new" type="button" data-lanes="spine live batch" data-new="1" id="n-sim"
+            data-title="Simulator" data-does="Makes customer sessions, orders and delivery events. With --inventory it also keeps a stock ledger for 8 dark stores, runs the hero stock-out scenario and issues express orders with a 20-minute promise."
+            data-value="Reproducible demo data with known answers, so every dashboard number can be checked against the generator." data-where="scripts/run_simulator.py, simulator/stock.py">
+            <span class="kind">Source</span><strong>Simulator</strong><small>app, orders, delivery, stock</small>
+            <span class="tags"><span class="tag">noise on</span><span class="tag new">NEW stock ledger</span><span class="tag new">NEW express orders</span></span></button>
+          <button class="node kafka is-new" type="button" data-lanes="spine live batch" data-new="1" id="n-kafka"
+            data-title="Kafka" data-does="Carries four topics: app.events, orders, delivery.events and the new inventory.events, which is keyed by store so one store's stock events stay in order."
+            data-value="Buffers bursts and decouples the generator from processing. A restart replays from Kafka instead of losing events." data-where="contracts/topics.yaml, kafka/create_topics.py">
+            <span class="kind">Transport</span><strong>Kafka</strong><small>4 topics</small>
+            <span class="tags"><span class="tag">app.events</span><span class="tag">orders</span><span class="tag">delivery.events</span><span class="tag new">NEW inventory.events</span></span></button>
+          <button class="node bronze is-new" type="button" data-lanes="spine live batch" data-new="1" id="n-bronze"
+            data-title="Bronze" data-does="Spark Structured Streaming writes each raw message to an append-only Delta table, one table per topic, with Kafka offsets in a checkpoint."
+            data-value="A faithful raw copy. Anything downstream can be rebuilt from it." data-where="streaming/jobs/bronze_ingest.py">
+            <span class="kind">Raw lake</span><strong>Bronze Delta</strong><small>append-only, per topic</small>
+            <span class="tags"><span class="tag new">NEW bronze_inventory_events</span></span></button>
+          <button class="node silver is-new last" type="button" data-lanes="spine live batch" data-new="1" id="n-silver"
+            data-title="Silver" data-does="Validates every event against the contract, quarantines bad rows with a reason, and MERGE-inserts clean rows by key so a replay changes nothing. Partitioned by event date."
+            data-value="Trusted, deduplicated tables. About 11 seconds per batch after the speed-up, down from 50 to 70 seconds." data-where="streaming/jobs/silver_clean.py, streaming/silver/">
+            <span class="kind">Clean lake</span><strong>Silver Delta</strong><small>MERGE, replay-safe</small>
+            <span class="tags"><span class="tag">events, orders, status, items</span><span class="tag new">NEW stock movements</span><span class="tag new">NEW stock snapshots</span><span class="tag new">NEW express orders</span></span></button>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="lane-head"><h3>Live lane</h3><span class="eyebrow">seconds to a minute, for Operations</span></div>
+        <div class="row live">
+          <button class="node live is-new" type="button" data-lanes="live" data-new="1" id="n-sink"
+            data-title="Live sink" data-does="After every Silver batch it recomputes the current stock per store and product (latest snapshot plus later movements), the demand that met an empty shelf, and the state of each express order."
+            data-value="Stock and delivery state update about once per batch instead of once per day." data-where="warehouse/live_stock.py, live_express.py, live_store.py">
+            <span class="kind">Compute</span><strong>Live sink</strong><small>Spark reads Silver, writes Postgres</small>
+            <span class="tags"><span class="tag new">NEW stock now</span><span class="tag new">NEW demand per minute</span><span class="tag new">NEW express SLA</span></span></button>
+          <button class="node live is-new" type="button" data-lanes="live" data-new="1" id="n-pg"
+            data-title="Postgres live tables" data-does="15 small tables: metrics and health per minute, store and product dimensions, live stock, live demand, live express orders, and the daily marts. Grafana reads them with a read-only role."
+            data-value="Fast, simple queries for dashboards, and a single place both Grafana and Power BI can read." data-where="warehouse/live_tables.py, live_ddl.sql">
+            <span class="kind">Serving store</span><strong>Postgres</strong><small>15 tables, read-only role for Grafana</small>
+            <span class="tags"><span class="tag new">NEW live_stock_now</span><span class="tag new">NEW live_express_orders</span><span class="tag new">NEW inventory_daily</span></span></button>
+          <button class="node serve is-new last" type="button" data-lanes="live" data-new="1" id="n-graf"
+            data-title="Grafana" data-does="Four dashboards and six alert rules. New: Operations live inventory, Inventory insights, Marketing D-1, the out-of-stock demand alert and the express promise alert."
+            data-value="Operations sees empty shelves and late express orders while they happen, and the alert fires on the first breach of the 20-minute promise." data-where="monitoring/dashboards.py, monitoring/grafana/">
+            <span class="kind">Dashboards and alerts</span><strong>Grafana</strong><small>pipeline health plus inventory</small>
+            <span class="tags"><span class="tag new">NEW fs-oos-demand</span><span class="tag new">NEW fs-express-sla</span></span></button>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="lane-head"><h3>Batch lane</h3><span class="eyebrow">daily, for Marketing and management</span></div>
+        <div class="row batch">
+          <button class="node silver" type="button" data-lanes="batch" id="n-pub"
+            data-title="Publish to Databricks" data-does="Uploads an allow-listed set of Silver columns to a Databricks Silver mirror. Free-text personal columns never leave the machine. The stock and express tables are not mirrored."
+            data-value="Moves only what analytics needs, with a clear privacy line." data-where="scripts/publish_silver.py, warehouse/publish.py">
+            <span class="kind">Transfer</span><strong>Publish Silver</strong><small>column allow-list</small></button>
+          <button class="node gold" type="button" data-lanes="batch" id="n-gold"
+            data-title="Gold build" data-does="SQL MERGE steps build dimensions (date, campaign, product, customer), order facts, last-touch attribution, and daily aggregates for orders, funnel, campaign and city. Then 63 data quality checks run."
+            data-value="One trusted answer for revenue, ROAS and funnel drop-off. A failed check blocks the refresh." data-where="warehouse/gold/, scripts/run_batch.py">
+            <span class="kind">Warehouse</span><strong>Databricks Gold</strong><small>star schema, 63 checks</small></button>
+          <button class="node live is-new" type="button" data-lanes="batch" data-new="1" id="n-marts"
+            data-title="Daily marts" data-does="build_inventory_daily rebuilds the last two Cairo days of closing stock, units sold, oversold units, out-of-stock demand and express on-time results. build_d1_marketing joins yesterday's ad spend with out-of-stock demand per campaign."
+            data-value="Yesterday's stock-outs and the share of campaign spend that sent people to empty shelves." data-where="warehouse/inventory_daily.py, d1_marketing.py">
+            <span class="kind">Daily jobs</span><strong>Inventory and D-1 marts</strong><small>Postgres, last 2 days rebuilt</small>
+            <span class="tags"><span class="tag new">NEW inventory_daily</span><span class="tag new">NEW express_daily</span><span class="tag new">NEW marketing_d1</span></span></button>
+          <button class="node serve last" type="button" data-lanes="batch" id="n-pbi"
+            data-title="Power BI" data-does="One model for two users: Executive, Campaign, Funnel pages from Gold, plus Inventory and Marketing-and-inventory pages once the Postgres marts are loaded. Ratios are measures built from sums."
+            data-value="Marketing reads ROAS delivered against placed, and the cart and checkout abandon rates, from one model." data-where="dashboards/powerbi/">
+            <span class="kind">Analytics</span><strong>Power BI</strong><small>star schema, 84 measures</small></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail" id="detail" aria-live="polite">
+      <h3 id="d-title">Select any box</h3>
+      <div><dl><dt>What it does</dt><dd id="d-does">Click a box in the diagram to see what it does, the value it adds and where the code lives.</dd></dl></div>
+      <div><dl><dt>Value</dt><dd id="d-value">Boxes with a red ring and NEW tags are the inventory, express and marketing work added on 10 and 11 October.</dd>
+        <dt>Where</dt><dd id="d-where" style="font-family:var(--font-mono);font-size:0.85rem">-</dd></dl></div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="val-h">
+    <h2 id="val-h">What each user gets</h2>
+    <div class="users">
+      <article class="user src" style="--hue:var(--live);--tint:var(--live-bg)">
+        <h3>Operations</h3>
+        <p class="eyebrow">Grafana, live</p>
+        <ul>
+          <li><i>1</i><span><b>Stock now, per store and product.</b> See which of the 8 dark stores has run out of which product, and how many lines are low.</span></li>
+          <li><i>2</i><span><b>Demand that met an empty shelf.</b> Views and add-to-carts on products with zero stock, ranked, with the product name.</span></li>
+          <li><i>3</i><span><b>Express promise watch.</b> Every express order carries its own 20-minute promise. Orders at risk, breaches in the last hour, on-time rate and the slowest orders are on one panel.</span></li>
+          <li><i>4</i><span><b>Alerts that point to an action.</b> Demand on an out-of-stock product warns. Any single breach of the promise is critical, with a runbook.</span></li>
+        </ul>
+        <div class="win">Value: restock or reroute before customers give up, and catch a late delivery while it can still be saved.</div>
+      </article>
+      <article class="user" style="--hue:var(--serve);--tint:var(--serve-bg)">
+        <h3>Marketing</h3>
+        <p class="eyebrow">Power BI and Grafana, daily</p>
+        <ul>
+          <li><i>1</i><span><b>ROAS delivered, not only placed.</b> Revenue from cancelled, returned and failed cash-on-delivery orders is removed, so a campaign that looks strong on placed revenue is judged on cash.</span></li>
+          <li><i>2</i><span><b>Platform conversions against attributed orders.</b> Shows how much the ad platform claims compared with what the order data supports.</span></li>
+          <li><i>3</i><span><b>Estimated spend exposed to out-of-stock.</b> Spend times the share of campaign clicks that landed on an empty shelf. A planning estimate, never called wasted.</span></li>
+          <li><i>4</i><span><b>Funnel drop-off.</b> Where sessions are lost between view, cart, checkout and order, by channel and platform.</span></li>
+        </ul>
+        <div class="win">Value: shift budget away from campaigns pointing at products that cannot be served, and stop paying for traffic that cannot convert.</div>
+      </article>
+      <article class="user" style="--hue:var(--silver);--tint:var(--silver-bg)">
+        <h3>The data team</h3>
+        <p class="eyebrow">Confidence, repeatable</p>
+        <ul>
+          <li><i>1</i><span><b>Replay safety.</b> Silver MERGEs by key, so restarting or replaying Kafka does not create duplicates. A duplicate check covers every key table.</span></li>
+          <li><i>2</i><span><b>Contracts at the door.</b> Bad events go to quarantine with a reason, not into the numbers.</span></li>
+          <li><i>3</i><span><b>One command to assess everything.</b> The smoke test walks 15 stages from the simulator to Power BI sources in an isolated lake and database, and writes a report.</span></li>
+          <li><i>4</i><span><b>Tested.</b> 998 host tests pass, and the new Spark tests ran on a real engine on 11 October.</span></li>
+        </ul>
+        <div class="win">Value: a defense answer to "how do you know it is right?" that points at checks, not trust.</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="hon-h">
+    <h2 id="hon-h">Read the numbers with these limits</h2>
+    <div class="honest">
+      <div><b>Inventory is simulated.</b>Reservations are out of scope. Stock is taken when an order is placed and is not returned if the order is cancelled.</div>
+      <div><b>The out-of-stock flag is the stock when the minute was written.</b>A replay can flag a minute differently. Dashboards say so.</div>
+      <div><b>Two day definitions.</b>Ad spend follows the ad platform's UTC day, orders and demand the Cairo day. They can differ by up to 3 hours.</div>
+      <div><b>Newest days are provisional.</b>Orders take 2 to 4 days to settle, so delivered revenue for recent days is incomplete.</div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="tr-h">
+    <h2 id="tr-h">Why the design holds up</h2>
+    <div class="trust">
+      <div><b>Idempotent by design</b>Keys and MERGE on every Silver and Gold table. Aggregates are recomputed, never incremented.</div>
+      <div><b>Privacy line</b>Only allow-listed columns reach Databricks. Grafana uses a read-only role limited to named tables.</div>
+      <div><b>Honest ratios</b>Every Power BI rate is a ratio of sums. Spend-day logic stops ROAS dividing all revenue by two days of spend.</div>
+      <div><b>Isolation</b>The smoke test and benchmark refuse to touch the demo lake, the real catalog or the demo database.</div>
+    </div>
+  </section>
+
+  <p class="foot">Colour key: violet source, amber Kafka, copper Bronze, cyan Silver, green live lane, gold warehouse, pink serving. A red ring marks work added in the inventory, express and marketing release. Click any box for detail.</p>
+</div>
+
+<script>
+(function () {
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('.node'));
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var detail = document.getElementById('detail');
+  function setText(id, text) { document.getElementById(id).textContent = text; }
+  function show(node) {
+    nodes.forEach(function (n) { n.setAttribute('aria-pressed', String(n === node)); });
+    setText('d-title', node.dataset.title);
+    setText('d-does', node.dataset.does);
+    setText('d-value', node.dataset.value);
+    setText('d-where', node.dataset.where);
+    var cs = getComputedStyle(node);
+    detail.style.setProperty('--hue', cs.getPropertyValue('--hue'));
+  }
+  nodes.forEach(function (n) { n.addEventListener('click', function () { show(n); }); });
+  function filter(f) {
+    chips.forEach(function (c) { c.setAttribute('aria-pressed', String(c.dataset.f === f)); });
+    nodes.forEach(function (n) {
+      var on = f === 'all' || (f === 'new' && n.dataset.new === '1') || (f === 'live' && n.dataset.lanes.indexOf('live') > -1 && n.dataset.lanes.indexOf('spine') > -1 || f === 'live' && n.dataset.lanes === 'live') || (f === 'batch' && n.dataset.lanes.indexOf('batch') > -1);
+      n.classList.toggle('dim', !on);
+    });
+  }
+  chips.forEach(function (c) { c.addEventListener('click', function () { filter(c.dataset.f); }); });
+  show(document.getElementById('n-silver'));
+})();
+</script>
