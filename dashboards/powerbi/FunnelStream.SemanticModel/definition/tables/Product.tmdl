@@ -34,7 +34,7 @@ table Product
 				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
 				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
 				Raw = Gold{[Name = "dim_product", Kind = "Table"]}[Data],
-				Filtered = Table.SelectRows(Raw, each [is_current] = true),
+				Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
 				Selected = Table.SelectColumns(Filtered, {"product_id", "name", "category", "price", "is_current"})
 			in
 				Selected

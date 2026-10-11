@@ -175,10 +175,10 @@ DIVIDE (
 
 Revenue Placed vs Last Week =
 // Change against the same weekday one week earlier. Needs the marked date table.
-VAR Current = [Revenue Placed]
+VAR ThisWeek = [Revenue Placed]
 VAR LastWeek = CALCULATE ( [Revenue Placed], DATEADD ( 'Date'[Date], -7, DAY ) )
 RETURN
-    DIVIDE ( Current - LastWeek, LastWeek )
+    DIVIDE ( ThisWeek - LastWeek, LastWeek )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Inventory \ Now

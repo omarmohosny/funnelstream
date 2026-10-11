@@ -1,87 +1,87 @@
-relationship 0ea9af9c-4484-4fac-9278-61c98a8ac66d
+relationship c62e4d93-a814-5be7-88d2-30c093e1cd72
 	fromColumn: 'Campaign Daily'.report_date
 	toColumn: Date.date
 
-relationship 56b82d30-45b7-4f22-9468-9271d6564db6
+relationship 1bdf0ab3-573f-58b9-a2d3-19974a80cdea
 	fromColumn: 'Funnel Daily'.event_date
 	toColumn: Date.date
 
-relationship 28e2cd77-7b33-482a-82ef-0f591119dd02
+relationship eea0f6aa-f825-5501-b38a-771e017ba999
 	fromColumn: 'Orders Daily'.date_key
 	toColumn: Date.date_key
 
-relationship 48091dc8-8887-4560-9ef9-80ebcc7be381
+relationship c18a1176-8277-5f93-af63-f0bbc9f0e5ab
 	fromColumn: Orders.date_key
 	toColumn: Date.date_key
 
-relationship 87eb33c9-8510-4731-8004-9ec3950dda60
+relationship e19e92b0-473f-5082-aebe-bba88d45f64e
 	fromColumn: 'Campaign Daily'.campaign_id
 	toColumn: Campaign.campaign_id
 
-relationship c4b97dcb-a195-4d93-b699-19aa830bc320
+relationship 3838f45b-5a10-51e8-a0cb-7ee8563d4909
 	fromColumn: Orders.campaign_id
 	toColumn: Campaign.campaign_id
 
-relationship d24454f0-900c-4317-baff-29786aa77ffe
+relationship 3ffb926e-1a09-5e45-8792-e0ff09add403
 	fromColumn: 'Inventory Daily'.report_date
 	toColumn: Date.date
 
-relationship bc467835-0088-4990-8510-131dafb0cc52
+relationship c2435397-c9aa-5d13-ae36-06f8d2bcb77c
 	fromColumn: 'OOS Demand Daily'.report_date
 	toColumn: Date.date
 
-relationship 7461a4ec-6a3b-4a59-afc7-68fcb521bdd9
+relationship aa2677b6-695d-55b0-a70c-e5cbe1fec1fd
 	fromColumn: 'Marketing D1 Campaign'.report_date
 	toColumn: Date.date
 
-relationship 129f1894-5f80-45f4-bf63-c15bdffc4819
+relationship f910120f-a593-5169-9cf8-c406c4f5d67c
 	fromColumn: 'Marketing D1 Product'.report_date
 	toColumn: Date.date
 
-relationship 2fad40ed-22d4-4a97-957b-4642f33580ff
+relationship 5d5f86b3-a7d1-5e72-9fb3-558ae6c7b808
 	fromColumn: 'Express Daily'.report_date
 	toColumn: Date.date
 
-relationship c4457036-57d6-47cc-a34f-0137311be45e
+relationship d521a17c-0040-555d-bf07-b01dfe18e333
 	fromColumn: 'Marketing D1 Campaign'.campaign_id
 	toColumn: Campaign.campaign_id
 
-relationship 4bbfbae2-d88a-4882-bcdb-780c0306094f
+relationship 51f9c23d-874b-5b7e-8470-ddf420a51ac6
 	fromColumn: 'OOS Demand Daily'.campaign_id
 	toColumn: Campaign.campaign_id
 
-relationship 98cd4780-2e04-43ed-a0ef-f3f4fa1a08c3
+relationship 3d6e15d3-8f34-5280-9943-9719a38aafff
 	fromColumn: 'Stock Now'.store_id
 	toColumn: Store.store_id
 
-relationship 37cfd48b-b19e-4b34-8d8b-d47fca760387
+relationship a624d851-c1c7-5e40-9b33-bb2cff092cee
 	fromColumn: 'Inventory Daily'.store_id
 	toColumn: Store.store_id
 
-relationship 652f3db9-4207-4ea8-91ff-f45e404db388
+relationship cc3a5e3b-4d48-53d0-b051-7794c3b7e6cc
 	fromColumn: 'OOS Demand Daily'.store_id
 	toColumn: Store.store_id
 
-relationship d095f8cb-8cde-4220-892b-15bb62376c56
+relationship 1065c395-4dc8-5b17-948e-9bfb03394977
 	fromColumn: 'Express Daily'.store_id
 	toColumn: Store.store_id
 
-relationship d3d95c26-e1f2-4d0d-b8b3-c1f80d18567f
+relationship b21aab6c-35ba-5e72-a441-2cf788828951
 	fromColumn: 'Marketing D1 Product'.store_id
 	toColumn: Store.store_id
 
-relationship ee76851f-6b09-4846-a45e-dd90ef78f9c1
+relationship 97d423db-6456-514a-85a6-d65ccfbfe0d2
 	fromColumn: 'Stock Now'.product_id
 	toColumn: Product.product_id
 
-relationship 5b1ccefe-9716-4439-bd1e-9762b1478a50
+relationship 91c5d69b-a272-5e5f-9dfb-ae038059f32d
 	fromColumn: 'Inventory Daily'.product_id
 	toColumn: Product.product_id
 
-relationship 84b41a17-1e94-4945-b763-bd40914dbe1b
+relationship 94c5e7a1-e8a0-56c1-9ae7-c83dfc6794b7
 	fromColumn: 'OOS Demand Daily'.product_id
 	toColumn: Product.product_id
 
-relationship 7a95e886-b273-44c7-bcfe-75100b1764a3
+relationship c057fc35-64c6-5a63-9b86-faa4ef29f668
 	fromColumn: 'Marketing D1 Product'.product_id
 	toColumn: Product.product_id

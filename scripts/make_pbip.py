@@ -15,7 +15,7 @@ CATALOG = "funnelstream"
 TABLES = [
     ("Date", "dim_date", None),
     ("Campaign", "dim_campaign", None),
-    ("Product", "dim_product", 'Table.SelectRows(#"Selected", each [is_current] = true)'),
+    ("Product", "dim_product", 'Table.SelectRows(Table.Buffer(#"Selected"), each [is_current] = true)'),
     ("Campaign Daily", "agg_campaign_daily", 'Table.SelectRows(#"Selected", each [attribution_model] = "last_touch")'),
     ("Funnel Daily", "agg_funnel_daily", None),
     ("Orders Daily", "agg_orders_daily", None),
@@ -276,7 +276,7 @@ def main():
     w(sm / "definition" / "database.tmdl", "database\n\tcompatibilityLevel: 1600\n")
     names = [t[0] for t in TABLES] + [t[0] for t in PG_TABLES] + ["_Measures"]
     model = ["model Model", "\tculture: en-US", "\tdefaultPowerBIDataSourceVersion: powerBI_V3",
-             "\tdiscourageImplicitMeasures", "\tsourceQueryCulture: en-US", ""]
+             "\tdiscourageImplicitMeasures", "\tsourceQueryCulture: en-US", "\tannotation __PBI_TimeIntelligenceEnabled = 0", ""]
     model += ["ref table " + q(n) for n in names] + [""]
     w(sm / "definition" / "model.tmdl", "\n".join(model))
     for name, gold, step in TABLES:
@@ -292,7 +292,7 @@ def main():
     w(sm / "definition" / "tables" / "_Measures.tmdl", "\n".join(mt))
     rel = []
     for f_t, f_c, t_t, t_c in RELS:
-        rel += ["relationship " + str(uuid.uuid4()), "\tfromColumn: %s.%s" % (q(f_t), f_c), "\ttoColumn: %s.%s" % (q(t_t), t_c), ""]
+        rel += ["relationship " + str(uuid.uuid5(uuid.NAMESPACE_URL, "funnelstream/%s.%s/%s.%s" % (f_t, f_c, t_t, t_c))), "\tfromColumn: %s.%s" % (q(f_t), f_c), "\ttoColumn: %s.%s" % (q(t_t), t_c), ""]
     w(sm / "definition" / "relationships.tmdl", "\n".join(rel))
 
     (rp / "definition" / "pages").mkdir(parents=True)

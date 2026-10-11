@@ -3,6 +3,7 @@ model Model
 	defaultPowerBIDataSourceVersion: powerBI_V3
 	discourageImplicitMeasures
 	sourceQueryCulture: en-US
+	annotation __PBI_TimeIntelligenceEnabled = 0
 
 ref table Date
 ref table Campaign

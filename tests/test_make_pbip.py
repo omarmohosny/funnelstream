@@ -122,3 +122,37 @@ def test_definition_pbism_names_its_schema(project):
     doc = json.loads((project / "FunnelStream.SemanticModel" / "definition.pbism").read_text(encoding="utf-8"))
     assert doc["$schema"].endswith("/item/semanticModel/definitionProperties/1.0.0/schema.json")
     assert isinstance(doc["version"], str)
+
+
+def test_product_filter_is_not_folded_into_a_boolean_comparison_databricks_rejects(project):
+    """Power BI Desktop folded [is_current] = true into SQL as `is_current = 1` and Databricks refused it
+    (DATATYPE_MISMATCH BOOLEAN against INT), which also cancelled the load of every other table. Product is 200 rows,
+    so the filter runs in Power BI after the table is buffered."""
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "tables" / "Product.tmdl").read_text(encoding="utf-8")
+    assert "Table.Buffer(Raw)" in text and "[is_current] = true" in text
+
+
+def test_no_measure_names_a_variable_with_a_dax_reserved_word(project):
+    """`VAR Current` was a syntax error in Power BI Desktop ("The syntax for 'Current' is incorrect")."""
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "tables" / "_Measures.tmdl").read_text(encoding="utf-8")
+    names = {n.lower() for n in re.findall(r"\bVAR\s+([A-Za-z_][A-Za-z0-9_]*)", text)}
+    assert names, "the measures use VAR"
+    assert not names & {"current"}
+
+
+def test_automatic_date_tables_are_switched_off(project):
+    """The model has its own marked Date table; Desktop otherwise adds a LocalDateTable per date column."""
+    text = (project / "FunnelStream.SemanticModel" / "definition" / "model.tmdl").read_text(encoding="utf-8")
+    assert "annotation __PBI_TimeIntelligenceEnabled = 0" in text
+
+
+def test_regenerating_gives_the_same_relationship_ids(project, tmp_path):
+    """Random ids made every regeneration a diff of all 22 relationships."""
+    saved = make_pbip.OUT
+    make_pbip.OUT = tmp_path
+    try:
+        make_pbip.main()
+    finally:
+        make_pbip.OUT = saved
+    name = Path("FunnelStream.SemanticModel") / "definition" / "relationships.tmdl"
+    assert (project / name).read_text(encoding="utf-8") == (tmp_path / name).read_text(encoding="utf-8")
