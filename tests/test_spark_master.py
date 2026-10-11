@@ -16,3 +16,17 @@ def test_master_can_be_overridden_by_environment(monkeypatch):
 def test_blank_override_falls_back_to_the_default(monkeypatch):
     monkeypatch.setenv("FS_SPARK_MASTER", "  ")
     assert spark_master() == "local[2]"
+
+
+def test_delta_log_replay_uses_few_tasks_by_default(monkeypatch):
+    """Delta replays its log with 50 tasks by default (snapshotPartitions); on local[2] that is pure overhead
+    for every snapshot a stream or MERGE loads, so the session asks for 4. The tests already used 2."""
+    from streaming.common.spark import spark_conf
+    monkeypatch.delenv("FS_DELTA_SNAPSHOT_PARTITIONS", raising=False)
+    assert spark_conf()["spark.databricks.delta.snapshotPartitions"] == "4"
+
+
+def test_delta_snapshot_partitions_can_be_overridden_by_environment(monkeypatch):
+    from streaming.common.spark import spark_conf
+    monkeypatch.setenv("FS_DELTA_SNAPSHOT_PARTITIONS", "50")
+    assert spark_conf()["spark.databricks.delta.snapshotPartitions"] == "50"
