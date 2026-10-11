@@ -1,46 +1,60 @@
 table 'Marketing D1 Product'
+	lineageTag: 713bcd81-20b4-469d-ac36-8183c3c70b98
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
+		lineageTag: 83004223-ac54-43f6-ae8e-5e75bb574f6d
 		summarizeBy: none
 		sourceColumn: report_date
+
+		annotation UnderlyingDateTimeDataType = Date
 
 	column store_id
 		dataType: string
 		isHidden
+		lineageTag: ee378833-cc3b-445e-9ff4-d718d33a2b51
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column product_id
 		dataType: string
 		isHidden
+		lineageTag: 27af5072-4812-4b15-abba-8a94cf40a47f
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column oos_views
 		dataType: int64
 		formatString: 0
+		lineageTag: 59789762-7d39-442d-b9ad-05a8d474dafc
 		summarizeBy: none
 		sourceColumn: oos_views
 
 	column oos_add_to_carts
 		dataType: int64
 		formatString: 0
+		lineageTag: 1d1394c8-2c9d-4318-b498-40ad43e00305
 		summarizeBy: none
 		sourceColumn: oos_add_to_carts
 
 	column revenue_at_risk
-		dataType: decimal
-		summarizeBy: none
+		dataType: double
+		lineageTag: 34899db8-fe2e-4125-84bd-abf02febb1d4
+		summarizeBy: sum
 		sourceColumn: revenue_at_risk
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	partition 'Marketing D1 Product' = m
 		mode: import
 		source =
-			let
-				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-				Raw = Source{[Schema = "public", Item = "marketing_d1_product"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "oos_views", "oos_add_to_carts", "revenue_at_risk"})
-			in
-				Selected
+				let
+					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+					Raw = Source{[Schema = "public", Item = "marketing_d1_product"]}[Data],
+					Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "oos_views", "oos_add_to_carts", "revenue_at_risk"})
+				in
+					Selected
+

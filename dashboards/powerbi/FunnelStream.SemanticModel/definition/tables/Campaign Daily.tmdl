@@ -1,166 +1,196 @@
 table 'Campaign Daily'
+	lineageTag: b98d6f88-a1f4-4dff-9b70-11f5d094629c
 
 	column campaign_id
 		dataType: string
 		isHidden
+		lineageTag: 658269f1-6c3a-441d-a383-2bab65f94f77
 		summarizeBy: none
 		sourceColumn: campaign_id
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
+		lineageTag: 7754b105-ee5d-42b0-aa1e-5087e698f081
 		summarizeBy: none
 		sourceColumn: report_date
 
+		annotation UnderlyingDateTimeDataType = Date
+
 	column ad_platform
 		dataType: string
+		lineageTag: 40d4c223-9750-497e-8b40-ea03bd8b1f54
 		summarizeBy: none
 		sourceColumn: ad_platform
 
 	column impressions
 		dataType: int64
 		formatString: 0
+		lineageTag: c3bb3cac-fb7b-4ecc-9c24-ec47f8020b33
 		summarizeBy: none
 		sourceColumn: impressions
 
 	column clicks
 		dataType: int64
 		formatString: 0
+		lineageTag: ac3b3c0d-e167-4f97-9941-9f8e128c976a
 		summarizeBy: none
 		sourceColumn: clicks
 
 	column platform_conversions
 		dataType: int64
 		formatString: 0
+		lineageTag: fc1886ad-9396-42ce-8903-1b806ca85bcf
 		summarizeBy: none
 		sourceColumn: platform_conversions
 
 	column spend
 		dataType: double
+		lineageTag: b8b4f902-dc16-4d32-a6a9-23a4717dee7d
 		summarizeBy: none
 		sourceColumn: spend
 
 	column orders_placed
 		dataType: int64
 		formatString: 0
+		lineageTag: 9e6d2a72-c264-4df3-b26d-d85a3cfabb21
 		summarizeBy: none
 		sourceColumn: orders_placed
 
 	column orders_delivered
 		dataType: int64
 		formatString: 0
+		lineageTag: 5a18c466-d295-4f6d-88e9-9d16b391eb4a
 		summarizeBy: none
 		sourceColumn: orders_delivered
 
 	column orders_cancelled
 		dataType: int64
 		formatString: 0
+		lineageTag: 2b5d00fe-1974-4b39-b47c-0f916ce324a9
 		summarizeBy: none
 		sourceColumn: orders_cancelled
 
 	column orders_returned
 		dataType: int64
 		formatString: 0
+		lineageTag: 6817d5b6-e971-4604-bec8-6e8cfed333f6
 		summarizeBy: none
 		sourceColumn: orders_returned
 
 	column orders_with_failed_attempt
 		dataType: int64
 		formatString: 0
+		lineageTag: fb16def9-850c-460a-a049-bf42c705176d
 		summarizeBy: none
 		sourceColumn: orders_with_failed_attempt
 
 	column revenue_placed
 		dataType: double
+		lineageTag: c0055897-95f0-4ac1-aa15-5bc7fea044d0
 		summarizeBy: none
 		sourceColumn: revenue_placed
 
 	column revenue_delivered
 		dataType: double
+		lineageTag: 253a7cbd-2110-48c9-b8d9-28fa5259408e
 		summarizeBy: none
 		sourceColumn: revenue_delivered
 
 	column cancel_rate
 		dataType: double
 		isHidden
+		lineageTag: f958f5b7-f56c-45b5-b46f-c651603f6714
 		summarizeBy: none
 		sourceColumn: cancel_rate
 
 	column failed_attempt_rate
 		dataType: double
 		isHidden
+		lineageTag: 3f13b282-bf13-4735-90cd-872bc95628aa
 		summarizeBy: none
 		sourceColumn: failed_attempt_rate
 
 	column return_rate
 		dataType: double
 		isHidden
+		lineageTag: 5319c972-3518-420e-8246-f5d2e636ffa6
 		summarizeBy: none
 		sourceColumn: return_rate
 
 	column open_rate
 		dataType: double
 		isHidden
+		lineageTag: a33d388e-8425-46f6-bdd6-3283796c7153
 		summarizeBy: none
 		sourceColumn: open_rate
 
 	column new_customer_orders
 		dataType: int64
 		formatString: 0
+		lineageTag: dc32f610-b99d-4b91-acce-11d95c4ae1ef
 		summarizeBy: none
 		sourceColumn: new_customer_orders
 
 	column aov
 		dataType: double
 		isHidden
+		lineageTag: 546a69ca-9235-41c6-995b-9faa166a335b
 		summarizeBy: none
 		sourceColumn: aov
 
 	column ctr
 		dataType: double
 		isHidden
+		lineageTag: 529a3849-a52c-487b-b335-7f276ffb8bff
 		summarizeBy: none
 		sourceColumn: ctr
 
 	column conversion_rate
 		dataType: double
 		isHidden
+		lineageTag: 137dec41-19a2-4cb0-b0b2-2ee0c3e8d88a
 		summarizeBy: none
 		sourceColumn: conversion_rate
 
 	column cpa
 		dataType: double
 		isHidden
+		lineageTag: 3bcbef11-9735-4fcc-9f13-d67afb7c3f72
 		summarizeBy: none
 		sourceColumn: cpa
 
 	column cost_per_delivered_order
 		dataType: double
 		isHidden
+		lineageTag: f3638b78-87e1-48fe-9265-f582317ad052
 		summarizeBy: none
 		sourceColumn: cost_per_delivered_order
 
 	column roas_placed
 		dataType: double
 		isHidden
+		lineageTag: 445a9ec7-2627-4365-94b8-594e9e026f8d
 		summarizeBy: none
 		sourceColumn: roas_placed
 
 	column roas_delivered
 		dataType: double
 		isHidden
+		lineageTag: 71743001-d9a5-4b55-a2fb-8c6f463bc4a8
 		summarizeBy: none
 		sourceColumn: roas_delivered
 
 	partition 'Campaign Daily' = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "agg_campaign_daily", Kind = "Table"]}[Data],
-				Filtered = Table.SelectRows(Raw, each [attribution_model] = "last_touch"),
-				Selected = Table.SelectColumns(Filtered, {"campaign_id", "report_date", "ad_platform", "impressions", "clicks", "platform_conversions", "spend", "orders_placed", "orders_delivered", "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed", "revenue_delivered", "cancel_rate", "failed_attempt_rate", "return_rate", "open_rate", "new_customer_orders", "aov", "ctr", "conversion_rate", "cpa", "cost_per_delivered_order", "roas_placed", "roas_delivered"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "agg_campaign_daily", Kind = "Table"]}[Data],
+					Filtered = Table.SelectRows(Raw, each [attribution_model] = "last_touch"),
+					Selected = Table.SelectColumns(Filtered, {"campaign_id", "report_date", "ad_platform", "impressions", "clicks", "platform_conversions", "spend", "orders_placed", "orders_delivered", "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed", "revenue_delivered", "cancel_rate", "failed_attempt_rate", "return_rate", "open_rate", "new_customer_orders", "aov", "ctr", "conversion_rate", "cpa", "cost_per_delivered_order", "roas_placed", "roas_delivered"})
+				in
+					Selected
+

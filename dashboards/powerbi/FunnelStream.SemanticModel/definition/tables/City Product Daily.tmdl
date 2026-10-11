@@ -1,53 +1,62 @@
 table 'City Product Daily'
+	lineageTag: 16993711-ca73-4cd8-ab39-5bc0c9a1d4ff
 
 	column city
 		dataType: string
+		lineageTag: 099c887c-50e3-458d-b09c-346c30c08667
 		summarizeBy: none
 		sourceColumn: city
 
 	column product_id
 		dataType: string
 		isHidden
+		lineageTag: b6a25b71-4ae1-4577-a3c7-6bd98c37a61b
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column date_key
 		dataType: int64
 		formatString: 0
+		lineageTag: 061dff61-4ccb-4064-9b63-df9f9bc9e5ad
 		summarizeBy: none
 		sourceColumn: date_key
 
 	column sessions_viewed
 		dataType: int64
 		formatString: 0
+		lineageTag: f9f74328-4205-4553-b703-54ad5e2313f0
 		summarizeBy: none
 		sourceColumn: sessions_viewed
 
 	column add_to_cart
 		dataType: int64
 		formatString: 0
+		lineageTag: 8660833d-1fd2-4ada-a176-9ae021f10943
 		summarizeBy: none
 		sourceColumn: add_to_cart
 
 	column units
 		dataType: int64
 		formatString: 0
+		lineageTag: 166ecf70-0858-4185-bf29-c348f3b67da8
 		summarizeBy: none
 		sourceColumn: units
 
 	column revenue
 		dataType: double
+		lineageTag: 852a83c7-d642-48e6-b965-10eebc9e3f30
 		summarizeBy: none
 		sourceColumn: revenue
 
 	partition 'City Product Daily' = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "agg_city_product_daily", Kind = "Table"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"city", "product_id", "date_key", "sessions_viewed", "add_to_cart", "units", "revenue"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "agg_city_product_daily", Kind = "Table"]}[Data],
+					Selected = Table.SelectColumns(Raw, {"city", "product_id", "date_key", "sessions_viewed", "add_to_cart", "units", "revenue"})
+				in
+					Selected
+

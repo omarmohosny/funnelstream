@@ -1,40 +1,47 @@
 table Product
+	lineageTag: 811dc88e-0834-487b-9dc8-16caa1b74b38
 
 	column product_id
 		dataType: string
 		isHidden
+		lineageTag: 5924fc83-45d4-4762-885a-ce3a1472ed98
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column name
 		dataType: string
+		lineageTag: b1715fae-0365-421b-8e3e-4695e2fa54b4
 		summarizeBy: none
 		sourceColumn: name
 
 	column category
 		dataType: string
+		lineageTag: 2fb27624-5c2e-45b2-a161-740d99ab00d6
 		summarizeBy: none
 		sourceColumn: category
 
 	column price
 		dataType: double
+		lineageTag: 9b16ef03-e2e3-44c2-bf92-9348293e797e
 		summarizeBy: none
 		sourceColumn: price
 
 	column is_current
 		dataType: boolean
+		lineageTag: fb9e2690-5acc-43dc-8395-03902ae56919
 		summarizeBy: none
 		sourceColumn: is_current
 
 	partition Product = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "dim_product", Kind = "Table"]}[Data],
-				Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
-				Selected = Table.SelectColumns(Filtered, {"product_id", "name", "category", "price", "is_current"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "dim_product", Kind = "Table"]}[Data],
+					Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
+					Selected = Table.SelectColumns(Filtered, {"product_id", "name", "category", "price", "is_current"})
+				in
+					Selected
+

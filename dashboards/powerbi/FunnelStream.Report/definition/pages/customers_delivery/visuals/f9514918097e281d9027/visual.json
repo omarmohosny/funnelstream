@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "f9514918097e281d9027",
   "position": {
     "x": 424,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Orders.carrier",
-              "nativeQueryRef": "carrier"
+              "nativeQueryRef": "carrier",
+              "active": true
             }
           ]
         },

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "6ecb50460413548814ed",
   "position": {
     "x": 644,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Campaign.name",
-              "nativeQueryRef": "name"
+              "nativeQueryRef": "name",
+              "active": true
             }
           ]
         },

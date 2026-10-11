@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "296fce128b3676a87f32",
   "position": {
     "x": 424,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Orders.current_status",
-              "nativeQueryRef": "current_status"
+              "nativeQueryRef": "current_status",
+              "active": true
             }
           ]
         },
@@ -168,5 +169,37 @@
       ]
     },
     "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "e88306d9d2573a66fce2",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Orders"
+              }
+            },
+            "Property": "current_status"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "3c28d571222caf7c20f2",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Measures"
+              }
+            },
+            "Property": "Order Count"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
   }
 }

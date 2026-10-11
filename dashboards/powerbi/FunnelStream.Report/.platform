@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "FunnelStream"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "a55930c7-7ad1-4d2a-9a6d-bf9df47d7521"
+  }
+}

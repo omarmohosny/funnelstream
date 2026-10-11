@@ -1,76 +1,91 @@
 table 'Funnel Daily'
+	lineageTag: c0d4a834-8472-48cf-82fd-5eba3be3b476
 
 	column event_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
+		lineageTag: 4b2451c7-dd8c-461a-a39f-ae27459842e6
 		summarizeBy: none
 		sourceColumn: event_date
 
+		annotation UnderlyingDateTimeDataType = Date
+
 	column country
 		dataType: string
+		lineageTag: 5dbead30-c669-4ddf-adbc-84b3c32e893b
 		summarizeBy: none
 		sourceColumn: country
 
 	column channel
 		dataType: string
+		lineageTag: 12d40d29-262c-4767-b10d-77b6c776b13a
 		summarizeBy: none
 		sourceColumn: channel
 
 	column platform
 		dataType: string
+		lineageTag: d1414e2a-90c4-4efd-ad9a-a2a5cc3b0a35
 		summarizeBy: none
 		sourceColumn: platform
 
 	column sessions
 		dataType: int64
 		formatString: 0
+		lineageTag: 3f774a7a-f61e-4fcf-96ed-167edcc9f811
 		summarizeBy: none
 		sourceColumn: sessions
 
 	column product_views
 		dataType: int64
 		formatString: 0
+		lineageTag: 64cd99d4-2557-4691-a562-27d3307326e3
 		summarizeBy: none
 		sourceColumn: product_views
 
 	column cart_sessions
 		dataType: int64
 		formatString: 0
+		lineageTag: 3e2a33e0-85c9-4356-a257-2d569df4952f
 		summarizeBy: none
 		sourceColumn: cart_sessions
 
 	column checkout_sessions
 		dataType: int64
 		formatString: 0
+		lineageTag: fe5c059e-89ab-4283-800d-492dfa615cac
 		summarizeBy: none
 		sourceColumn: checkout_sessions
 
 	column orders
 		dataType: int64
 		formatString: 0
+		lineageTag: b0c669fc-94fc-4852-b549-b5c9f5f12ec0
 		summarizeBy: none
 		sourceColumn: orders
 
 	column cart_abandon_rate
 		dataType: double
 		isHidden
+		lineageTag: 4153ab52-fa93-4222-8366-8358bb8179e4
 		summarizeBy: none
 		sourceColumn: cart_abandon_rate
 
 	column checkout_abandon_rate
 		dataType: double
 		isHidden
+		lineageTag: d6867cbd-5453-4ce4-81e9-83c2347f0b75
 		summarizeBy: none
 		sourceColumn: checkout_abandon_rate
 
 	partition 'Funnel Daily' = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "agg_funnel_daily", Kind = "Table"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"event_date", "country", "channel", "platform", "sessions", "product_views", "cart_sessions", "checkout_sessions", "orders", "cart_abandon_rate", "checkout_abandon_rate"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "agg_funnel_daily", Kind = "Table"]}[Data],
+					Selected = Table.SelectColumns(Raw, {"event_date", "country", "channel", "platform", "sessions", "product_views", "cart_sessions", "checkout_sessions", "orders", "cart_abandon_rate", "checkout_abandon_rate"})
+				in
+					Selected
+

@@ -1,56 +1,68 @@
 table Customer
+	lineageTag: 89a64ab7-9356-4aa5-aaa3-be535c701ebe
 
 	column customer_id
 		dataType: string
 		isHidden
+		lineageTag: c4edfaf2-b74e-4bd4-8dce-05f89456a9df
 		summarizeBy: none
 		sourceColumn: customer_id
 
 	column country
 		dataType: string
+		lineageTag: 183a5d1a-c269-4ff9-92e4-ea584750d6ac
 		summarizeBy: none
 		sourceColumn: country
 
 	column city
 		dataType: string
+		lineageTag: 6e2b2df0-0843-46f5-bc16-1af6858fbc82
 		summarizeBy: none
 		sourceColumn: city
 
 	column district
 		dataType: string
+		lineageTag: 2bc26776-6abf-4d6d-ab70-64a12b2bbd0d
 		summarizeBy: none
 		sourceColumn: district
 
 	column signup_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
+		lineageTag: ea03ac27-d046-418b-b76d-c07a97ac4bc3
 		summarizeBy: none
 		sourceColumn: signup_date
 
+		annotation UnderlyingDateTimeDataType = Date
+
 	column primary_device
 		dataType: string
+		lineageTag: abefa220-d6b3-4288-bc2a-f28d7105b829
 		summarizeBy: none
 		sourceColumn: primary_device
 
 	column marketing_consent
 		dataType: boolean
+		lineageTag: af2ab86e-cdf2-4899-8acc-ebfe2d698000
 		summarizeBy: none
 		sourceColumn: marketing_consent
 
 	column is_current
 		dataType: boolean
+		lineageTag: a0ab4c0c-9834-4fbc-9222-68240eca828e
 		summarizeBy: none
 		sourceColumn: is_current
 
 	partition Customer = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "dim_customer", Kind = "Table"]}[Data],
-				Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
-				Selected = Table.SelectColumns(Filtered, {"customer_id", "country", "city", "district", "signup_date", "primary_device", "marketing_consent", "is_current"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "dim_customer", Kind = "Table"]}[Data],
+					Filtered = Table.SelectRows(Table.Buffer(Raw), each [is_current] = true),
+					Selected = Table.SelectColumns(Filtered, {"customer_id", "country", "city", "district", "signup_date", "primary_device", "marketing_consent", "is_current"})
+				in
+					Selected
+

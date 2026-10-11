@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "03371a549bd114afadea",
   "position": {
     "x": 0,
@@ -21,14 +21,13 @@
                   {
                     "value": "FunnelStream  |  Executive",
                     "textStyle": {
+                      "fontWeight": "bold",
                       "fontFamily": "Segoe UI Semibold",
                       "fontSize": "20pt",
-                      "fontWeight": "bold",
                       "color": "#ffffff"
                     }
                   }
-                ],
-                "horizontalTextAlignment": "left"
+                ]
               },
               {
                 "textRuns": [
@@ -40,8 +39,7 @@
                       "color": "#cde2fb"
                     }
                   }
-                ],
-                "horizontalTextAlignment": "left"
+                ]
               }
             ]
           }

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "35395898df93b013f4be",
   "position": {
     "x": 16,
@@ -27,25 +27,8 @@
                 }
               },
               "queryRef": "Date.date",
-              "nativeQueryRef": "date"
-            }
-          ]
-        },
-        "Y": {
-          "projections": [
-            {
-              "field": {
-                "Measure": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "_Measures"
-                    }
-                  },
-                  "Property": "Closing Stock"
-                }
-              },
-              "queryRef": "_Measures.Closing Stock",
-              "nativeQueryRef": "Closing Stock"
+              "nativeQueryRef": "date",
+              "active": true
             }
           ]
         },
@@ -64,6 +47,24 @@
               },
               "queryRef": "Store.store_name",
               "nativeQueryRef": "store_name"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Closing Stock"
+                }
+              },
+              "queryRef": "_Measures.Closing Stock",
+              "nativeQueryRef": "Closing Stock"
             }
           ]
         }

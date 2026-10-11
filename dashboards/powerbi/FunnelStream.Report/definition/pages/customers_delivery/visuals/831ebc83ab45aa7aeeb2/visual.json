@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "831ebc83ab45aa7aeeb2",
   "position": {
     "x": 852,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Orders.payment_method",
-              "nativeQueryRef": "payment_method"
+              "nativeQueryRef": "payment_method",
+              "active": true
             }
           ]
         },

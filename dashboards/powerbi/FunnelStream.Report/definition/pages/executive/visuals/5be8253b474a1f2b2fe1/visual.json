@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "5be8253b474a1f2b2fe1",
   "position": {
-    "x": 434.7,
-    "y": 72,
+    "x": 434.77203647416417,
+    "y": 71.975683890577514,
     "z": 2,
-    "height": 44,
-    "width": 410.7,
+    "height": 43.768996960486326,
+    "width": 410.45592705167172,
     "tabOrder": 2
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Orders Daily.channel",
-              "nativeQueryRef": "channel"
+              "nativeQueryRef": "channel",
+              "active": true
             }
           ]
         }
@@ -113,5 +114,23 @@
       ]
     },
     "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "9fa38c56d04c1a6c2489",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Orders Daily"
+              }
+            },
+            "Property": "channel"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
   }
 }

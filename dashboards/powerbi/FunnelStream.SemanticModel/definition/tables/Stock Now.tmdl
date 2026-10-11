@@ -1,53 +1,62 @@
 table 'Stock Now'
+	lineageTag: f1916757-7751-402c-be73-b6ccc382ad0f
 
 	column store_id
 		dataType: string
 		isHidden
+		lineageTag: 0d8ea345-6379-443c-a3c8-128c717d077e
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column product_id
 		dataType: string
 		isHidden
+		lineageTag: 8aebe822-e53e-4568-9233-e3b6be2f1981
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column on_hand
 		dataType: int64
 		formatString: 0
+		lineageTag: 6e95b745-e7eb-49b4-9e47-7f8ebf2daafb
 		summarizeBy: none
 		sourceColumn: on_hand
 
 	column reserved_qty
 		dataType: int64
 		formatString: 0
+		lineageTag: 93c320a3-e88a-4388-a1eb-f11b3e703c71
 		summarizeBy: none
 		sourceColumn: reserved_qty
 
 	column available
 		dataType: int64
 		formatString: 0
+		lineageTag: c88e33e2-bd67-48c7-8529-1d11c7d9156b
 		summarizeBy: none
 		sourceColumn: available
 
 	column reorder_point
 		dataType: int64
 		formatString: 0
+		lineageTag: 83d8e51a-fe18-44b5-bd53-fac5df68f667
 		summarizeBy: none
 		sourceColumn: reorder_point
 
 	column updated_at
 		dataType: dateTime
 		formatString: yyyy-MM-dd HH:mm
+		lineageTag: caaa45ed-003c-4ec5-bdc8-c81c006382dc
 		summarizeBy: none
 		sourceColumn: updated_at
 
 	partition 'Stock Now' = m
 		mode: import
 		source =
-			let
-				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-				Raw = Source{[Schema = "public", Item = "live_stock_now"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"store_id", "product_id", "on_hand", "reserved_qty", "available", "reorder_point", "updated_at"})
-			in
-				Selected
+				let
+					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+					Raw = Source{[Schema = "public", Item = "live_stock_now"]}[Data],
+					Selected = Table.SelectColumns(Raw, {"store_id", "product_id", "on_hand", "reserved_qty", "available", "reorder_point", "updated_at"})
+				in
+					Selected
+

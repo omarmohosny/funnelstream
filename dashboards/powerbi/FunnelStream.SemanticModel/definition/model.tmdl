@@ -3,7 +3,15 @@ model Model
 	defaultPowerBIDataSourceVersion: powerBI_V3
 	discourageImplicitMeasures
 	sourceQueryCulture: en-US
-	annotation __PBI_TimeIntelligenceEnabled = 0
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_QueryOrder = ["Date","Campaign","Product","Campaign Daily","Funnel Daily","Orders Daily","Orders","City Product Daily","Order Lines","Customer","Store","Stock Now","Inventory Daily","OOS Demand Daily","Express Daily","Marketing D1 Campaign","Marketing D1 Product","_Measures"]
+
+annotation PBI_ProTooling = ["DevMode"]
 
 ref table Date
 ref table Campaign
@@ -23,3 +31,4 @@ ref table 'Express Daily'
 ref table 'Marketing D1 Campaign'
 ref table 'Marketing D1 Product'
 ref table _Measures
+

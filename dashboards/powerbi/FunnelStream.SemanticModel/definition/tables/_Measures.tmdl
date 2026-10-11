@@ -1,89 +1,90 @@
 table _Measures
+	lineageTag: d449c476-109e-44e3-ae2e-d43c0518c258
 
-	measure Spend =
-			SUM ( 'Campaign Daily'[spend] )
-		formatString: "#,0"
+	measure Spend = SUM ( 'Campaign Daily'[spend] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: d0683556-634c-429d-be10-287a8f604311
 
-	measure Impressions =
-			SUM ( 'Campaign Daily'[impressions] )
-		formatString: "#,0"
+	measure Impressions = SUM ( 'Campaign Daily'[impressions] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: 1e5f7943-a0cb-4551-a3d0-d0859652194f
 
-	measure 'Ad Clicks' =
-			SUM ( 'Campaign Daily'[clicks] )
-		formatString: "#,0"
+	measure 'Ad Clicks' = SUM ( 'Campaign Daily'[clicks] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: 947598ab-3593-4e62-9dad-84b58f14cc23
 
-	measure 'Platform Conversions' =
-			SUM ( 'Campaign Daily'[platform_conversions] )
-		formatString: "#,0"
+	measure 'Platform Conversions' = SUM ( 'Campaign Daily'[platform_conversions] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: 31b83571-255b-45f0-a108-58bb6c681cd5
 
-	measure 'Attributed Orders' =
-			SUM ( 'Campaign Daily'[orders_placed] )
-		formatString: "#,0"
+	measure 'Attributed Orders' = SUM ( 'Campaign Daily'[orders_placed] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: 8dc20fdc-2111-4fcd-862e-5ea1ec4d22d2
 
-	measure 'Attributed Revenue Placed' =
-			SUM ( 'Campaign Daily'[revenue_placed] )
-		formatString: "#,0"
+	measure 'Attributed Revenue Placed' = SUM ( 'Campaign Daily'[revenue_placed] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: c54c84aa-7a5a-48cd-8df3-3625013c25bd
 
-	measure 'Attributed Revenue Delivered' =
-			SUM ( 'Campaign Daily'[revenue_delivered] )
-		formatString: "#,0"
+	measure 'Attributed Revenue Delivered' = SUM ( 'Campaign Daily'[revenue_delivered] )
+		formatString: #,0
 		displayFolder: Campaign\Base
+		lineageTag: 6148301a-aecd-429d-b7f0-160358d9e281
 
-	measure 'Orders on Spend Days' =
-			CALCULATE ( [Attributed Orders], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
-		formatString: "#,0"
+	measure 'Orders on Spend Days' = CALCULATE ( [Attributed Orders], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: #,0
 		displayFolder: Campaign\Spend days only
+		lineageTag: 2c83e134-f01c-4e59-8d81-3ae329a6a060
 
-	measure 'Delivered Orders on Spend Days' =
-			CALCULATE ( SUM ( 'Campaign Daily'[orders_delivered] ), KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
-		formatString: "#,0"
+	measure 'Delivered Orders on Spend Days' = CALCULATE ( SUM ( 'Campaign Daily'[orders_delivered] ), KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: #,0
 		displayFolder: Campaign\Spend days only
+		lineageTag: 52fa715f-46bb-4cb4-887c-3ab0f52f4948
 
-	measure 'Revenue Placed on Spend Days' =
-			CALCULATE ( [Attributed Revenue Placed], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
-		formatString: "#,0"
+	measure 'Revenue Placed on Spend Days' = CALCULATE ( [Attributed Revenue Placed], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: #,0
 		displayFolder: Campaign\Spend days only
+		lineageTag: a6cfc674-e6ed-494d-bd87-87423460b23e
 
-	measure 'Revenue Delivered on Spend Days' =
-			CALCULATE ( [Attributed Revenue Delivered], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
-		formatString: "#,0"
+	measure 'Revenue Delivered on Spend Days' = CALCULATE ( [Attributed Revenue Delivered], KEEPFILTERS ( 'Campaign Daily'[spend] > 0 ) )
+		formatString: #,0
 		displayFolder: Campaign\Spend days only
+		lineageTag: 8dc2c25a-053e-4675-abff-66be1fdf5b3e
 
-	measure CTR =
-			DIVIDE ( [Ad Clicks], [Impressions] )   // API-reported clicks; not the click used for attribution
-		formatString: "0.0%"
+	measure CTR = DIVIDE ( [Ad Clicks], [Impressions] )   // API-reported clicks; not the click used for attribution
+		formatString: 0.0%
 		displayFolder: Campaign\Ratios
+		lineageTag: 898243e4-8ba8-4120-9e28-808edd3b838d
 
-	measure 'Conversion Rate' =
-			DIVIDE ( [Orders on Spend Days], [Ad Clicks] )   // attributed orders per API click
-		formatString: "0.0%"
+	measure 'Conversion Rate' = DIVIDE ( [Orders on Spend Days], [Ad Clicks] )   // attributed orders per API click
+		formatString: 0.0%
 		displayFolder: Campaign\Ratios
+		lineageTag: 09697e26-1e5f-4106-bc27-d3df606b7909
 
-	measure CPA =
-			DIVIDE ( [Spend], [Orders on Spend Days] )
-		formatString: "#,0"
+	measure CPA = DIVIDE ( [Spend], [Orders on Spend Days] )
+		formatString: #,0
 		displayFolder: Campaign\Ratios
+		lineageTag: 74c8ac93-36bc-4f38-a343-6af958524e2e
 
-	measure 'Cost per Delivered Order' =
-			DIVIDE ( [Spend], [Delivered Orders on Spend Days] )
-		formatString: "#,0"
+	measure 'Cost per Delivered Order' = DIVIDE ( [Spend], [Delivered Orders on Spend Days] )
+		formatString: #,0
 		displayFolder: Campaign\Ratios
+		lineageTag: e31bf685-b4b3-4162-aa7c-e2fd8ab221f5
 
-	measure 'ROAS Placed' =
-			DIVIDE ( [Revenue Placed on Spend Days], [Spend] )
-		formatString: "0.00"
+	measure 'ROAS Placed' = DIVIDE ( [Revenue Placed on Spend Days], [Spend] )
+		formatString: 0.00
 		displayFolder: Campaign\Ratios
+		lineageTag: 2222634e-59a3-4afa-8a88-f10423f37acc
 
-	measure 'ROAS Delivered' =
-			DIVIDE ( [Revenue Delivered on Spend Days], [Spend] )   // the headline: what the cash actually returns
-		formatString: "0.00"
+	measure 'ROAS Delivered' = DIVIDE ( [Revenue Delivered on Spend Days], [Spend] )   // the headline: what the cash actually returns
+		formatString: 0.00
 		displayFolder: Campaign\Ratios
+		lineageTag: 434197a8-a2ca-4e36-8686-d9079d3ef824
 
 	measure 'ROAS Gap' =
 			// How much of the placed ROAS is lost to cancellations, returns and failed COD deliveries.
@@ -91,162 +92,166 @@ table _Measures
 			VAR Delivered = [ROAS Delivered]
 			RETURN
 				IF ( NOT ISBLANK ( Placed ) && NOT ISBLANK ( Delivered ), Placed - Delivered )
-		formatString: "0.00"
+		formatString: 0.00
 		displayFolder: Campaign\Ratios
+		lineageTag: 17bc1d83-e69f-459d-a84f-b7d41a577841
 
 	measure 'Platform vs Attributed' =
 			// Conversions the ad platform reports divided by orders we attribute. Above 1 means the platform claims more.
 			DIVIDE ( [Platform Conversions], [Orders on Spend Days] )
-		formatString: "0.00"
+		formatString: 0.00
 		displayFolder: Campaign\Ratios
+		lineageTag: b622a3d1-91b6-408d-9db9-4aabbc715540
 
 	measure 'Is Provisional' =
 			VAR LastDay = MAX ( 'Date'[Date] )
 			RETURN
 				LastDay >= TODAY () - 3
 		displayFolder: Campaign\Maturity
+		lineageTag: df1a36aa-99bf-4787-a770-6f8f61e0161e
 
-	measure 'Maturity Label' =
-			IF ( [Is Provisional], "Provisional: orders still settling", "Settled" )
+	measure 'Maturity Label' = IF ( [Is Provisional], "Provisional: orders still settling", "Settled" )
 		displayFolder: Campaign\Maturity
+		lineageTag: 442ec1ac-942c-43d0-96c9-075a3b60cc6d
 
-	measure Sessions =
-			SUM ( 'Funnel Daily'[sessions] )
-		formatString: "#,0"
+	measure Sessions = SUM ( 'Funnel Daily'[sessions] )
+		formatString: #,0
 		displayFolder: Funnel
+		lineageTag: 08e6cc4b-40e7-4e6b-a6d0-badff8fb386c
 
-	measure 'Product View Sessions' =
-			SUM ( 'Funnel Daily'[product_views] )
-		formatString: "#,0"
+	measure 'Product View Sessions' = SUM ( 'Funnel Daily'[product_views] )
+		formatString: #,0
 		displayFolder: Funnel
+		lineageTag: a5b9dfba-32e9-4fc1-b286-e4f208f1b9de
 
-	measure 'Cart Sessions' =
-			SUM ( 'Funnel Daily'[cart_sessions] )
-		formatString: "#,0"
+	measure 'Cart Sessions' = SUM ( 'Funnel Daily'[cart_sessions] )
+		formatString: #,0
 		displayFolder: Funnel
+		lineageTag: 17ea803a-d83d-4ba3-addd-55572fc35725
 
-	measure 'Checkout Sessions' =
-			SUM ( 'Funnel Daily'[checkout_sessions] )
-		formatString: "#,0"
+	measure 'Checkout Sessions' = SUM ( 'Funnel Daily'[checkout_sessions] )
+		formatString: #,0
 		displayFolder: Funnel
+		lineageTag: 786f59e1-f1aa-4569-bad6-a653e87aa018
 
-	measure 'Funnel Orders' =
-			SUM ( 'Funnel Daily'[orders] )
-		formatString: "#,0"
+	measure 'Funnel Orders' = SUM ( 'Funnel Daily'[orders] )
+		formatString: #,0
 		displayFolder: Funnel
+		lineageTag: 09cf3c05-dd1f-4874-8e34-e82b12d8ca33
 
-	measure 'View Rate' =
-			DIVIDE ( [Product View Sessions], [Sessions] )
-		formatString: "0.0%"
+	measure 'View Rate' = DIVIDE ( [Product View Sessions], [Sessions] )
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: eed9c191-f301-4b1a-9ebb-aa1aa3ab6e23
 
-	measure 'Cart Rate' =
-			DIVIDE ( [Cart Sessions], [Product View Sessions] )
-		formatString: "0.0%"
+	measure 'Cart Rate' = DIVIDE ( [Cart Sessions], [Product View Sessions] )
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: e5689858-b531-412a-ab39-dd51c501ba05
 
-	measure 'Checkout Rate' =
-			DIVIDE ( [Checkout Sessions], [Cart Sessions] )
-		formatString: "0.0%"
+	measure 'Checkout Rate' = DIVIDE ( [Checkout Sessions], [Cart Sessions] )
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: 33bd8d4e-7c84-4ddb-8fd6-094941ea717d
 
-	measure 'Order Rate' =
-			DIVIDE ( [Funnel Orders], [Checkout Sessions] )
-		formatString: "0.0%"
+	measure 'Order Rate' = DIVIDE ( [Funnel Orders], [Checkout Sessions] )
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: 780b5e00-d2c4-4d47-85c5-0276e855d0f3
 
-	measure 'Session Conversion' =
-			DIVIDE ( [Funnel Orders], [Sessions] )
-		formatString: "0.0%"
+	measure 'Session Conversion' = DIVIDE ( [Funnel Orders], [Sessions] )
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: e323979a-b30e-4a8a-bd8f-e0374ed49e8a
 
-	measure 'Cart Abandon Rate' =
-			1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
-		formatString: "0.0%"
+	measure 'Cart Abandon Rate' = 1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: 1a531a5c-4250-4780-9e4b-edbc13f6f5ba
 
-	measure 'Checkout Abandon Rate' =
-			1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
-		formatString: "0.0%"
+	measure 'Checkout Abandon Rate' = 1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
+		formatString: 0.0%
 		displayFolder: Funnel
+		lineageTag: 7e57ef86-26f6-44f2-8d71-adb0511e3ca4
 
-	measure 'Orders Placed' =
-			SUM ( 'Orders Daily'[orders_placed] )
-		formatString: "#,0"
+	measure 'Orders Placed' = SUM ( 'Orders Daily'[orders_placed] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: c58e5cdb-3ac8-409a-99f8-3c5d50aa1f77
 
-	measure 'Orders Delivered' =
-			SUM ( 'Orders Daily'[orders_delivered] )
-		formatString: "#,0"
+	measure 'Orders Delivered' = SUM ( 'Orders Daily'[orders_delivered] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: 9d4df708-1d51-449c-89df-e8600e8474e3
 
-	measure 'Orders Cancelled' =
-			SUM ( 'Orders Daily'[orders_cancelled] )
-		formatString: "#,0"
+	measure 'Orders Cancelled' = SUM ( 'Orders Daily'[orders_cancelled] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: a3fa787f-e3d2-446b-b248-64aec5067278
 
-	measure 'Orders Returned' =
-			SUM ( 'Orders Daily'[orders_returned] )
-		formatString: "#,0"
+	measure 'Orders Returned' = SUM ( 'Orders Daily'[orders_returned] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: e63cd008-3749-4941-a3bf-8638d669c63a
 
-	measure 'Orders with Failed Attempt' =
-			SUM ( 'Orders Daily'[orders_with_failed_attempt] )
-		formatString: "#,0"
+	measure 'Orders with Failed Attempt' = SUM ( 'Orders Daily'[orders_with_failed_attempt] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: 8bd050ba-9d4b-4689-a974-a27e15d6d10e
 
-	measure 'Revenue Placed' =
-			SUM ( 'Orders Daily'[revenue_placed] )
-		formatString: "#,0"
+	measure 'Revenue Placed' = SUM ( 'Orders Daily'[revenue_placed] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: 4b42fce1-c25b-448d-a9ca-de70fa932e62
 
-	measure 'Revenue Delivered' =
-			SUM ( 'Orders Daily'[revenue_delivered] )   // counted on the ORDER date (cohort view)
-		formatString: "#,0"
+	measure 'Revenue Delivered' = SUM ( 'Orders Daily'[revenue_delivered] )   // counted on the ORDER date (cohort view)
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: f67f878c-8927-4d1d-8627-25a3ecd535d4
 
-	measure AOV =
-			DIVIDE ( [Revenue Placed], [Orders Placed] )
-		formatString: "#,0"
+	measure AOV = DIVIDE ( [Revenue Placed], [Orders Placed] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: 912cbf95-a790-48c3-8899-13580370b0e2
 
-	measure 'Delivered Share of Revenue' =
-			DIVIDE ( [Revenue Delivered], [Revenue Placed] )
-		formatString: "0.0%"
+	measure 'Delivered Share of Revenue' = DIVIDE ( [Revenue Delivered], [Revenue Placed] )
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: 3be12c73-01da-46bb-a95b-e3ebcaafae88
 
-	measure 'Cancel Rate' =
-			DIVIDE ( [Orders Cancelled], [Orders Placed] )
-		formatString: "0.0%"
+	measure 'Cancel Rate' = DIVIDE ( [Orders Cancelled], [Orders Placed] )
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: dae449a2-e379-4f2f-bcac-f9b439483b1f
 
-	measure 'Return Rate' =
-			DIVIDE ( [Orders Returned], [Orders Placed] )
-		formatString: "0.0%"
+	measure 'Return Rate' = DIVIDE ( [Orders Returned], [Orders Placed] )
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: 9655f674-3b38-4a64-b048-6a6fb2473a63
 
-	measure 'Failed Attempt Rate' =
-			DIVIDE ( [Orders with Failed Attempt], [Orders Placed] )
-		formatString: "0.0%"
+	measure 'Failed Attempt Rate' = DIVIDE ( [Orders with Failed Attempt], [Orders Placed] )
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: 7cbef225-185b-4142-80ad-099588521a06
 
-	measure 'New Customer Orders' =
-			SUM ( 'Orders Daily'[new_customer_orders] )
-		formatString: "#,0"
+	measure 'New Customer Orders' = SUM ( 'Orders Daily'[new_customer_orders] )
+		formatString: #,0
 		displayFolder: Executive
+		lineageTag: 1799de63-a1b6-4c0a-a560-abc677e47ec5
 
-	measure 'New Customer Share' =
-			DIVIDE ( [New Customer Orders], [Orders Placed] )
-		formatString: "0.0%"
+	measure 'New Customer Share' = DIVIDE ( [New Customer Orders], [Orders Placed] )
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: dce80067-b409-4506-992c-162872373099
 
 	measure 'Direct Share' =
 			DIVIDE (
 				CALCULATE ( [Orders Placed], 'Orders Daily'[channel] = "direct" ),
 				CALCULATE ( [Orders Placed], REMOVEFILTERS ( 'Orders Daily'[channel] ) )
 			)
-		formatString: "0.0%"
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: cbef5938-e267-4915-be2d-de0e094062df
 
 	measure 'Revenue Placed vs Last Week' =
 			// Change against the same weekday one week earlier. Needs the marked date table.
@@ -254,23 +259,24 @@ table _Measures
 			VAR LastWeek = CALCULATE ( [Revenue Placed], DATEADD ( 'Date'[Date], -7, DAY ) )
 			RETURN
 				DIVIDE ( ThisWeek - LastWeek, LastWeek )
-		formatString: "0.0%"
+		formatString: 0.0%
 		displayFolder: Executive
+		lineageTag: d3f69da8-83a3-4dfe-9d90-ceb76e2fcd20
 
-	measure 'Stock Lines' =
-			COUNTROWS ( 'Stock Now' )   // store and product pairs
-		formatString: "#,0"
+	measure 'Stock Lines' = COUNTROWS ( 'Stock Now' )   // store and product pairs
+		formatString: #,0
 		displayFolder: Inventory\Now
+		lineageTag: 0ddb0ccc-c214-4464-8e89-5050cff838e2
 
-	measure 'Stock Units Available' =
-			SUM ( 'Stock Now'[available] )
-		formatString: "#,0"
+	measure 'Stock Units Available' = SUM ( 'Stock Now'[available] )
+		formatString: #,0
 		displayFolder: Inventory\Now
+		lineageTag: 87f24575-f878-411a-ac33-f3965d177430
 
-	measure 'Out of Stock Lines' =
-			CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) )
-		formatString: "#,0"
+	measure 'Out of Stock Lines' = CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) )
+		formatString: #,0
 		displayFolder: Inventory\Now
+		lineageTag: 24f84a55-3618-4443-a655-b383d6197182
 
 	measure 'Low Stock Lines' =
 			// Above zero but below the reorder point. A column-to-column comparison needs FILTER, not a CALCULATE boolean.
@@ -280,68 +286,72 @@ table _Measures
 					'Stock Now'[available] > 0 && 'Stock Now'[available] < 'Stock Now'[reorder_point]
 				)
 			)
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Inventory\Now
+		lineageTag: c6c556a1-0060-4bfa-aff0-8f89978be547
 
-	measure 'Out of Stock Rate' =
-			DIVIDE ( [Out of Stock Lines], [Stock Lines] )
-		formatString: "0.0%"
+	measure 'Out of Stock Rate' = DIVIDE ( [Out of Stock Lines], [Stock Lines] )
+		formatString: 0.0%
 		displayFolder: Inventory\Now
+		lineageTag: 2ac586ba-aad4-4ff0-b728-2cdf4c86ae27
 
 	measure 'Stock Freshness (seconds)' =
 			// Age of the newest stock row. Stock is recomputed after each Silver batch, so about one batch behind real time.
 			DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Inventory\Now
+		lineageTag: e6e49ee8-8641-4b5e-8e7a-dacde77a025d
 
 	measure 'Closing Stock' =
 			// Semi-additive: the total of the LAST day that has data inside the filter context, never a sum over days.
 			VAR LastDay = CALCULATE ( MAX ( 'Inventory Daily'[report_date] ) )
 			RETURN
 				CALCULATE ( SUM ( 'Inventory Daily'[closing_on_hand] ), 'Inventory Daily'[report_date] = LastDay )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 8e16981d-89f5-4cbf-a9ca-8fff6ae7e7f0
 
-	measure 'Units Sold' =
-			SUM ( 'Inventory Daily'[units_sold] )
-		formatString: "#,0"
+	measure 'Units Sold' = SUM ( 'Inventory Daily'[units_sold] )
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 042a30e4-67e8-4235-8440-c49039a4e222
 
-	measure 'Units Received' =
-			SUM ( 'Inventory Daily'[units_received] )
-		formatString: "#,0"
+	measure 'Units Received' = SUM ( 'Inventory Daily'[units_received] )
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: d733c038-e121-4b4d-83f8-e17ee442ad2e
 
-	measure 'Units Shrunk' =
-			SUM ( 'Inventory Daily'[units_shrunk] )
-		formatString: "#,0"
+	measure 'Units Shrunk' = SUM ( 'Inventory Daily'[units_shrunk] )
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 0173c253-684f-4f06-a454-52c078b6c655
 
-	measure 'Units Adjusted' =
-			SUM ( 'Inventory Daily'[units_adjusted] )
-		formatString: "#,0"
+	measure 'Units Adjusted' = SUM ( 'Inventory Daily'[units_adjusted] )
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 884a16f2-2dcf-4d9f-bdce-37efe2694315
 
 	measure 'Oversold Units' =
 			// Units customers asked for beyond the stock on the shelf (no reservations, so the app promised stock it did not have).
 			SUM ( 'Inventory Daily'[oversold_units] )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 071a55eb-3abe-49d0-a582-2155376c4cf9
 
-	measure 'Shrinkage Rate' =
-			DIVIDE ( [Units Shrunk], [Units Sold] + [Units Shrunk] )
-		formatString: "0.0%"
+	measure 'Shrinkage Rate' = DIVIDE ( [Units Shrunk], [Units Sold] + [Units Shrunk] )
+		formatString: 0.0%
 		displayFolder: Inventory\Daily
+		lineageTag: e1e396a9-0b0d-402e-9d25-cc8203f053ec
 
-	measure 'Net Stock Change' =
-			[Units Received] - [Units Sold] - [Units Shrunk] + [Units Adjusted]
-		formatString: "#,0"
+	measure 'Net Stock Change' = [Units Received] - [Units Sold] - [Units Shrunk] + [Units Adjusted]
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 0f76f793-bf2d-46ae-98f5-916d971bd012
 
-	measure 'Ended Out of Stock' =
-			CALCULATE ( COUNTROWS ( 'Inventory Daily' ), KEEPFILTERS ( 'Inventory Daily'[ended_out_of_stock] = TRUE () ) )
-		formatString: "#,0"
+	measure 'Ended Out of Stock' = CALCULATE ( COUNTROWS ( 'Inventory Daily' ), KEEPFILTERS ( 'Inventory Daily'[ended_out_of_stock] = TRUE () ) )
+		formatString: #,0
 		displayFolder: Inventory\Daily
+		lineageTag: 4f506ea5-ea84-4093-9d63-72fbe0281734
 
 	measure 'Days of Cover' =
 			// Closing stock divided by the average units sold per day with data. Blank when nothing sold.
@@ -349,99 +359,104 @@ table _Measures
 			VAR AvgDailySold = DIVIDE ( [Units Sold], Days )
 			RETURN
 				DIVIDE ( [Closing Stock], AvgDailySold )
-		formatString: "#,0.0"
+		formatString: #,0.0
 		displayFolder: Inventory\Daily
+		lineageTag: 94d37d8c-ce18-4fc2-8c74-fc0f6ac0f19b
 
-	measure 'OOS Views' =
-			SUM ( 'OOS Demand Daily'[oos_views] )
-		formatString: "#,0"
+	measure 'OOS Views' = SUM ( 'OOS Demand Daily'[oos_views] )
+		formatString: #,0
 		displayFolder: Inventory\Demand on empty shelves
+		lineageTag: 2b8c1993-b46c-453f-a7a8-b4f0565f5b75
 
-	measure 'OOS Add to Cart' =
-			SUM ( 'OOS Demand Daily'[oos_add_to_cart] )
-		formatString: "#,0"
+	measure 'OOS Add to Cart' = SUM ( 'OOS Demand Daily'[oos_add_to_cart] )
+		formatString: #,0
 		displayFolder: Inventory\Demand on empty shelves
+		lineageTag: 592c240c-5462-47c7-9364-5811595feb6a
 
-	measure 'Served Demand Clicks' =
-			SUM ( 'OOS Demand Daily'[served_clicks] )   // all landing clicks in served districts
-		formatString: "#,0"
+	measure 'Served Demand Clicks' = SUM ( 'OOS Demand Daily'[served_clicks] )   // all landing clicks in served districts
+		formatString: #,0
 		displayFolder: Inventory\Demand on empty shelves
+		lineageTag: c692ee9f-5e6a-41c5-91c5-f9d6d79623a6
 
-	measure 'OOS Demand Clicks' =
-			SUM ( 'OOS Demand Daily'[oos_clicks] )   // the flagged part of the same clicks
-		formatString: "#,0"
+	measure 'OOS Demand Clicks' = SUM ( 'OOS Demand Daily'[oos_clicks] )   // the flagged part of the same clicks
+		formatString: #,0
 		displayFolder: Inventory\Demand on empty shelves
+		lineageTag: 6cb98ca8-afe0-436c-a8dd-84d5ce910ea8
 
-	measure 'Served Clicks' =
-			SUM ( 'Marketing D1 Campaign'[served_clicks] )   // landing clicks in served districts: the denominator
-		formatString: "#,0"
+	measure 'Served Clicks' = SUM ( 'Marketing D1 Campaign'[served_clicks] )   // landing clicks in served districts: the denominator
+		formatString: #,0
 		displayFolder: Marketing and inventory
+		lineageTag: 32b4841a-3b60-4208-b1b3-1814d3826f69
 
-	measure 'OOS Clicks' =
-			SUM ( 'Marketing D1 Campaign'[oos_clicks] )   // the part in minutes flagged out of stock: the numerator
-		formatString: "#,0"
+	measure 'OOS Clicks' = SUM ( 'Marketing D1 Campaign'[oos_clicks] )   // the part in minutes flagged out of stock: the numerator
+		formatString: #,0
 		displayFolder: Marketing and inventory
+		lineageTag: 9ee2b0e0-a7e1-4cb3-a09e-9786e1c6fec4
 
-	measure 'OOS Click Share' =
-			DIVIDE ( [OOS Clicks], [Served Clicks] )   // both counts come from the same table and population
-		formatString: "0.0%"
+	measure 'OOS Click Share' = DIVIDE ( [OOS Clicks], [Served Clicks] )   // both counts come from the same table and population
+		formatString: 0.0%
 		displayFolder: Marketing and inventory
+		lineageTag: 8ca0e51f-3fd2-443e-b6c9-36d2ec37099b
 
 	measure 'Exposed Spend' =
 			// Estimated spend exposed to out-of-stock: spend x oos_clicks / served_clicks per campaign and day (the column is summed).
 			// An estimate that assumes spend is spread evenly over served landing clicks; the flag is the stock when the minute was written.
 			SUM ( 'Marketing D1 Campaign'[exposed_spend] )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Marketing and inventory
+		lineageTag: 79835a7b-e6f5-4112-9034-a2b53d159782
 
-	measure 'Campaign Spend D1' =
-			SUM ( 'Marketing D1 Campaign'[spend] )
-		formatString: "#,0"
+	measure 'Campaign Spend D1' = SUM ( 'Marketing D1 Campaign'[spend] )
+		formatString: #,0
 		displayFolder: Marketing and inventory
+		lineageTag: 89d3f5f2-3ee1-46b5-99c1-bb9a7b6259ff
 
-	measure 'Exposed Share of Spend' =
-			DIVIDE ( [Exposed Spend], [Campaign Spend D1] )
-		formatString: "0.0%"
+	measure 'Exposed Share of Spend' = DIVIDE ( [Exposed Spend], [Campaign Spend D1] )
+		formatString: 0.0%
 		displayFolder: Marketing and inventory
+		lineageTag: 2643e2cb-f692-4ade-8202-c4469edc32fb
 
 	measure 'Revenue at Risk' =
 			// Add-to-carts on empty shelves times price. 'Marketing D1 Product' keeps EVERY out-of-stock product per store, so the total
 			// is the whole day's; put the Top N in the visual filter. Revenue the shelf could not serve, not lost revenue.
 			SUM ( 'Marketing D1 Product'[revenue_at_risk] )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Marketing and inventory
+		lineageTag: 15bffe4a-8377-472e-b59e-2718a32db187
 
-	measure 'Express Orders' =
-			SUM ( 'Express Daily'[orders] )
-		formatString: "#,0"
+	measure 'Express Orders' = SUM ( 'Express Daily'[orders] )
+		formatString: #,0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: ff12fe94-4124-4ec2-9ab6-a53b1d976fc3
 
-	measure 'Express Delivered' =
-			SUM ( 'Express Daily'[delivered] )
-		formatString: "#,0"
+	measure 'Express Delivered' = SUM ( 'Express Daily'[delivered] )
+		formatString: #,0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 2725d8f3-dba3-42f7-a6f3-0ec647e2ec10
 
-	measure 'Express On Time' =
-			SUM ( 'Express Daily'[on_time] )
-		formatString: "#,0"
+	measure 'Express On Time' = SUM ( 'Express Daily'[on_time] )
+		formatString: #,0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 74ffc470-7191-4742-8efd-460851479dcb
 
 	measure 'Express Breaches' =
 			// Always a number: zero breaches must show as 0, never as blank.
 			COALESCE ( SUM ( 'Express Daily'[breached] ), 0 )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 5f967573-95e2-4bda-972a-3e985b26dd7c
 
 	measure 'Express On-time Rate' =
 			// On-time orders over orders that have been decided: delivered, or undelivered past their promise.
 			DIVIDE ( [Express On Time], [Express On Time] + [Express Breaches] )
-		formatString: "0.0%"
+		formatString: 0.0%
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 57bb9296-b8f9-4426-9b5d-b8839b0f320e
 
-	measure 'Slowest Express Delivery (min)' =
-			MAX ( 'Express Daily'[max_delivery_minutes] )
-		formatString: "#,0.0"
+	measure 'Slowest Express Delivery (min)' = MAX ( 'Express Daily'[max_delivery_minutes] )
+		formatString: #,0.0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 77bd5165-5678-41ac-a4e3-256f2a641cc4
 
 	measure 'Average Express Delivery (min)' =
 			// Weighted by delivered orders, not an average of daily averages.
@@ -449,59 +464,62 @@ table _Measures
 				SUMX ( 'Express Daily', 'Express Daily'[avg_delivery_minutes] * 'Express Daily'[delivered] ),
 				[Express Delivered]
 			)
-		formatString: "#,0.0"
+		formatString: #,0.0
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: 5893cccf-6a98-48b2-b542-170141cd10dc
 
-	measure 'Promise Met' =
-			IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
+	measure 'Promise Met' = IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
 		displayFolder: Express delivery (the 20-minute promise)
+		lineageTag: f3718182-72f2-4fe0-a0de-4b00ab2c9c7c
 
-	measure 'Product Sessions' =
-			SUM ( 'City Product Daily'[sessions_viewed] )
-		formatString: "#,0"
+	measure 'Product Sessions' = SUM ( 'City Product Daily'[sessions_viewed] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: 4f7967de-c701-46f8-a7f6-5977812f4555
 
-	measure 'Product Add to Carts' =
-			SUM ( 'City Product Daily'[add_to_cart] )
-		formatString: "#,0"
+	measure 'Product Add to Carts' = SUM ( 'City Product Daily'[add_to_cart] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: 1c5bcd20-8aa1-4d76-a3db-3aef822715d8
 
-	measure 'Product Units' =
-			SUM ( 'City Product Daily'[units] )
-		formatString: "#,0"
+	measure 'Product Units' = SUM ( 'City Product Daily'[units] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: c088b5e8-e752-442f-a076-5009282b48cb
 
-	measure 'Product Revenue' =
-			SUM ( 'City Product Daily'[revenue] )
-		formatString: "#,0"
+	measure 'Product Revenue' = SUM ( 'City Product Daily'[revenue] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: 5ac69a0c-0999-49cc-8cb0-c28613d531e1
 
 	measure 'Product Cart Rate' =
 			// Sessions that added the product to the cart, over sessions that viewed it.
 			DIVIDE ( [Product Add to Carts], [Product Sessions] )
-		formatString: "0.0%"
+		formatString: 0.0%
 		displayFolder: Products and cities
+		lineageTag: 1d03fba2-f2af-4bbe-b149-d373dfcc283a
 
-	measure 'Lines Revenue' =
-			SUM ( 'Order Lines'[line_total] )
-		formatString: "#,0"
+	measure 'Lines Revenue' = SUM ( 'Order Lines'[line_total] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: e703c714-524f-4769-b5f6-e06ed7c7c956
 
-	measure 'Units Ordered' =
-			SUM ( 'Order Lines'[quantity] )
-		formatString: "#,0"
+	measure 'Units Ordered' = SUM ( 'Order Lines'[quantity] )
+		formatString: #,0
 		displayFolder: Products and cities
+		lineageTag: 4e00550f-4886-4cb2-beff-1ab4396c333d
 
-	measure 'Active Customers' =
-			DISTINCTCOUNT ( Orders[customer_id] )
-		formatString: "#,0"
+	measure 'Active Customers' = DISTINCTCOUNT ( Orders[customer_id] )
+		formatString: #,0
 		displayFolder: Customers and delivery
+		lineageTag: 4fc1d9ff-fa48-4ca6-9cc4-e9d72962f9ce
 
 	measure 'Average Delivery Hours' =
 			// Hours from order to delivery, over delivered orders only (undelivered orders have no delivery time).
 			AVERAGE ( Orders[delivery_lead_hours] )
-		formatString: "#,0.0"
+		formatString: #,0.0
 		displayFolder: Customers and delivery
+		lineageTag: 1166a580-f1e4-4be7-a7fb-62ff74217fcd
 
 	measure 'First Attempt Delivery Rate' =
 			// Delivered orders that arrived on the first attempt, over all delivered orders.
@@ -509,31 +527,35 @@ table _Measures
 				CALCULATE ( COUNTROWS ( Orders ), Orders[first_attempt_delivered] = TRUE () ),
 				CALCULATE ( COUNTROWS ( Orders ), Orders[is_delivered] = TRUE () )
 			)
-		formatString: "0.0%"
+		formatString: 0.0%
 		displayFolder: Customers and delivery
+		lineageTag: 68c16a51-038b-4ed8-9847-46100b92e7be
 
 	measure 'Order Count' =
 			// One row per order in 'Orders', so it follows the city, carrier, status and customer filters that
 			// 'Orders Daily' (no city) cannot answer.
 			COUNTROWS ( Orders )
-		formatString: "#,0"
+		formatString: #,0
 		displayFolder: Customers and delivery
+		lineageTag: cf3f6e35-2819-484a-a8c2-07ff1d67c796
 
-	measure 'Order Revenue' =
-			SUM ( Orders[order_total] )
-		formatString: "#,0"
+	measure 'Order Revenue' = SUM ( Orders[order_total] )
+		formatString: #,0
 		displayFolder: Customers and delivery
+		lineageTag: daca6528-93a9-4efb-9154-114a25e091ef
 
 	column Dummy
 		dataType: string
 		isHidden
+		lineageTag: 00b004d9-dee3-4db0-a900-1fc7aa66e3e3
 		summarizeBy: none
 		sourceColumn: Dummy
 
 	partition _Measures = m
 		mode: import
 		source =
-			let
-				Source = #table(type table [Dummy = text], {})
-			in
-				Source
+				let
+					Source = #table(type table [Dummy = text], {})
+				in
+					Source
+

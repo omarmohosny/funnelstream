@@ -1,77 +1,90 @@
 table 'Order Lines'
+	lineageTag: a8b38d08-25e9-4360-9839-124ac2306254
 
 	column order_id
 		dataType: string
+		lineageTag: 46e7bb43-9701-4228-873b-f8790421631d
 		summarizeBy: none
 		sourceColumn: order_id
 
 	column line_no
 		dataType: int64
 		formatString: 0
+		lineageTag: 1460f403-7732-4d90-a7c8-2bef3283291d
 		summarizeBy: none
 		sourceColumn: line_no
 
 	column customer_key
 		dataType: int64
-		formatString: 0
 		isHidden
+		formatString: 0
+		lineageTag: 2f5705cd-9b2d-4ca9-84b3-287bb316fd04
 		summarizeBy: none
 		sourceColumn: customer_key
 
 	column customer_id
 		dataType: string
 		isHidden
+		lineageTag: abd3bc09-a98c-4ea2-972c-37db6610164e
 		summarizeBy: none
 		sourceColumn: customer_id
 
 	column product_key
 		dataType: int64
-		formatString: 0
 		isHidden
+		formatString: 0
+		lineageTag: e173c214-745f-4e98-bb54-1bf26fe33bfc
 		summarizeBy: none
 		sourceColumn: product_key
 
 	column product_id
 		dataType: string
 		isHidden
+		lineageTag: bbe18a7d-2f9c-4610-b491-ec72774369fc
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column date_key
 		dataType: int64
 		formatString: 0
+		lineageTag: bdf927ab-50b9-4412-ab0e-94d0419f91c4
 		summarizeBy: none
 		sourceColumn: date_key
 
 	column city
 		dataType: string
+		lineageTag: 2421c983-018a-43d7-80b1-b4fcc22186f2
 		summarizeBy: none
 		sourceColumn: city
 
 	column district
 		dataType: string
+		lineageTag: aff5084f-9c11-4a8d-9339-f433648e03d6
 		summarizeBy: none
 		sourceColumn: district
 
 	column quantity
 		dataType: int64
 		formatString: 0
+		lineageTag: 3a920197-5ba6-40cb-87f3-0202d87e18c3
 		summarizeBy: none
 		sourceColumn: quantity
 
 	column line_total
 		dataType: double
+		lineageTag: e9688c2b-1d90-495a-9943-caf8c9b30826
 		summarizeBy: none
 		sourceColumn: line_total
 
 	partition 'Order Lines' = m
 		mode: import
 		source =
-			let
-				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-				Raw = Gold{[Name = "fact_order_lines", Kind = "Table"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city", "district", "quantity", "line_total"})
-			in
-				Selected
+				let
+					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+					Raw = Gold{[Name = "fact_order_lines", Kind = "Table"]}[Data],
+					Selected = Table.SelectColumns(Raw, {"order_id", "line_no", "customer_key", "customer_id", "product_key", "product_id", "date_key", "city", "district", "quantity", "line_total"})
+				in
+					Selected
+

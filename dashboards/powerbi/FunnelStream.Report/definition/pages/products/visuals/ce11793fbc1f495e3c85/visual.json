@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "ce11793fbc1f495e3c85",
   "position": {
     "x": 424,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "City Product Daily.city",
-              "nativeQueryRef": "city"
+              "nativeQueryRef": "city",
+              "active": true
             }
           ]
         },

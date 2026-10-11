@@ -1,8 +1,8 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "4b9b3eef016a32fd6d20",
   "position": {
-    "x": 16.0,
+    "x": 16,
     "y": 72,
     "z": 1,
     "height": 44,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Date.date",
-              "nativeQueryRef": "date"
+              "nativeQueryRef": "date",
+              "active": true
             }
           ]
         }

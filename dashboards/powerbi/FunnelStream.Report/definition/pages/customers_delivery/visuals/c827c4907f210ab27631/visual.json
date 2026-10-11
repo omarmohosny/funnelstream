@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
   "name": "c827c4907f210ab27631",
   "position": {
     "x": 852,
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "Customer.primary_device",
-              "nativeQueryRef": "primary_device"
+              "nativeQueryRef": "primary_device",
+              "active": true
             }
           ]
         },
