@@ -262,6 +262,132 @@ RELS = [
 ]
 
 
+# ---- visuals (version 2): the five pages of MODEL.md section 4, laid out on the 1280 x 720 canvas ------------------
+import hashlib
+
+PAGE_W, PAGE_H, MARGIN, GAP = 1280, 720, 16, 8
+ROLES = {"card": ("Values",), "slicer": ("Values",), "tableEx": ("Values",), "funnel": ("Category", "Y"),
+         "lineChart": ("Category", "Y", "Series"), "clusteredBarChart": ("Category", "Y", "Series"),
+         "clusteredColumnChart": ("Category", "Y", "Series")}
+
+
+def M(name):
+    return ("m", name)
+
+
+def C(table, column):
+    return ("c", table, column)
+
+
+def field_json(f):
+    if f[0] == "m":
+        entity, prop, kind = "_Measures", f[1], "Measure"
+    else:
+        entity, prop, kind = f[1], f[2], "Column"
+    return {"field": {kind: {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}},
+            "queryRef": "%s.%s" % (entity, prop), "nativeQueryRef": prop}
+
+
+def vis(kind, title, box, roles, sort=None):
+    """box = (x, y, w, h); roles = {role: [fields]}; sort = a field to sort descending by."""
+    return {"kind": kind, "title": title, "box": box, "roles": roles, "sort": sort}
+
+
+def row(n, y, h, x0=MARGIN, width=PAGE_W - 2 * MARGIN):
+    """n equal boxes in a row."""
+    w = (width - GAP * (n - 1)) / n
+    return [(round(x0 + i * (w + GAP), 1), y, round(w, 1), h) for i in range(n)]
+
+
+def slicer_row(fields):
+    return [vis("slicer", None, box, {"Values": [f]}) for box, f in zip(row(len(fields), 10, 58), fields)]
+
+
+def card_row(measures, y=76, h=92, x0=MARGIN, width=PAGE_W - 2 * MARGIN):
+    return [vis("card", name, box, {"Values": [M(name)]}) for box, name in zip(row(len(measures), y, h, x0, width), measures)]
+
+
+def page_layouts():
+    date = C("Date", "date")
+    pages = {}
+    pages["executive"] = (
+        slicer_row([date, C("Orders Daily", "channel"), C("Orders Daily", "platform")])
+        + card_row(["Revenue Delivered", "Revenue Placed", "AOV", "Delivered Share of Revenue", "Orders Placed",
+                    "Cancel Rate", "Revenue Placed vs Last Week"])
+        + [vis("lineChart", "Revenue by day", (16, 180, 800, 270),
+               {"Category": [date], "Y": [M("Revenue Placed"), M("Revenue Delivered")]}),
+           vis("clusteredBarChart", "Orders by channel", (824, 180, 440, 270),
+               {"Category": [C("Orders Daily", "channel")], "Y": [M("Orders Placed")]}),
+           vis("tableEx", "Outcome rates by payment method", (16, 458, 1248, 246),
+               {"Values": [C("Orders Daily", "payment_method"), M("Orders Placed"), M("Cancel Rate"), M("Return Rate"),
+                           M("Failed Attempt Rate")]})])
+    pages["campaign"] = (
+        slicer_row([date, C("Campaign", "name"), C("Campaign", "platform")])
+        + card_row(["Spend", "CPA", "Cost per Delivered Order", "CTR", "Conversion Rate", "ROAS Gap", "Maturity Label"])
+        + [vis("clusteredBarChart", "ROAS placed and delivered by campaign", (16, 180, 620, 524),
+               {"Category": [C("Campaign", "name")], "Y": [M("ROAS Placed"), M("ROAS Delivered")]}),
+           vis("clusteredColumnChart", "Platform conversions against attributed orders", (644, 180, 620, 524),
+               {"Category": [C("Campaign", "name")], "Y": [M("Platform Conversions"), M("Orders on Spend Days")]})])
+    pages["funnel"] = (
+        slicer_row([date, C("Funnel Daily", "channel"), C("Funnel Daily", "platform")])
+        + card_row(["Cart Abandon Rate", "Checkout Abandon Rate", "Session Conversion"])
+        + [vis("funnel", "Funnel stages", (16, 180, 560, 524),
+               {"Y": [M("Sessions"), M("Product View Sessions"), M("Cart Sessions"), M("Checkout Sessions"),
+                      M("Funnel Orders")]}),
+           vis("clusteredBarChart", "Sessions and orders by channel", (584, 180, 680, 256),
+               {"Category": [C("Funnel Daily", "channel")], "Y": [M("Sessions"), M("Funnel Orders")]}),
+           vis("clusteredBarChart", "Sessions and orders by platform", (584, 444, 680, 260),
+               {"Category": [C("Funnel Daily", "platform")], "Y": [M("Sessions"), M("Funnel Orders")]})])
+    pages["inventory"] = (
+        slicer_row([date, C("Store", "store_name"), C("Product", "category")])
+        + card_row(["Out of Stock Lines", "Low Stock Lines", "Out of Stock Rate", "Stock Units Available",
+                    "Stock Freshness (seconds)"])
+        + [vis("lineChart", "Closing stock by day and store (simulated)", (16, 180, 620, 250),
+               {"Category": [date], "Y": [M("Closing Stock")], "Series": [C("Store", "store_name")]}),
+           vis("clusteredColumnChart", "Units sold and received by day", (644, 180, 620, 250),
+               {"Category": [date], "Y": [M("Units Sold"), M("Units Received")]}),
+           vis("tableEx", "Products that ended out of stock", (16, 438, 620, 266),
+               {"Values": [C("Product", "name"), M("Ended Out of Stock"), M("Days of Cover"), M("Oversold Units")]},
+               sort=M("Ended Out of Stock"))]
+        + card_row(["Express Orders", "Express On-time Rate", "Express Breaches", "Slowest Express Delivery (min)"],
+                   y=438, h=88, x0=644, width=620)
+        + [vis("clusteredBarChart", "Shrinkage rate by store", (644, 534, 620, 170),
+               {"Category": [C("Store", "store_name")], "Y": [M("Shrinkage Rate")]})])
+    pages["marketing_inventory"] = (
+        slicer_row([date, C("Campaign", "name")])
+        + card_row(["Exposed Spend", "OOS Click Share", "Exposed Share of Spend", "Revenue at Risk", "OOS Add to Cart"])
+        + [vis("clusteredBarChart", "Exposed spend next to spend by campaign (estimate)", (16, 180, 620, 250),
+               {"Category": [C("Campaign", "name")], "Y": [M("Exposed Spend"), M("Campaign Spend D1")]}),
+           vis("lineChart", "Out-of-stock add to cart by day", (644, 180, 620, 250),
+               {"Category": [date], "Y": [M("OOS Add to Cart")]}),
+           vis("tableEx", "Products by revenue at risk", (16, 438, 1248, 266),
+               {"Values": [C("Product", "name"), C("Store", "store_name"), M("Revenue at Risk"), M("Days of Cover")]},
+               sort=M("Revenue at Risk"))])
+    return pages
+
+
+def visual_json(page, index, spec):
+    x, y, w, h = spec["box"]
+    state = {}
+    for role in ROLES[spec["kind"]]:
+        if spec["roles"].get(role):
+            state[role] = {"projections": [field_json(f) for f in spec["roles"][role]]}
+    assert set(spec["roles"]) <= set(ROLES[spec["kind"]]), spec
+    query = {"queryState": state}
+    if spec["sort"]:
+        query["sortDefinition"] = {"sort": [{"field": field_json(spec["sort"])["field"], "direction": "Descending"}],
+                                   "isDefaultSort": True}
+    visual = {"visualType": spec["kind"], "query": query, "drillFilterOtherVisuals": True}
+    if spec["title"]:
+        text = "'" + spec["title"].replace("'", "''") + "'"
+        visual["visualContainerObjects"] = {"title": [{"properties": {
+            "show": {"expr": {"Literal": {"Value": "true"}}}, "text": {"expr": {"Literal": {"Value": text}}}}}]}
+    name = hashlib.sha1(("%s/%d/%s" % (page, index, spec["title"] or json.dumps(spec["roles"]))).encode()).hexdigest()[:20]
+    return {"$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+            "name": name, "position": {"x": x, "y": y, "z": index, "height": h, "width": w, "tabOrder": index},
+            "visual": visual}
+
+
 def main():
     sm = OUT / "FunnelStream.SemanticModel"
     rp = OUT / "FunnelStream.Report"
@@ -313,10 +439,18 @@ def main():
         w(rp / "definition" / "pages" / pid / "page.json", json.dumps({
             "$schema": base + "page/2.0.0/schema.json", "name": pid, "displayName": title,
             "displayOption": "FitToPage", "height": 720, "width": 1280}, indent=2))
+    n_visuals = 0
+    for pid, specs in page_layouts().items():
+        for i, spec in enumerate(specs):
+            v = visual_json(pid, i, spec)
+            vd = rp / "definition" / "pages" / pid / "visuals" / v["name"]
+            vd.mkdir(parents=True)
+            w(vd / "visual.json", json.dumps(v, indent=2))
+            n_visuals += 1
     w(OUT / "FunnelStream.pbip", json.dumps({
         "$schema": "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
         "version": "1.0", "artifacts": [{"report": {"path": "FunnelStream.Report"}}], "settings": {"enableAutoRecovery": True}}, indent=2))
-    print("measures:", len(ms), "| tables:", len(names))
+    print("measures:", len(ms), "| tables:", len(names), "| visuals:", n_visuals)
 
 
 if __name__ == "__main__":

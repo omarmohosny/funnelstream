@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "41a33e72cd6e728851b8",
+  "position": {
+    "x": 853.3,
+    "y": 10,
+    "z": 2,
+    "height": 58,
+    "width": 410.7,
+    "tabOrder": 2
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Funnel Daily"
+                    }
+                  },
+                  "Property": "platform"
+                }
+              },
+              "queryRef": "Funnel Daily.platform",
+              "nativeQueryRef": "platform"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

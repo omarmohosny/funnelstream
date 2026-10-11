@@ -156,3 +156,66 @@ def test_regenerating_gives_the_same_relationship_ids(project, tmp_path):
         make_pbip.OUT = saved
     name = Path("FunnelStream.SemanticModel") / "definition" / "relationships.tmdl"
     assert (project / name).read_text(encoding="utf-8") == (tmp_path / name).read_text(encoding="utf-8")
+
+
+def visuals(project):
+    import json
+    out = {}
+    for f in sorted((project / "FunnelStream.Report" / "definition" / "pages").glob("*/visuals/*/visual.json")):
+        out.setdefault(f.parts[-4], []).append(json.loads(f.read_text(encoding="utf-8")))
+    return out
+
+
+def fields_of(visual):
+    for state in visual["visual"].get("query", {}).get("queryState", {}).values():
+        for proj in state["projections"]:
+            (kind, body), = proj["field"].items()
+            yield kind, body["Expression"]["SourceRef"]["Entity"], body["Property"], proj
+
+
+def test_every_page_has_visuals_and_the_headline_numbers_of_the_guide(project):
+    found = visuals(project)
+    assert set(found) == {"executive", "campaign", "funnel", "inventory", "marketing_inventory"}
+    assert all(len(v) >= 8 for v in found.values()), {k: len(v) for k, v in found.items()}
+    wanted = {"executive": "Revenue Delivered", "campaign": "ROAS Placed", "funnel": "Cart Abandon Rate",
+              "inventory": "Out of Stock Lines", "marketing_inventory": "Exposed Spend"}
+    for page, measure in wanted.items():
+        used = {prop for v in found[page] for kind, _, prop, _ in fields_of(v) if kind == "Measure"}
+        assert measure in used, (page, measure)
+
+
+def test_every_visual_field_exists_in_the_model(project):
+    tables = {name.lower(): {c.lower() for c in cols} for name, cols in model_columns(project).items()}
+    missing = []
+    for page, items in visuals(project).items():
+        for v in items:
+            for kind, entity, prop, proj in fields_of(v):
+                if kind == "Measure":
+                    assert entity == "_Measures", (page, prop)
+                if prop.lower() not in tables.get(entity.lower(), set()):
+                    missing.append("%s: %s[%s]" % (page, entity, prop))
+                assert proj["queryRef"] == "%s.%s" % (entity, prop)
+    assert not missing, missing
+
+
+def test_visuals_fit_the_page_and_have_unique_names(project):
+    names = set()
+    for page, items in visuals(project).items():
+        for v in items:
+            pos = v["position"]
+            assert pos["x"] >= 0 and pos["y"] >= 0 and pos["x"] + pos["width"] <= 1280 and pos["y"] + pos["height"] <= 720, (page, v["name"])
+            assert v["name"] not in names
+            names.add(v["name"])
+        # no two visuals overlap
+        boxes = [(v["position"]["x"], v["position"]["y"], v["position"]["x"] + v["position"]["width"], v["position"]["y"] + v["position"]["height"]) for v in items]
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (page, a, b)
+
+
+def test_every_visual_has_a_title_except_slicers(project):
+    for page, items in visuals(project).items():
+        for v in items:
+            if v["visual"]["visualType"] != "slicer":
+                title = v["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"]
+                assert title.startswith("'") and len(title) > 3, (page, v["name"])

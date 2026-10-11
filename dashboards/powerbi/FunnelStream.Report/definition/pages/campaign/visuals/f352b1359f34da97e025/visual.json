@@ -1,0 +1,60 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "f352b1359f34da97e025",
+  "position": {
+    "x": 374.9,
+    "y": 76,
+    "z": 5,
+    "height": 92,
+    "width": 171.4,
+    "tabOrder": 5
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Cost per Delivered Order"
+                }
+              },
+              "queryRef": "_Measures.Cost per Delivered Order",
+              "nativeQueryRef": "Cost per Delivered Order"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true,
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Cost per Delivered Order'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

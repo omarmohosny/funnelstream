@@ -1,0 +1,60 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "715efdc15da98f786092",
+  "position": {
+    "x": 16.0,
+    "y": 76,
+    "z": 3,
+    "height": 92,
+    "width": 410.7,
+    "tabOrder": 3
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Cart Abandon Rate"
+                }
+              },
+              "queryRef": "_Measures.Cart Abandon Rate",
+              "nativeQueryRef": "Cart Abandon Rate"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true,
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Cart Abandon Rate'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
