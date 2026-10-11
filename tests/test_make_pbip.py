@@ -104,3 +104,21 @@ def test_the_report_has_the_five_pages_of_the_guide(project):
     for page in ("executive", "campaign", "funnel", "inventory", "marketing_inventory"):
         assert '"%s"' % page in pages
         assert (project / "FunnelStream.Report" / "definition" / "pages" / page / "page.json").exists()
+
+
+def test_report_json_has_the_theme_version_object_power_bi_requires(project):
+    """Power BI Desktop refused the first project: reportVersionAtImport was the string "5.61", but the
+    report/3.0.0 schema wants an object with page, report and visual versions (scripts/validate_pbip.py checks every file)."""
+    import json
+    report = json.loads((project / "FunnelStream.Report" / "definition" / "report.json").read_text(encoding="utf-8"))
+    version = report["themeCollection"]["baseTheme"]["reportVersionAtImport"]
+    assert isinstance(version, dict) and set(version) == {"page", "report", "visual"}
+    assert all(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", v) for v in version.values())
+
+
+def test_definition_pbism_names_its_schema(project):
+    """The semanticModel/definitionProperties schema marks $schema as required; Power BI Desktop checks it."""
+    import json
+    doc = json.loads((project / "FunnelStream.SemanticModel" / "definition.pbism").read_text(encoding="utf-8"))
+    assert doc["$schema"].endswith("/item/semanticModel/definitionProperties/1.0.0/schema.json")
+    assert isinstance(doc["version"], str)

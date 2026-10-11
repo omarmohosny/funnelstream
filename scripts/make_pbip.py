@@ -270,7 +270,9 @@ def main():
             shutil.rmtree(d)
     (sm / "definition" / "tables").mkdir(parents=True)
     w = lambda p, t: p.write_text(t, encoding="utf-8", newline="\n")
-    w(sm / "definition.pbism", json.dumps({"version": "4.2", "settings": {}}, indent=2))
+    w(sm / "definition.pbism", json.dumps({
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
+        "version": "4.2", "settings": {}}, indent=2))
     w(sm / "definition" / "database.tmdl", "database\n\tcompatibilityLevel: 1600\n")
     names = [t[0] for t in TABLES] + [t[0] for t in PG_TABLES] + ["_Measures"]
     model = ["model Model", "\tculture: en-US", "\tdefaultPowerBIDataSourceVersion: powerBI_V3",
@@ -300,7 +302,8 @@ def main():
     base = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/"
     w(rp / "definition" / "version.json", json.dumps({"$schema": base + "versionMetadata/1.0.0/schema.json", "version": "2.0.0"}, indent=2))
     w(rp / "definition" / "report.json", json.dumps({"$schema": base + "report/3.0.0/schema.json", "themeCollection": {
-        "baseTheme": {"name": "CY24SU10", "reportVersionAtImport": "5.61", "type": "SharedResources"}}}, indent=2))
+        "baseTheme": {"name": "CY24SU10", "reportVersionAtImport": {"page": "2.0.0", "report": "3.0.0", "visual": "2.0.0"},
+                      "type": "SharedResources"}}}, indent=2))
     pages = [("executive", "Executive"), ("campaign", "Campaign"), ("funnel", "Funnel"), ("inventory", "Inventory"),
              ("marketing_inventory", "Marketing and inventory")]
     w(rp / "definition" / "pages" / "pages.json", json.dumps({
