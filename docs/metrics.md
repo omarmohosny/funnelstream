@@ -205,15 +205,33 @@ Notes: the reconciliation and key checks read whole tables, not the Gold window.
 
 How `warehouse/gold_build.py` produces the tables above (details in `docs/RUNNING.md`, "Gold build").
 
-- **Window.** A run recomputes what a window of Cairo days selects (default: the last 7 days; `--from-date/--to-date`, `--days`, `--full`). Orders are recomputed when their order date or any of their status rows falls in the window, plus later orders of the same customers (`order_seq`, `is_first_order`). Nothing is incremented: every measure is recalculated from Silver or from `fact_orders`.
+- **Window.** A run recomputes what a window of Cairo days selects (default: the last 7 days; `--from-date/--to-date`, `--days`, `--full`). Orders are recomputed when their order date or any of their status rows falls in the window, plus later orders of the same customers (`order_seq`, `is_first_order`). Nothing is incremented: every measure is recalculated from Silver or from `fact_orders`. An anonymous order (NULL `customer_id`) has no customer history: `order_seq` is NULL and `is_first_order` is FALSE, so it never counts in `new_customer_orders`.
 - **One atomic MERGE.** `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily` and `agg_city_product_daily` each use a single MERGE: recomputed rows update matching keys and insert new ones, and `WHEN NOT MATCHED BY SOURCE` deletes a key inside the window that has no rows left. A failure rolls the statement back, so the window is never left empty. A key that vanishes on a widened date outside the window (only when an order or session changes group there) is not deleted.
 - **Attribution.** `fact_attribution` is one atomic MERGE over the orders of the `fact_orders` window, the orders without an attribution row and the orders whose click inputs changed (a click candidate of a session with an event in the window or a late event); an order that left `fact_orders` is deleted by the same MERGE. A second statement updates `fact_orders.campaign_id` (changed values only). A click row that arrives late for an old session (`event_date` and `kafka_timestamp` both before the window) is found only by a covering window or `--full`.
 - **Time zone.** Every build step starts with `SET TIME ZONE 'UTC'`; Cairo dates use `from_utc_timestamp(ts, 'Africa/Cairo')` and are only right in a UTC session.
-- **Late data.** Limit: `silver_order_status` has no ingestion time, so a late status row is only found when its `event_date` (Cairo date of `status_time`) is in the window; a row older than the window (default 7 days) leaves the order, its lines and its `agg_orders_daily` day stale until a covering window or `--full` (run `--full` periodically or use a wider `--days`); the funnel is not affected. A late status row inside the window changes that order and the day it was placed (cohort view: delivered revenue stays on the order date); `agg_funnel_daily` also recomputes dates of late events (`kafka_timestamp` in the window, `event_date` before it) and of sessions that cross the window edge. In history mode (a replay) every replayed day counts as late, so a run recomputes all replayed days.
+- **Late data.** Limit: `silver_order_status` has no ingestion time, so a late status row is only found when its `event_date` (Cairo date of `status_time`) is in the window; a row older than the window (default 7 days) leaves the order, its lines and its `agg_orders_daily` day stale until a covering window or `--full` (run `--full` periodically or use a wider `--days`; `docs/RUNNING.md` suggests `--days 14` for the nightly run); the funnel is not affected. A late status row inside the window changes that order and the day it was placed (cohort view: delivered revenue stays on the order date); `agg_funnel_daily` also recomputes dates of late events (`kafka_timestamp` in the window, `event_date` before it) and of sessions that cross the window edge. In history mode (a replay) every replayed day counts as late, so a run recomputes all replayed days.
 - **Bots.** `is_bot` is not read from Silver: the funnel step (and `agg_city_product_daily`) recomputes it from `silver_events` (more than 100 events in 10 seconds in one session) over every event of the sessions it touches and excludes those sessions. Nothing is persisted.
-- **Dimensions.** SCD2 `valid_to` of the current row is 9999-12-31 00:00:00 UTC. Several Silver versions on one Cairo day collapse to the last one. Only tracked attributes start a new version (customer: city, district, primary_device; product: category, price); other attributes keep the first value of the run and are not back-filled.
+- **Dimensions.** SCD2 `valid_to` of the current row is 9999-12-31 00:00:00 UTC. Several Silver versions on one Cairo day collapse to the last one. Only tracked attributes start a new version (customer: city, district, primary_device; product: category, price, is_active); other attributes (a product's `name`) keep the first value of the run and are not back-filled. The first version of a customer or product starts at its first Silver row (`valid_from = updated_at`, not the signup date), so an order placed before that row has key -1 until a later build finds a version; the check `unknown_customer_share` reports how many.
 - **`dim_date`.** 2025-01-01 to 2027-12-31. The weekend is Friday and Saturday (`is_friday_saturday` carries the same value as `is_weekend`; both columns are in the table). Ramadan and Eid ranges in `warehouse/calendar_egypt.py` are APPROXIMATE (moon sighting), so a flag can be a day off. `is_holiday` is an Eid day or a fixed holiday (Jan 7, Jan 25, Apr 25, May 1, Jul 23, Oct 6). Days outside the range have no `dim_date` row.
 - **Unknown members.** Orders with no matching dimension version get key -1; the key is repaired by the next build that recomputes the order. Orders without `order_created_at` are left out of `fact_orders` and counted in the build output.
+
+## Silver tables: grain and key
+
+The key lists are `SILVER_KEYS` in `streaming/silver/writer.py` and, for `silver_campaign_snapshots`, `warehouse/tables.py`; each table is written by an idempotent MERGE on its key.
+
+| Table | Grain | Key |
+|---|---|---|
+| `silver_events` | one app or web event | `event_id` |
+| `silver_orders` | one order (from `order_created`) | `order_id` |
+| `silver_order_status` | one status change of an order (order and delivery topics) | `event_id` |
+| `silver_order_items` | one order line | `order_id`, `line_no` |
+| `silver_customers` | one customer version | `customer_id`, `updated_at` |
+| `silver_products` | one product version | `product_id`, `updated_at` |
+| `silver_stock_movements` | one stock movement of a store and product | `event_id` |
+| `silver_stock_snapshots` | one stock count of a store and product | `event_id` |
+| `silver_express_orders` | one express order with its store and promise | `order_id` |
+| `silver_quarantine` | one rejected row | `quarantine_id` |
+| `silver_campaign_snapshots` | one ad pull of a campaign and report date | `campaign_id`, `report_date`, `pulled_at` |
 
 ## Address and tracking URL
 

@@ -6,7 +6,7 @@ New to the project? Start with the team handoff (Q&A, status, remaining tasks): 
 
 Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.
 
-Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Inventory spec: `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md`. Inventory plan: `docs/superpowers/plans/2026-10-10-inventory-two-users.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan-v3.xlsx`.
+Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Inventory spec: `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md`. Inventory plan: `docs/superpowers/plans/2026-10-10-inventory-two-users.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan-v3.xlsx`. Open items before the defense: [docs/PRE-DEFENSE-CHECKLIST.md](docs/PRE-DEFENSE-CHECKLIST.md).
 
 ## Repository layout
 
@@ -21,7 +21,7 @@ Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstrea
 | `batch/` | SCD2, campaigns, attribution, recommendations, batch runner | 11-15, 19 |
 | `airflow/dags/` | Airflow DAGs (`ads_yesterday_report`; the batch DAG comes with Task 15) | 15 |
 | `warehouse/` | Postgres DDL, loader, data-quality checks | 10, 16 |
-| `dashboards/` | Power BI file, measures, screenshots | 18 |
+| `dashboards/` | Power BI project, measures, model guide | 18 |
 | `scripts/` | Run simulator, benchmark, failure demo, sample export | 6, 17 |
 | `samples/` | Sample CSVs (10,000 rows per table) | 17 |
 | `tests/` | pytest tests | all |
@@ -54,20 +54,26 @@ Airflow DAG `ads_yesterday_report` (03:00 UTC daily, `airflow/dags/`, logic in `
 
 ## Status
 
-Built and verified (see [docs/HANDOFF.md](docs/HANDOFF.md) and [docs/RUNNING.md](docs/RUNNING.md)):
+Built (see [docs/HANDOFF.md](docs/HANDOFF.md) and [docs/RUNNING.md](docs/RUNNING.md)):
 
-- Simulator with injected noise, Kafka, and Bronze and Silver Delta tables (Spark in Docker).
-- Publish of Silver to the Databricks Silver mirror, then the Gold build: 12 Gold tables built (`rec_product` is an empty slot) and 65 data quality checks, run together by `scripts/run_batch.py`.
+- Simulator with injected noise, Kafka (four topics), and Bronze and Silver Delta tables (Spark in Docker).
+- Publish of Silver to the Databricks Silver mirror, then the Gold build: 12 Gold tables built (`rec_product` is an empty slot, `customer_360` is built) and 65 data quality checks, run together by `scripts/run_batch.py`.
 - Campaign attribution (`fact_attribution`, first and last touch) and `agg_campaign_daily`.
 - The Airflow DAG `ads_yesterday_report`, which writes to Databricks.
-- Live and health tables in Postgres, and Grafana with a live pipeline dashboard and alerts.
-- Failure demo tooling (`scripts/failure_demo.ps1`, `scripts/check_duplicates.py`) and sample CSVs in `samples/`.
+- Live and health tables in Postgres, and Grafana with six dashboards (including "Express delivery SLA" and "Live stock monitor") and eight alert rules.
+- Inventory work: simulated stock for eight dark stores, express orders with a 20-minute promise, the live stock and out-of-stock demand tables, the daily marts and the marketing D-1 mart.
+- Power BI project (`dashboards/powerbi/`): 11 Gold tables and 7 Postgres marts, 27 relationships, 104 measures and eight report pages, as saved by Power BI Desktop.
+- Benchmark: 1,000,000 simulated events through the whole pipeline in 654.73 seconds ([docs/benchmark.md](docs/benchmark.md)).
+- Failure demo tooling (`scripts/failure_demo.ps1`, `scripts/check_duplicates.py`), sample CSVs in `samples/`, and the LLM analytics assistant (`src/llm/`).
+- Host tests: 1,000+ pass with 0 failed (`.venv\Scripts\python -m pytest tests -q -p no:cacheprovider`).
 
-Still open:
+Not yet run, because they need Docker with enough free memory or the owner's confirmation (the exact order is in [docs/PRE-DEFENSE-CHECKLIST.md](docs/PRE-DEFENSE-CHECKLIST.md)):
 
-- Power BI model and pages.
-- The live failure demo has not yet passed twice in a row.
-- The inventory work described in `docs/superpowers/plans/2026-10-10-inventory-two-users.md`.
+- The Spark tests of the inventory work and the rehearsal `watch_demo.ps1 -Inventory`; no timings of the inventory demo are measured yet.
+- The live failure demo twice in a row, and `scripts/smoke_test.py`.
+- The pull request into `main`.
+
+Known limitations (each is stated on the dashboards and in the documents): the out-of-stock flag is the stock when the minute was written and is not replay-safe; stock is not put back when an order is cancelled; Store is conformed across the Postgres marts only; ad spend is a UTC day and orders a Cairo day; exposed spend is an estimate. See the "Resolution status" section of [docs/data-model-review.md](docs/data-model-review.md).
 
 ## Quick start
 
@@ -125,7 +131,7 @@ python src/llm/agent.py --source csv --schema
 streamlit run src/llm/app.py
 ```
 
-The default `sim` source generates event and order lifecycles in memory with the project's simulator and combines them with the generated campaign/ad data, so funnel and order questions work without Kafka or Docker. `csv` provides the batch dimensions and ad metrics only. `kafka` reads existing topics, and `delta` reads local Silver/Gold tables. Run `python src/llm/agent.py --source sim --sql "SELECT count(*) FROM order_current"` to query without an API key.
+The default `sim` source generates event and order lifecycles in memory with the project's simulator and combines them with the generated campaign/ad data, so funnel and order questions work without Kafka or Docker. `csv` provides the batch dimensions and ad metrics only. `kafka` reads existing topics, and `delta` reads local Silver/Gold tables. Run `python src/llm/agent.py --source sim --sql "SELECT count(*) FROM order_current"` to query without an API key. Safety: the model writes one SELECT at a time; DuckDB runs it with file and network access switched off, a 20 second limit and a 200 row cap; the key is read from the environment or `.env` (only the LLM settings are loaded from it) and is never logged; query results are passed to the model inside `<query_result>` tags as data. `duckdb`, `anthropic` and `streamlit` are pinned in `requirements.txt`; `pytest tests/test_llm_assistant.py` checks the guards.
 
 ## Spark in Docker
 

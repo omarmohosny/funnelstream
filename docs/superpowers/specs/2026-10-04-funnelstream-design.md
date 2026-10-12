@@ -209,7 +209,7 @@ Silver rules:
 | Table | Owner | Grain | Key | Columns |
 |---|---|---|---|---|
 | `dim_customer` | Databricks Gold build | Customer version (SCD2) | `customer_key` | `customer_id`, `country`, `city` (tracked), `district` (tracked), `signup_date`, `primary_device` (tracked), `marketing_consent`, `valid_from`, `valid_to`, `is_current` |
-| `dim_product` | Databricks Gold build | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active`, `valid_from`, `valid_to`, `is_current` |
+| `dim_product` | Databricks Gold build | Product version (SCD2) | `product_key` | `product_id`, `name`, `category` (tracked), `price` (tracked), `is_active` (tracked), `valid_from`, `valid_to`, `is_current` |
 | `dim_campaign` | Databricks Gold build | Campaign | `campaign_key` | `campaign_id`, `utm_campaign`, `platform`, `name`, `start_date`, `end_date` |
 | `dim_date` | Databricks Gold build | Day | `date_key` (yyyymmdd) | `date`, `week`, `month`, `is_weekend`, `is_friday_saturday`, `is_ramadan`, `is_eid`, `is_holiday` |
 | `fact_orders` | Databricks Gold build | Order, current state | `order_id` | `customer_key` (-1 for an unknown member), `customer_id`, `session_id`, `channel`, `platform`, `utm_source`, `utm_campaign`, `click_id`, `campaign_id` (nullable), `payment_method`, `carrier`, `city`, `district`, `country`, `order_total` (EGP), `current_status`, `status_rank`, `order_created_at`, `delivered_at`, `cancelled_at`, `returned_at`, `delivery_lead_hours`, `delivery_failed_count`, `has_failed_attempt`, `first_attempt_delivered`, `is_cancelled`, `is_delivered`, `is_returned`, `order_seq`, `is_first_order`, `date_key` |

@@ -36,13 +36,13 @@ docker compose config
 
 ## Run the tests
 
-Host (Spark tests are skipped on Windows). Takes about 6 seconds.
+Host (Spark tests are skipped on Windows). Takes about 45 seconds.
 
 ```powershell
 .venv\Scripts\python -m pytest -q
 ```
 
-Observed: `485 passed, 74 skipped`. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
+Observed on 12 October 2026: `1134 passed, 218 skipped, 0 failed` with the compose Postgres running (about 73 seconds; `1130 passed, 222 skipped` with Docker off), run with `-p no:cacheprovider`. The skips are the Spark tests and the tests that need a live Kafka or Postgres. The assistant tests in `tests/test_llm_assistant.py` need `duckdb` and are skipped without it. A `PytestUnhandledThreadExceptionWarning` (WinError 10038, from a Kafka client thread) may print at the end; it is harmless.
 
 Everything including Spark tests, in Docker. Takes about 6 to 8 minutes (501 s observed).
 
@@ -51,7 +51,7 @@ docker compose build spark
 docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests -q
 ```
 
-Observed: `557 passed, 2 skipped` (about 10.5 minutes). The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
+Last observed for the whole suite in one container: `557 passed, 2 skipped` (about 10.5 minutes), before the inventory work. On 12 October 2026 the Spark tests were run again, one file and one container at a time, as listed in [PRE-DEFENSE-CHECKLIST.md](PRE-DEFENSE-CHECKLIST.md): all 22 files, 217 Spark tests, all passed. The inventory files gave 75 passed (3, 16, 4, 10, 4, 8, 6, 15, 4, 2 and 4 tests) and the Gold files gave 142 passed (47, 25, 8, 12, 12, 19, 5, 6, 4, 2 and 2 tests). One test, `tests/test_g1_live_spark.py::test_idle_silver_stream_keeps_reporting_alive`, failed twice (once in the batch and once on the first rerun of the file) and then passed on the next four runs, alone and with the whole file. The failed runs overlapped with a disk-wide `find` that was still running on the host, so a timeout under heavy disk load is the likely cause, but this was not proven. The logs are `data/_archive/spark_inventory_run_12oct.log` and `data/_archive/spark_gold_run_12oct.log`. The 2 skips are the tests that need a live Kafka (`RUN_KAFKA_TESTS=1`) and a Postgres (`PG_DSN`).
 
 ## Run the pipeline step by step
 
@@ -83,9 +83,10 @@ The `--list` command prints nothing until Kafka is up and then returns without a
 created app.events
 created orders
 created delivery.events
+created inventory.events
 ```
 
-Partitions: `app.events` 6, `orders` 3, `delivery.events` 3. Check with:
+On a broker that already has a topic the line reads `skip <topic> ...` instead, with the broker's message; that is normal. Partitions: `app.events` 6, `orders` 3, `delivery.events` 3, `inventory.events` 3 (keyed by `store_id`, 72 hours retention). Only the first three carry data unless the simulator runs with `--inventory`. Check with:
 
 ```powershell
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe
@@ -308,7 +309,7 @@ Seen on the development PC: the Docker WSL2 engine restarted twice in 15 minutes
 ```powershell
 docker compose up -d --force-recreate grafana    # Grafana shows "Failed to fetch" until you do
 docker compose restart kafka                      # the host Kafka client is disconnected at once until you do (rdkafka: Disconnected while requesting ApiVersion)
-.\scriptsailure_demo.ps1 restart                # starts only the pipeline again; it resumes from its checkpoint
+.\scripts\failure_demo.ps1 restart                # starts only the pipeline again; it resumes from its checkpoint
 ```
 
 The same PC also had a wrong clock: after sleep and resume the hardware clock returned dates days off (the Windows log shows jumps to 12 and 13 October and to December), which makes Silver quarantine events as FUTURE_TIMESTAMP and shifts every alert. Before a demo: `w32tm /resync /force` (administrator), then `w32tm /query /status` must show `Leap Indicator: 0` and a real source such as `time.google.com`; do not let the PC sleep; compare `docker info --format '{{.SystemTime}}'` with `(Get-Date).ToUniversalTime()`: they must match to the second.
@@ -327,7 +328,7 @@ Start (Docker running, `.env` set, as in "Failure demo (G3)"):
 
 `-Inventory` makes the generator window add `--inventory --scenario hero-stockout --express-promise-minutes 20 --late-express-every 0`. The same flags exist on `scripts/run_simulator.py`: `--inventory`, `--scenario hero-stockout`, `--hero-units N` (the opening stock of each hero product; the default is 12), `--express-promise-minutes N` and `--late-express-every N`. Then open http://localhost:3000 (log in as `admin`) and the dashboards above.
 
-Expected timeline of the hero scenario at 10 events per second (the intended sequence from the plan, not yet measured):
+Expected timeline of the hero scenario at 10 events per second (the intended sequence from the plan; the measured times are in the table below the list):
 
 1. The first batch writes the opening snapshots, so the stock panels fill.
 2. After roughly one to two minutes a hero product runs out (`available = 0`).
@@ -356,7 +357,24 @@ Known limitations:
 - Express KPIs exist only in `express_daily` and `live_express_orders`, not in the Gold tables.
 - Store is conformed across the Postgres marts only, not in Gold.
 
-Status of the evidence: the end-to-end rehearsal with `-Inventory` has not been run yet, so there are no measured timings here; the timeline above is the plan. The Spark tests for the inventory jobs were not yet run either.
+Measured on 12 October 2026 (Windows laptop, Docker with 8 GB, `-Rate 10 -SyncEvery 0 -Inventory`, a clean lake, times from the Postgres tables and the alert sink log):
+
+| Step | Measured |
+|---|---|
+| Stock rows and per-minute stock history appear | with the first Silver batches; 8 history rows per minute (one per store) from then on |
+| First hero product at `available = 0` | about 4 minutes after the demo command (Galabeya 61 at the Nasr City store, 21:16:14 Cairo time; in an earlier run Earbuds 99 at 20:58:54), later than the 1 to 2 minutes of the plan |
+| Alert "Demand on out-of-stock products" fires | 1 minute after the stock-out (21:17:15) and resolves 1 minute later (21:18:15) |
+| `received` movement and restock | about 2 minutes after the stock-out; the out-of-stock count fell to 0 |
+| Pipeline | one Silver batch about 14 s against the 10 s trigger: a warning "batch is falling behind" is normal on this machine |
+
+Two things to know before presenting:
+
+- Start from a clean lake. With old Bronze and Silver data and old checkpoints in `data/lake` and `data/checkpoints`, Silver first works through the old backlog (58,804 events in its first batch in the first attempt), the live tables stay behind and the demand alert did not fire. Move `data/lake/bronze`, `data/lake/silver`, `data/checkpoints` and `noise_manifest.json` aside, recreate Kafka (`docker compose rm -sf kafka`, then `docker compose up -d kafka`), run `scripts/seed_silver_reference.py --lake data/lake` and start again.
+- The express alerts read the last 60 minutes of `live_express_orders` (the on-time rule the last 30 minutes), and an alert only notifies when its state changes. Express orders of an earlier run that never got delivered keep `fs-express-sla` in the firing state, so a new breach shows no new FIRING message. Before an on-camera express demo run `TRUNCATE live_express_orders` in Postgres once; the sink rebuilds the table from Silver on the next batch.
+
+Express rehearsal (`-ExpressPromiseMinutes 2 -LateExpressEvery 15`, same day): 33 express orders in the first run, 31 delivered on time and 2 breached (open past the promise plus the 1-minute grace), the first breach about 7 minutes after the demo command (21:28:56). `fs-express-sla` fired at 21:16:11, but on old orders of an earlier run, so its time on fresh data was not measured cleanly. The on-time alert `fs-express-ontime` fired on old data, resolved when the new run's rate (about 97 percent) rose above 95 percent, and flapped briefly while the table was cleared and rebuilt.
+
+Status of the evidence: the rehearsal with `-Inventory` was run end to end on 12 October 2026 and the numbers above are measured. The day-after builders (`build_inventory_daily.py`, `build_d1_marketing.py`) were not run in this session, and the Spark tests of the inventory jobs passed (see "Run the tests").
 
 ## Failure demo (G3)
 
@@ -391,6 +409,32 @@ What to say and look at:
 What the check proves and what it does not: it proves that the Silver tables hold no duplicate key after the crash and the restart, that is, the replayed batches after the restart did not add a second copy. It does not prove anything about Bronze. Bronze is append-only and may contain re-delivered messages (after a restart Spark can read the same offsets again); Silver is the layer that removes them with its MERGE on the key. It also does not check that no event was lost, and it does not look at Gold.
 
 Repeat it: run the commands again from step 2. No cleanup is needed between runs: Postgres, Kafka and the checkpoints keep working, the generator keeps running (use a new `watch_demo.ps1` only if you stopped it), and the alert returns to normal by itself. Close the old `FS 2 Pipeline` window after each restart (its `docker run` ended with the kill). If `restart` finds a leftover `fs-pipeline` container it removes it first. Wait until the previous alert shows RESOLVED before the second kill, otherwise the alert is still firing and the second kill shows no new FIRING message.
+
+### Measured results of the failure demo (12 October 2026)
+
+The demo ran twice in a row on a clean lake (`-Rate 20 -SyncEvery 0 -Inventory -Events 30000`), with the alert sink running. Times are Cairo time from the alert sink log and the heartbeat table.
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| Baseline duplicate check before the kill | NO DUPLICATES (2,911 Silver events) | not run (run 1 had just ended clean) |
+| Kill | 21:40:05 | 21:45:23 |
+| "Silver job silent for 2 minutes" fired | 21:42:17, 2 min 12 s after the kill | 21:48:17, 2 min 54 s after the kill |
+| Restart | 21:42:46 | 21:48:53 |
+| Heartbeat age back under 30 s | about 40 s after the restart | about 35 s after the restart |
+| "Silver job silent" resolved | 21:44:17 | 21:50:17 |
+| "No events for 5 minutes" | resolved at 21:40:13 (it was still firing at the kill), fired again at 21:44:13 | fired at 21:49:13 |
+| Events line back within 2 minutes of now | about 21:44:25 | about 21:51:31 |
+| Duplicate check after the restart | NO DUPLICATES (8,469 events, 123 orders, 217 stock movements) | NO DUPLICATES (16,404 events, 210 orders, 367 stock movements) |
+
+Both runs ended in `NO DUPLICATES` for all seven Silver tables, so the demo counts as passed twice in a row.
+
+What this does and does not show:
+
+- The alert fired inside the promised 3 minutes both times, but the second run took 2 min 54 s, so say "within 3 minutes", not "within 2 minutes".
+- The alert precondition (quiet before the kill) held for "Silver job silent" in both runs. In run 1 an older "No events for 5 minutes" alert from before the demo started was still firing at the kill and resolved 8 seconds later.
+- The check covers Silver only, as before. It does not look at Bronze and does not prove that no event was lost.
+- While the job was down, Kafka kept the generator's messages; after the restart the event line was 5 to 6 minutes behind and caught up in about 2 minutes (run 1) and about 3 minutes (run 2).
+- A "Quarantine share above 2%" alert fired in run 2 at 21:46:16 and resolved at 21:48:16. It comes from the noise the simulator injects on purpose and is not caused by the kill.
 
 ## Publish to Databricks
 
@@ -481,12 +525,12 @@ docker compose run --rm spark python -m warehouse.gold_build --steps checks --ma
 
 Order (fixed, whatever `--steps` says): `dim_customer`, `dim_product`, `dim_campaign`, `dim_date`, `fact_orders`, `fact_order_lines`, `fact_attribution`, `agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`, `rec_product`, `customer_360`, checks. The run stops at the first failing step and names it (exit 1; a failed data quality check is the exception, see "Data quality checks"); rerunning is safe because every step is a MERGE of recomputed rows. Every step starts with `SET TIME ZONE 'UTC'` (the Cairo dates are computed with `from_utc_timestamp` and only come out right when the session zone is UTC, so the build pins it itself, per step, so it also holds after a reconnect). It prints, per step, the statement count and the row count of the target table, the number of orders without `order_created_at` (they are left out of `fact_orders`, like the reference builder does) and the three attribution counts.
 
-The three window options are `--from-date/--to-date` (both, ISO dates, Cairo days), `--days N` and `--full`; with none of them the window is the last 7 days. The window selects what is recomputed:
+The three window options are `--from-date/--to-date` (both, ISO dates, Cairo days), `--days N` and `--full`; with none of them the window is the last 7 days. Nightly, use `--days 14` so a late status row of up to two weeks is picked up (`--full` still repairs anything older). The window selects what is recomputed:
 
 - Orders: an order is recomputed when its `order_created_at` Cairo date or any of its status rows `event_date` is in the window. Later orders of the same customers are recomputed too (their `order_seq` and `is_first_order` depend on the earlier order).
 - Summaries (`agg_orders_daily`, `agg_funnel_daily`, `agg_campaign_daily`, `agg_city_product_daily`): one atomic MERGE recomputes the rows: measures of matching keys are updated, new keys inserted, and a key inside the window that has no rows any more is deleted (`WHEN NOT MATCHED BY SOURCE`), so a failure never leaves the window empty. A key that vanishes on a widened date outside the window (see below) is not deleted. `agg_orders_daily` also recomputes the order dates of every recomputed order (a late delivery for an old order fixes the day the order was placed). `agg_funnel_daily` also recomputes the dates of sessions that touch the window and the dates of late events (`event_date` before the window, `kafka_timestamp` inside it). Bots are recomputed over all events of the sessions involved (more than 100 events in 10 seconds).
 - Late status rows older than the window: `silver_order_status` has no ingestion time, so orders are found only by the order date or the status row `event_date` (the Cairo date of `status_time`). A late status row whose `status_time` is older than the window (for example a delivered row 9 days after the order, in the default 7-day window) is NOT seen: the order, its lines and its `agg_orders_daily` day stay stale until a window that covers that date, a wider `--days`, or `--full` runs. The funnel is not affected (it also looks at `kafka_timestamp`). Run `--full` periodically (for example weekly) or use a wider `--days`.
-- Dimensions are always rebuilt in full (they are small): SCD2 with `valid_from = updated_at`, one new version per day at most, new versions only when city, district and primary_device (customer) or category and price (product) change. `dim_campaign` comes from `simulator/campaigns.py`, `dim_date` covers 2025-01-01 to 2027-12-31.
+- Dimensions are always rebuilt in full (they are small): SCD2 with `valid_from = updated_at`, one new version per day at most, new versions only when city, district and primary_device (customer) or category, price and is_active (product) change. `dim_campaign` comes from `simulator/campaigns.py`, `dim_date` covers 2025-01-01 to 2027-12-31.
 - The -1 repair: a fact row whose customer or product had no dimension version gets key -1 and keeps the natural id. Every recomputed order or line looks the key up again, so once the dimension row exists the next build that recomputes that order repairs the key. Orders outside the window keep their key until a window (or `--full`) covers them again.
 - Attribution (`fact_attribution`, `warehouse/gold/07_fact_attribution.sql`, after `fact_order_lines`): exactly two rows per order, `last_touch` and `first_touch`, key `(order_id, model)`, `order_total` copied from the order. Rules (full text in `docs/metrics.md`, "Attribution model"): (1) the order's own session click, found by the order's `click_id`; (2) if there is none and the order has a `customer_id`, the customer's clicks from any session in the 7 days before `order_created_at` (from `order_created_at - 7 days` inclusive to `order_created_at` exclusive), `last_touch` the latest and `first_touch` the earliest; (3) otherwise direct: `campaign_id` and `click_id` NULL. A click is the first `page_view` or `product_view` of a session that carries a `utm_campaign`; bot sessions (recomputed, same rule as the funnel) are excluded; the campaign is `silver_events.campaign_id` when set, else the `dim_campaign` row with that `utm_campaign`; an unresolved UTM is not a click. Ties on click time go to the smallest `click_id`.
   - Window: the step recomputes the orders of the `fact_orders` window (order date or status row in the window), the orders that have no attribution row yet, and the orders whose inputs changed: orders reached (own `click_id`, or same customer within 7 days after the click) by a click candidate of any session that has an event dated in the window or a late event (`event_date` before the window, `kafka_timestamp` Cairo date inside it). It is one atomic MERGE; an order that is no longer in `fact_orders` is deleted from the same MERGE (tombstone rows: `NOT MATCHED BY SOURCE` cannot be limited to the window orders because the table has no date column). A second statement of the file MERGE-updates `fact_orders.campaign_id` from the `last_touch` rows (NULL for direct orders), writing only changed values; it is the only column of `fact_orders` this step touches, and the `fact_orders` step never overwrites it.
@@ -590,7 +634,7 @@ Known limits of the checks: the district check cleans the text like `contracts/g
 
 ## Grafana (live monitoring)
 
-Grafana (`grafana/grafana-oss:11.3.0`, 512 MB limit) starts with the default `docker compose up -d`. It reads the four Postgres live/health tables through the read-only role `grafana_ro` and is fully provisioned from `monitoring/grafana/`.
+Grafana (`grafana/grafana-oss:11.3.0`, 512 MB limit) starts with the default `docker compose up -d`. It reads the Postgres live and health tables (16 live tables in all) through the read-only role `grafana_ro` and is fully provisioned from `monitoring/grafana/`.
 
 Setup (once): put `GRAFANA_DB_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` in `.env` (names in `.env.example`), start Postgres, then create the tables and the role: `docker compose run --rm spark python scripts/apply_live_ddl.py` (the host does not read `.env`; the container gets `PG_DSN` and `GRAFANA_DB_PASSWORD` from it). Without `GRAFANA_DB_PASSWORD` the script creates the tables, prints a red error and exits with code 3, and the datasource health check fails.
 
@@ -600,13 +644,14 @@ Setup (once): put `GRAFANA_DB_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` in `.env` (
 - Alert sink: in a separate terminal run `python scripts/alert_sink.py` (`--port` to change). It prints one line per alert (time, FIRING or RESOLVED, rule, summary) and appends the raw JSON to `logs/alerts.log` (git-ignored). `GET http://localhost:9099/` returns `ok`.
 - Empty panels or "no data" are normal until the Silver job has written to Postgres (the stat panels show "no data" until a heartbeat exists). The "no events" alert fires while nothing is flowing.
 - Reset: `docker compose rm -sf grafana; docker volume rm funnelstream_grafanadata` (drops Grafana's own state; the provisioned files are re-read on the next start). To empty the data: `TRUNCATE live_metrics_minute, pipeline_health_minute, pipeline_batch_log, pipeline_heartbeat;` in Postgres.
+- Six dashboards and eight alert rules (12 October 2026). Besides "FunnelStream: live pipeline" there are "Operations, live inventory" (`fs-inventory-ops`), "Inventory insights, daily" (`fs-inventory-daily`), "Marketing, D-1" (`marketing-d1`), "Express delivery SLA" (`fs-express-sla`) and "Live stock monitor" (`fs-live-stock`). The last two have a multi-select Store filter, refresh every 5 seconds and are generated from `monitoring/live_dashboards.py` (`python scripts/gen_dashboards.py` rewrites the files; a test fails if a file differs from its builder). "Express delivery SLA" shows the on-time rate against a 95 percent target, breaches, at-risk orders, p50 and p90 delivery time per 5 minutes, an SLA table per store and the open orders closest to their promise; it covers the last 3 hours because `live_express_orders` keeps 3 hours. "Live stock monitor" shows out-of-stock, low-stock, in-stock rate, units on hand, trends per store, units added and removed per minute, demand on out-of-stock products, a stock health table per store and a restock watchlist. The trends come from the table `live_stock_store_minute` (one row per store and minute, kept 24 hours, written by the live sink from `live_stock_now`, so a minute without a sink batch has no point). The two new alert rules are `fs-express-ontime` (on-time rate below 95 percent over 30 minutes, needs at least 5 resolved orders) and `fs-stock-outs` (more than 20 percent of the products of one store out of stock). On 12 October every panel query of both new dashboards, both new rules and the history writer ran without an error on the real Postgres of the compose stack, and the history table filled with 8 rows per minute during the rehearsal.
 - Verified on 2026-10-08 against a real Grafana 11.3.0 container and the compose Postgres with sample rows (datasource health OK, every panel query returned rows, the three rules fired and the webhook reached the sink). Not verified with live Silver job output; that depends on the G1 writers.
 
 ## What is not built yet
 
-- The Gold build runs the dimensions, facts, attribution and the four summaries (see "Gold build"); the recommendation table (`rec_product`) and the Postgres loader are later tasks; the SQL checks are built (see "Data quality checks"). The local `streaming.gold.build` output is a reference only.
-- Power BI dashboards.
-- Postgres and Airflow containers exist in `docker-compose.yml` but are not part of this run; the Postgres loader and batch jobs are not exercised here.
+- The recommendation table `rec_product` is an empty slot: it has a table definition but no Gold step.
+- Postgres and Airflow containers exist in `docker-compose.yml`; Postgres is used by the live and health tables and the inventory marts, Airflow only by the `ads_yesterday_report` DAG.
+- The Power BI project is built (`dashboards/powerbi/`, see `MODEL.md`); it has been opened in Power BI Desktop once, and the report needs a refresh with real credentials on the machine that presents it.
 
 ## Stop and clean up
 
@@ -688,8 +733,8 @@ The real run is destructive on purpose and limited in scope. It recreates the Ka
 | 6 | Bronze and Silver | Bronze rows equal the simulator total; every Silver table exists and is non-empty, the stock and express tables included |
 | 7 | Data invariants | `live_express_orders` is first filled from all of Silver (`smoke_spark_checks.py express-backfill`, the same compute with a `since` far in the past): the live sink writes only the express orders of the last 3 hours of the wall clock and a history run is days old, so the table would otherwise be empty. Then: no duplicate Silver key; the quarantine count is within the manifest tolerance; the stock replay never goes below zero and equals the live rule for every store and product pair; `live_stock_now.available` is never negative; every express order has its promise and none missed it in the clean run; the live tables are populated and `silver_job` has a heartbeat |
 | 8 | Daily marts | `inventory_daily`, `oos_demand_daily` and `express_daily` are filled for the Cairo day of the data and its closing stock equals `live_stock_now`. Postgres only; the marketing D-1 mart needs the Gold tables and is stage 13 |
-| 9 | Dashboards run | Every panel query of the four provisioned dashboards, with the Grafana macros expanded, runs without an error as the read-only role `grafana_ro` (zero rows is fine). The time macros cover the last 30 days, because the smoke data is days old; the stage proves that the SQL parses and the grants work, not that every panel shows data |
-| 10 | Alert logic | The query A and the threshold of each of the six alert rules are evaluated. `fs-express-sla` is evaluated on the express orders backfilled from the clean run (it must not fire) and again after a second small run (hero scenario, a 2 minute promise, every express order late), where it must fire. The rule looks at the last 60 minutes of the wall clock and the simulated data is days old, so it is evaluated as of the end of its data (every `now()` of the query is replaced by that moment; after the small run, the end of the orders with the 2 minute promise). `fs-oos-demand` is checked on controlled rows: the stage writes two minutes of 5 add-to-carts for one pair flagged `oos_at_write` into the smoke database (it must fire), lowers them to 4 (it must stay quiet) and removes them. It is not asserted on the simulated run because `oos_at_write` is the stock when the sink wrote the minute: a history run is written in one or a few batches against the final stock, and the simulator restocks every pair before the run ends, so no minute is flagged. The flag logic itself is covered by `tests/test_live_stock_spark.py`. The other four rules are reported with their value and state, not asserted (history data is late by rule, so `fs-late-rate` fires) |
+| 9 | Dashboards run | Every panel query of the six provisioned dashboards, with the Grafana macros expanded, runs without an error as the read-only role `grafana_ro` (zero rows is fine). The time macros cover the last 30 days, because the smoke data is days old; the stage proves that the SQL parses and the grants work, not that every panel shows data |
+| 10 | Alert logic | The query A and the threshold of each of the eight alert rules are evaluated. `fs-express-sla` is evaluated on the express orders backfilled from the clean run (it must not fire) and again after a second small run (hero scenario, a 2 minute promise, every express order late), where it must fire. The rule looks at the last 60 minutes of the wall clock and the simulated data is days old, so it is evaluated as of the end of its data (every `now()` of the query is replaced by that moment; after the small run, the end of the orders with the 2 minute promise). `fs-oos-demand` is checked on controlled rows: the stage writes two minutes of 5 add-to-carts for one pair flagged `oos_at_write` into the smoke database (it must fire), lowers them to 4 (it must stay quiet) and removes them. It is not asserted on the simulated run because `oos_at_write` is the stock when the sink wrote the minute: a history run is written in one or a few batches against the final stock, and the simulator restocks every pair before the run ends, so no minute is flagged. The flag logic itself is covered by `tests/test_live_stock_spark.py`. The other four rules are reported with their value and state, not asserted (history data is late by rule, so `fs-late-rate` fires) |
 | 11 | Replay safety | Deleting the Silver checkpoint and replaying all of Bronze leaves every table count and the duplicate check unchanged |
 | 12 | Databricks batch | `apply_ddl.py`, `publish_silver.py` and `run_batch.py --full --manifest` against the scratch catalog end with `BATCH OK` and every data quality check passing; if Databricks cannot be reached the stage fails with the connector's message |
 | 13 | Marketing D-1 mart | After the Databricks batch (it reads the ad spend of `agg_campaign_daily` from the scratch catalog, so it is skipped with `--skip-gold`): `build_d1_marketing.py` for the Cairo day of the data, and the rows in `marketing_d1_campaign` and `marketing_d1_product` equal what it prints. One campaign row is built per last-touch ad row of the day; an empty campaign mart is accepted only with the stated reason that `agg_campaign_daily` has no ad row for that day (the ad API pull covers its own dates), and no product rows only with the reason that no demand was flagged out of stock at write time |
