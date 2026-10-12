@@ -10,7 +10,7 @@ PROV = ROOT / "monitoring" / "grafana" / "provisioning"
 DASH = ROOT / "monitoring" / "grafana" / "dashboards" / "pipeline-live.json"
 CONTRACT_TABLES = {"live_metrics_minute", "pipeline_health_minute", "pipeline_batch_log", "pipeline_heartbeat",
                    "live_stock_now", "live_oos_demand_minute", "dim_store", "dim_store_district", "dim_product_current",
-                   "live_express_orders"}
+                   "live_express_orders", "live_stock_store_minute"}
 REQUIRED_PANELS = [
     "Events per minute (all countries)", "Events, last full minute", "Active sessions per minute",
     "Orders placed per minute", "Product views and add-to-cart per minute", "Late-event rate % (5 min window)",
@@ -126,8 +126,8 @@ def test_alert_rules():
     assert group["interval"] == "1m"
     rules = {r["uid"]: r for r in group["rules"]}
     assert set(rules) == {"fs-late-rate", "fs-quarantine-share", "fs-no-events", "fs-silver-silent",
-                          "fs-oos-demand", "fs-express-sla"}
-    assert len(group["rules"]) == 6
+                          "fs-oos-demand", "fs-express-sla", "fs-express-ontime", "fs-stock-outs"}
+    assert len(group["rules"]) == 8
 
     def threshold(r):
         c = next(d for d in r["data"] if d["refId"] == "C")["model"]["conditions"][0]["evaluator"]
@@ -182,7 +182,7 @@ def test_compose_grafana_service():
     g = compose["services"]["grafana"]
     assert re.fullmatch(r"grafana/grafana-oss:\d+\.\d+\.\d+", g["image"])
     assert g["mem_limit"] == "512m"
-    assert "3000:3000" in g["ports"]
+    assert "127.0.0.1:3000:3000" in g["ports"]  # loopback only
     assert "profiles" not in g
     assert "postgres" in (g["depends_on"] if isinstance(g["depends_on"], list) else g["depends_on"].keys())
     env = g["environment"]

@@ -125,6 +125,22 @@ def write_oos_demand(store, rows):
     return store.upsert("live_oos_demand_minute", flagged, DEMAND_KEYS)
 
 
+def write_stock_history(store, retention_hours=24):
+    """Snapshot live_stock_now into live_stock_store_minute: one row per store for the current minute.
+
+    The row of the current minute is overwritten by every batch inside that minute, so a rerun changes nothing; rows
+    older than `retention_hours` are deleted, which keeps the table at about 8 stores x 60 x 24 rows."""
+    store.execute(
+        "INSERT INTO live_stock_store_minute (minute_start, store_id, skus, out_of_stock, low_stock, units_on_hand) "
+        "SELECT date_trunc('minute', now()), store_id, count(*), count(*) FILTER (WHERE available <= 0), "
+        "count(*) FILTER (WHERE available > 0 AND available < reorder_point), coalesce(sum(on_hand), 0) "
+        "FROM live_stock_now GROUP BY store_id "
+        "ON CONFLICT (minute_start, store_id) DO UPDATE SET skus = EXCLUDED.skus, out_of_stock = EXCLUDED.out_of_stock, "
+        "low_stock = EXCLUDED.low_stock, units_on_hand = EXCLUDED.units_on_hand")
+    store.execute("DELETE FROM live_stock_store_minute WHERE minute_start < now() - interval '%d hours'"
+                  % int(retention_hours))
+
+
 def compute_product_rows(spark, silver_root):
     """dim_product_current rows: the latest silver_products version of every product ([] without the table).
 

@@ -223,6 +223,7 @@ def expand_macros(sql, days=1):
             else:
                 new = _bucket(args[0], args[1]) + (' AS "time"' if name == "timeGroupAlias" else "")
             out = out[:at] + new + out[end:]
+    out = out.replace("$store", "SELECT store_id FROM dim_store")  # the dashboards' store variable: all stores
     left = re.findall(r"\$__\w+", out)
     if left:
         raise ValueError("unexpanded Grafana macro: %s" % ", ".join(sorted(set(left))))
@@ -866,6 +867,7 @@ def evaluate_rule(ctx, rule, instant=None):
 
 
 EXPRESS_RULE, OOS_RULE = "fs-express-sla", "fs-oos-demand"
+EXPRESS_RULES = (EXPRESS_RULE, "fs-express-ontime")  # both read live_express_orders, so both are pinned to the end of the data
 # The express rule looks at the last 60 minutes before now(); the data is days old, so it is evaluated as of the end of its
 # data. Before the breach run that is the end of the clean orders; after it, the end of the breach run's orders (the only
 # ones with a 2 minute promise), because the clean data may reach further than the small run.
@@ -879,7 +881,7 @@ def evaluate_all(ctx, rules, express_as_of):
     out = {}
     for rule in rules:
         uid, instant = rule["uid"], None
-        if uid == EXPRESS_RULE:
+        if uid in EXPRESS_RULES:
             instant = ctx.scalar(express_as_of, who="smoke")
             instant = instant.isoformat() if hasattr(instant, "isoformat") else instant
         value, firing = evaluate_rule(ctx, rule, instant)

@@ -43,10 +43,10 @@ def text(pid, title, markdown, pos):
             "options": {"mode": "markdown", "content": markdown}}
 
 
-def dashboard(uid, title, panels):
+def dashboard(uid, title, panels, variables=None, time_from="now-30m"):
     return {"uid": uid, "title": title, "tags": ["funnelstream"], "timezone": "Africa/Cairo", "refresh": "5s",
-            "time": {"from": "now-30m", "to": "now"}, "schemaVersion": 39, "editable": True, "graphTooltip": 1,
-            "templating": {"list": []}, "annotations": {"list": []}, "links": [], "panels": panels}
+            "time": {"from": time_from, "to": "now"}, "schemaVersion": 39, "editable": True, "graphTooltip": 1,
+            "templating": {"list": variables or []}, "annotations": {"list": []}, "links": [], "panels": panels}
 
 
 def _steps(*pairs):

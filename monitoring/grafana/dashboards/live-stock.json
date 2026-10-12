@@ -1,0 +1,689 @@
+{
+  "uid": "fs-live-stock",
+  "title": "FunnelStream: Live stock monitor",
+  "tags": [
+    "funnelstream"
+  ],
+  "timezone": "Africa/Cairo",
+  "refresh": "5s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "store",
+        "label": "Store",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "fs-postgres"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "query": "SELECT store_id AS __value, store_name AS __text FROM dim_store ORDER BY 2",
+        "definition": "SELECT store_id AS __value, store_name AS __text FROM dim_store ORDER BY 2",
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Out-of-stock products",
+      "description": "Store and product pairs with no available stock (simulated stock).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"out of stock\" FROM live_stock_now WHERE available <= 0 AND store_id IN ($store)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Low-stock products",
+      "description": "Stock above zero but below the reorder point.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"low stock\" FROM live_stock_now WHERE available > 0 AND available < reorder_point AND store_id IN ($store)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "In-stock rate",
+      "description": "Share of tracked products with available stock.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE available > 0) / nullif(count(*), 0), 1) AS \"in stock %\" FROM live_stock_now WHERE store_id IN ($store)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 97
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Units on hand",
+      "description": "Total on-hand units in the selected stores.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(on_hand), 0) AS \"units\" FROM live_stock_now WHERE store_id IN ($store)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Seconds since the last stock write",
+      "description": "Age of the newest stock row; about one Silver batch behind.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(round(extract(epoch from (now() - max(updated_at))))::int, 0) AS \"seconds\" FROM live_stock_now"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Out-of-stock products per store",
+      "description": "Out-of-stock pairs at each minute, from the per-minute snapshots of live_stock_now (kept 24 hours).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(h.minute_start, '1m', 0), s.store_name AS metric, max(h.out_of_stock) AS \"out of stock\" FROM live_stock_store_minute h JOIN dim_store s ON s.store_id = h.store_id WHERE $__timeFilter(h.minute_start) AND h.store_id IN ($store) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Units on hand per store",
+      "description": "On-hand units at each minute: they fall with sales and jump with restocks.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(h.minute_start, '1m', 0), s.store_name AS metric, max(h.units_on_hand) AS \"units\" FROM live_stock_store_minute h JOIN dim_store s ON s.store_id = h.store_id WHERE $__timeFilter(h.minute_start) AND h.store_id IN ($store) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Units added and removed per minute",
+      "description": "Change in on-hand units between minute snapshots across the selected stores: added is restock, removed is sales and shrinkage.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT minute_start AS time, sum(greatest(d, 0)) AS \"added\", -sum(least(d, 0)) AS \"removed\" FROM (SELECT minute_start, units_on_hand - lag(units_on_hand) OVER (PARTITION BY store_id ORDER BY minute_start) AS d FROM live_stock_store_minute WHERE $__timeFilter(minute_start) AND store_id IN ($store)) x WHERE d IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Demand on out-of-stock products per minute",
+      "description": "Product views and add-to-carts on pairs with zero stock when the minute was written.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(minute_start, '1m', 0), sum(views) AS \"views\", sum(add_to_cart) AS \"add to cart\" FROM live_oos_demand_minute WHERE oos_at_write AND $__timeFilter(minute_start) AND store_id IN ($store) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Stock health by store",
+      "description": "Tracked products, out-of-stock, low-stock and in-stock rate per dark store, worst first.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", count(*) AS \"products\", count(*) FILTER (WHERE l.available <= 0) AS \"out of stock\", count(*) FILTER (WHERE l.available > 0 AND l.available < l.reorder_point) AS \"low\", round(100.0 * count(*) FILTER (WHERE l.available > 0) / count(*), 1) AS \"in stock %\", sum(l.on_hand) AS \"units\" FROM live_stock_now l JOIN dim_store s ON s.store_id = l.store_id WHERE l.store_id IN ($store) GROUP BY s.store_name ORDER BY 5 ASC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Restock watchlist",
+      "description": "The 20 pairs furthest below their reorder point; status shows what to do.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 21,
+        "w": 14,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.store_name AS \"store\", coalesce(p.name, l.product_id) AS \"product\", l.available AS \"available\", l.reorder_point AS \"reorder point\", CASE WHEN l.available <= 0 THEN 'out of stock' WHEN l.available < l.reorder_point THEN 'restock now' ELSE 'ok' END AS \"status\" FROM live_stock_now l JOIN dim_store s ON s.store_id = l.store_id LEFT JOIN dim_product_current p ON p.product_id = l.product_id WHERE l.store_id IN ($store) ORDER BY l.available::numeric / nullif(l.reorder_point, 0) ASC NULLS LAST, l.store_id, l.product_id LIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "About this data",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "All stock numbers are **simulated**. History comes from a per-minute snapshot of the current stock table (kept 24 hours), so a minute with no sink batch has no point. Out-of-stock demand is flagged with the stock when the minute was written."
+      }
+    }
+  ]
+}

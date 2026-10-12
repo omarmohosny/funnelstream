@@ -22,7 +22,7 @@ from streaming.common.spark import inherit_job_group
 from streaming.gold.live import live_metrics_for_minutes, minute_epochs
 from warehouse.live_common import _read, _utc
 from warehouse.live_express import compute_express_rows
-from warehouse.live_stock import compute_demand_rows, compute_stock_rows, write_oos_demand
+from warehouse.live_stock import compute_demand_rows, compute_stock_rows, write_oos_demand, write_stock_history
 from warehouse.live_tables import HEALTH_COLUMNS, LIVE_METRIC_COLUMNS
 
 log = logging.getLogger("funnelstream.live_store")
@@ -242,6 +242,7 @@ class LiveSink:
             write_health(store, health_minutes, health_counts)
             if stock_rows:  # stock first, so the demand flag below sees the new stock
                 store.upsert("live_stock_now", stock_rows, ["store_id", "product_id"])
+                write_stock_history(store)
             write_oos_demand(store, demand_rows)
             if express_rows:
                 store.upsert("live_express_orders", express_rows, ["order_id"])

@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS live_stock_now (          -- one row per store and pr
     PRIMARY KEY (store_id, product_id)
 );
 
+CREATE TABLE IF NOT EXISTS live_stock_store_minute (  -- one row per store and minute: stock history for the live stock monitor (simulated stock)
+    minute_start   timestamptz NOT NULL,
+    store_id       text        NOT NULL,
+    skus           integer     NOT NULL,             -- products tracked in the store
+    out_of_stock   integer     NOT NULL,             -- available <= 0
+    low_stock      integer     NOT NULL,             -- 0 < available < reorder_point
+    units_on_hand  bigint      NOT NULL,
+    PRIMARY KEY (minute_start, store_id)
+);
+
 CREATE TABLE IF NOT EXISTS live_oos_demand_minute (  -- ALL served demand per minute, store, product and campaign
     minute_start   timestamptz NOT NULL,
     store_id       text        NOT NULL,
@@ -172,6 +182,6 @@ $$;
 
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM grafana_ro;
 GRANT SELECT ON live_metrics_minute, pipeline_health_minute, pipeline_batch_log, pipeline_heartbeat,
-    dim_store, dim_store_district, dim_product_current, live_stock_now, live_oos_demand_minute, live_express_orders,
+    dim_store, dim_store_district, dim_product_current, live_stock_now, live_stock_store_minute, live_oos_demand_minute, live_express_orders,
     inventory_daily, oos_demand_daily, express_daily, marketing_d1_campaign, marketing_d1_product TO grafana_ro;
 -- END grafana_ro

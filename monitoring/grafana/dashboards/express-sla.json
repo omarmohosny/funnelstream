@@ -1,0 +1,647 @@
+{
+  "uid": "fs-express-sla",
+  "title": "FunnelStream: Express delivery SLA",
+  "tags": [
+    "funnelstream"
+  ],
+  "timezone": "Africa/Cairo",
+  "refresh": "5s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "store",
+        "label": "Store",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "fs-postgres"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "query": "SELECT store_id AS __value, store_name AS __text FROM dim_store ORDER BY 2",
+        "definition": "SELECT store_id AS __value, store_name AS __text FROM dim_store ORDER BY 2",
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "On-time rate, last hour",
+      "description": "On-time orders divided by delivered or breached orders created in the last hour (target 95%).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour' AND store_id IN ($store)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Breaches, last hour",
+      "description": "Delivered late or overdue (promise plus 1 minute of grace).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"breaches\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour' AND store_id IN ($store) AND ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "At risk now",
+      "description": "Undelivered orders that used 75% of their promise and are not yet breached.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE store_id IN ($store) AND delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute' + interval '1 minute'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Open express orders",
+      "description": "Created, not delivered, not cancelled or returned.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE store_id IN ($store) AND delivered_at IS NULL AND NOT closed_without_delivery"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Median delivery time, last hour (min)",
+      "description": "p50 of delivered orders created in the last hour.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0)::numeric, 1) AS \"minutes\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour' AND store_id IN ($store) AND delivered_at IS NOT NULL"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "decimals": 1,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "On-time rate by order creation time (5-minute buckets)",
+      "description": "Share of resolved orders delivered inside their promise. The dashed line is the 95% target. The live table keeps the last 3 hours of orders.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', 0), round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "On-time and breached orders per 5 minutes",
+      "description": "Orders by SLA outcome, by creation time.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', 0), count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') AS \"on time\", count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute')) AS \"breached\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Delivery time p50 and p90 (minutes)",
+      "description": "Delivery time of delivered orders by creation time. Compare with the 20-minute promise.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', 0), percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p50\", percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p90\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) AND delivered_at IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "SLA by store, last hour",
+      "description": "Orders, on-time rate, breaches, at-risk orders and p90 delivery time per dark store, worst first.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(s.store_name, o.store_id) AS \"store\", count(*) AS \"orders\", round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\", count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute')) AS \"breached\", count(*) FILTER (WHERE delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at >= promised_minutes * interval '45 seconds' AND now() - created_at <= promised_minutes * interval '1 minute' + interval '1 minute') AS \"at risk\", round(percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0)::numeric, 1) AS \"p90 min\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id WHERE o.created_at >= now() - interval '1 hour' AND o.store_id IN ($store) GROUP BY 1 ORDER BY 3 ASC NULLS LAST"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Open orders closest to their promise",
+      "description": "Undelivered express orders, oldest first. Act on them before they breach.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fs-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fs-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(s.store_name, o.store_id) AS \"store\", o.order_id AS \"order\", o.promised_minutes AS \"promise (min)\", round((EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"age (min)\", round((o.promised_minutes - EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"minutes left\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id WHERE o.store_id IN ($store) AND o.delivered_at IS NULL AND NOT o.closed_without_delivery ORDER BY 4 DESC LIMIT 15"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Express definitions",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**On time**: delivered within the order's own promise (`delivered_at - created_at <= promised_minutes`). **Breached**: delivered later than the promise, or still undelivered more than the promise plus a 1-minute grace after it was created (the grace keeps a `delivered` event that reaches the sink a batch late from raising a false alarm). **At risk**: undelivered and at least 75% of the promise has passed (15 minutes for a 20-minute promise), not yet breached. An order that was cancelled or returned without a delivery is **closed without delivery**: it has no delivery to be late, so it is in no count. Times are simulator event times; the state is computed with now(), so it moves between Silver batches. The on-time target is 95%."
+      }
+    }
+  ]
+}

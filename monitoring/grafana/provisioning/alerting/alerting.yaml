@@ -1,5 +1,5 @@
 apiVersion: 1
-# Spec 17.19. Six alert rules, evaluated every minute, notifying the webhook contact point fs-webhook
+# Spec 17.19. Eight alert rules, evaluated every minute, notifying the webhook contact point fs-webhook
 # (scripts/alert_sink.py listens on the host, port 9099, and prints/logs every alert).
 #
 # NOTE: history-mode data is late by rule (every event is older than the watermark), so rule (a) is meaningful for
@@ -300,6 +300,101 @@ groups:
               expression: B
               conditions:
                 - evaluator: {type: gt, params: [0]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-express-ontime
+        title: Express on-time rate is below the 95% target
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Express on-time rate is below the 95% target"
+          runbook: "Open 'Express delivery SLA', table 'SLA by store': find the stores below target, check their open orders and stock, and add riders or pause express there."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time,
+                  100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL
+                    AND delivered_at - created_at <= promised_minutes * interval '1 minute') / count(*) AS on_time_pct
+                FROM live_express_orders
+                WHERE created_at >= now() - interval '30 minutes'
+                  AND ((delivered_at IS NOT NULL)
+                    OR (delivered_at IS NULL AND NOT closed_without_delivery
+                        AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))
+                HAVING count(*) >= 5
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [95]}
+              datasource: {type: __expr__, uid: __expr__}
+      - uid: fs-stock-outs
+        title: Many products are out of stock in one store
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many products are out of stock in one store"
+          runbook: "Open 'Live stock monitor', table 'Restock watchlist': pick the store, send the restock, and check 'Out-of-stock products per store' for the start time."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: fs-postgres
+            model:
+              refId: A
+              datasource: {type: postgres, uid: fs-postgres}
+              editorMode: code
+              format: time_series
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time,
+                  coalesce(max(100.0 * oos / skus), 0) AS worst_store_oos_pct
+                FROM (SELECT store_id, count(*) AS skus, count(*) FILTER (WHERE available <= 0) AS oos
+                      FROM live_stock_now GROUP BY store_id) t
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [20]}
               datasource: {type: __expr__, uid: __expr__}
 contactPoints:
   - orgId: 1

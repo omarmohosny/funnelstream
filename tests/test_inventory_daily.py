@@ -22,7 +22,7 @@ def test_the_cairo_day_in_utc_follows_the_clock_of_egypt():
 def test_the_new_tables_are_specified_created_and_granted():
     spec = {t.name: t for t in LIVE_TABLES}
     assert {"inventory_daily", "oos_demand_daily", "express_daily"} <= set(LIVE_TABLE_NAMES)
-    assert len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 15
+    assert len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 16
     assert spec["inventory_daily"].keys == ("report_date", "store_id", "product_id")
     assert spec["oos_demand_daily"].keys == ("report_date", "store_id", "product_id", "campaign_id")
     assert spec["express_daily"].keys == ("report_date", "store_id")

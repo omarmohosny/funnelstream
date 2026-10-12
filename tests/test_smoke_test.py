@@ -304,11 +304,13 @@ def test_every_macro_used_by_the_provisioned_dashboards_expands_and_leaves_no_do
     assert {"$__timeFilter", "$__timeGroupAlias"} <= used and total >= 30
 
 
-def test_the_four_dashboards_and_six_alert_rules_are_found():
+def test_the_six_dashboards_and_eight_alert_rules_are_found():
     assert sorted(f for f in os.listdir(sm.GRAFANA_DASHBOARDS) if f.endswith(".json")) == [
-        "inventory-daily.json", "inventory-ops.json", "marketing-d1.json", "pipeline-live.json"]
+        "express-sla.json", "inventory-daily.json", "inventory-ops.json", "live-stock.json", "marketing-d1.json",
+        "pipeline-live.json"]
     assert sorted(r["uid"] for r in sm.alert_rules()) == sorted([
-        "fs-late-rate", "fs-quarantine-share", "fs-silver-silent", "fs-no-events", "fs-oos-demand", "fs-express-sla"])
+        "fs-late-rate", "fs-quarantine-share", "fs-silver-silent", "fs-no-events", "fs-oos-demand", "fs-express-sla",
+        "fs-express-ontime", "fs-stock-outs"])
 
 
 # ---------------------------------------------------------------------------------------------- Power BI sources
@@ -519,7 +521,7 @@ def test_the_real_spark_test_files_are_found():
 
 
 def test_static_checks_pass_on_the_repo_and_fail_on_a_generated_ddl_drift():
-    assert "4 dashboards valid" in sm.stage_static(make_ctx())
+    assert "6 dashboards valid" in sm.stage_static(make_ctx())
     with pytest.raises(sm.StageFail, match="gen_ddl.py --check exited with code 1"):
         sm.stage_static(make_ctx(runner=FakeRunner(rc={"gen_ddl.py": 1})))
 

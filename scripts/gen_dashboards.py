@@ -7,12 +7,14 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from monitoring import dashboards
+from monitoring import dashboards, live_dashboards
 
 OUT = os.path.join(_ROOT, "monitoring", "grafana", "dashboards")
 FILES = {"inventory-ops.json": dashboards.build_inventory_ops,
          "inventory-daily.json": dashboards.build_inventory_daily,
-         "marketing-d1.json": dashboards.build_marketing_d1}
+         "marketing-d1.json": dashboards.build_marketing_d1,
+         "express-sla.json": live_dashboards.build_express_sla,
+         "live-stock.json": live_dashboards.build_live_stock}
 
 
 def main():

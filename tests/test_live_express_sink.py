@@ -14,7 +14,7 @@ ROW = dict(order_id="ord_1", store_id="store_cairo_maadi", promised_minutes=20, 
 
 
 def test_the_express_table_is_specified_created_and_granted():
-    assert "live_express_orders" in LIVE_TABLE_NAMES and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 15
+    assert "live_express_orders" in LIVE_TABLE_NAMES and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 16
     spec = {t.name: t for t in LIVE_TABLES}["live_express_orders"]
     assert spec.keys == ("order_id",)
     assert spec.column_names() == ["order_id", "store_id", "promised_minutes", "created_at", "delivered_at",

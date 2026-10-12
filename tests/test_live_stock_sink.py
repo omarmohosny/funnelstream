@@ -30,7 +30,7 @@ class StockStore(MemStore):
 
 
 def test_the_new_tables_are_specified_created_and_granted():
-    assert set(NEW) <= set(LIVE_TABLE_NAMES) and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 15
+    assert set(NEW) <= set(LIVE_TABLE_NAMES) and len(LIVE_TABLES) == len(LIVE_TABLE_NAMES) == 16
     for name in NEW:
         assert re.search(r"CREATE TABLE IF NOT EXISTS %s \(" % name, DDL), name
         assert name in DDL.split("GRANT SELECT ON")[1].split("TO grafana_ro")[0], name

@@ -15,6 +15,8 @@ _DIM_STORE = "store_id:string store_name:string city:string"
 _DIM_STORE_DISTRICT = "city:string district:string store_id:string"
 _STOCK_NOW = ("store_id:string product_id:string on_hand:int reserved_qty:int available:int reorder_point:int "
               "updated_at:timestamp")
+_STOCK_STORE_MINUTE = ("minute_start:timestamp store_id:string skus:int out_of_stock:int low_stock:int "
+                       "units_on_hand:bigint")
 _DIM_PRODUCT_CURRENT = "product_id:string name:string? category:string? price:decimal(10,2)?"
 _OOS_DEMAND = ("minute_start:timestamp store_id:string product_id:string campaign_id:string utm_campaign:string "
                "views:bigint add_to_cart:bigint landing_clicks:bigint oos_at_write:boolean")
@@ -49,6 +51,8 @@ LIVE_TABLES = [
     Table("dim_store_district", "gold", _parse(_DIM_STORE_DISTRICT, ["city", "district"]), ("city", "district")),
     Table("dim_product_current", "gold", _parse(_DIM_PRODUCT_CURRENT, ["product_id"]), ("product_id",)),
     Table("live_stock_now", "gold", _parse(_STOCK_NOW, ["store_id", "product_id"]), ("store_id", "product_id")),
+    Table("live_stock_store_minute", "gold", _parse(_STOCK_STORE_MINUTE, ["minute_start", "store_id"]),
+          ("minute_start", "store_id")),
     Table("live_oos_demand_minute", "gold",
           _parse(_OOS_DEMAND, ["minute_start", "store_id", "product_id", "campaign_id"]),
           ("minute_start", "store_id", "product_id", "campaign_id")),
