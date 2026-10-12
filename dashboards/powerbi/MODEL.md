@@ -92,8 +92,8 @@ Canvas 16:9 (1280 x 720). Read order: filters, headline numbers, the main chart,
 
 ### Page 1: Executive
 - Slicers: date range, channel, platform.
-- Cards: `Revenue Delivered`, `Revenue Placed`, `AOV`, `Delivered Share of Revenue`, `Orders Placed`, `Cancel Rate`.
-- Line: `Revenue Placed` and `Revenue Delivered` by day, with `Revenue Placed vs Last Week`.
+- Cards: `Revenue Delivered`, `Revenue Placed`, `AOV`, `Delivered Share`, `Orders Placed`, `Cancel Rate`.
+- Line: `Revenue Placed` and `Revenue Delivered` by day, with `Revenue vs Prior 7 Days`.
 - Bars: `Orders Placed` by channel. Table: outcome rates by payment method.
 
 ### Page 2: Campaign (the headline page)
@@ -109,16 +109,16 @@ Canvas 16:9 (1280 x 720). Read order: filters, headline numbers, the main chart,
 
 ### Page 4: Inventory (operations)
 - Slicers: date range, store, category.
-- Cards: `Out of Stock Lines`, `Low Stock Lines`, `Out of Stock Rate`, `Stock Units Available` (current, from `Stock Now`), and `Stock Freshness`.
+- Cards: `Out of Stock Lines`, `Low Stock Lines`, `Out of Stock Rate`, `Stock Units Available` (current, from `Stock Now`). The refresh age is not shown because `Stock Now` is a snapshot; a "data as of" footer comes in Stage 2.
 - Line: `Closing Stock` by day and store. Columns: `Units Sold` against `Units Received` by day.
-- Table: products that `Ended Out of Stock`, with `Days of Cover` and `Oversold Units`.
-- Delivery promise row (the live-inventory section is an express service with a 20-minute promise): cards `Express Orders`, `Express On-time Rate`, `Express Breaches`, `Slowest Express Delivery (min)`; line `Slowest Express Delivery (min)` by day against the promise line; bars `Express On-time Rate` by store. Any breach turns the card red.
+- Table: products that `Ended Out of Stock`, with `Days of Cover (max 90)` and `Oversold Units`.
+- Delivery promise row (the live-inventory section is an express service with a 20-minute promise): cards `Express Orders`, `Express On-time Rate`, `Express Breaches`, `Slowest Express (min)`; line `Slowest Express (min)` by day against the promise line; bars `Express On-time Rate` by store. Any breach turns the card red.
 - Bars: `Shrinkage Rate` by store. Footnote: simulated stock; reservations out of scope; Assiut and "Other" not served.
 
 ### Page 5: Marketing and inventory (the bridge)
 - Slicers: date range, campaign.
 - Cards: `Exposed Spend`, `OOS Click Share` (with `Served Clicks` as its denominator), `Exposed Share of Spend`, `Revenue at Risk`, `OOS Add to Cart`.
-- Bars: `Exposed Spend` per campaign next to `Spend` (same axis). Table: products by `Revenue at Risk` with their store and `Days of Cover`, with a Top N = 5 filter set in the visual (`Marketing D1 Product` keeps every out-of-stock product, related to `Store` and `Product`).
+- Bars: `Exposed Spend` per campaign next to `Spend` (same axis). Table: products by `Revenue at Risk` with their store and `Days of Cover (max 90)`, with a Top N = 5 filter set in the visual (`Marketing D1 Product` keeps every out-of-stock product, related to `Store` and `Product`).
 - Line: `OOS Add to Cart` per day, with the days the hero products ran out visible.
 - Footnote: the metric is an estimate that assumes spend is spread evenly over served landing clicks; out-of-stock is the stock when the minute was written; spend is the ad UTC day and demand the Cairo day (at most 3 hours apart); recent days are provisional.
 
@@ -126,18 +126,18 @@ Pages 6 to 8 (Delivery and COD, City and product, Customer 360) follow the same 
 
 ### Page 6: Products and cities
 - Slicers: date range, product category, city.
-- Cards: `Product Revenue`, `Product Units`, `Product Sessions`, `Product Add to Carts`, `Product Cart Rate`.
+- Cards: `Product Revenue`, `Product Units`, `Product Page Views`, `Product Add to Carts`, `Product Cart Rate`.
 - Treemap: revenue by product category. Bars: revenue by city. Columns: units ordered by category from the order lines.
 - Line: `Product Revenue` by day. Table: top products by revenue with units, sessions and cart rate.
 
 ### Page 7: Customers and delivery
 - Slicers: date range, city, carrier (these filter the order-level `Orders` table; the cards on this page all read it).
-- Cards: `Active Customers`, `Order Count`, `Order Revenue`, `Average Delivery Hours`, `First Attempt Delivery Rate`.
+- Cards: `Active Customers`, `Order Count`, `Order Revenue`, `Average Delivery Hours`, `First-Attempt Rate`.
 - Bars: orders by city; average delivery hours by carrier. Donut: orders by status. Columns: customers by device, orders by payment method.
 
 ### Page 8: Customer 360
 - Slicers: city, favourite category, preferred payment method (no date: the table is the current state).
-- Cards: `Customers on File`, `Buyers`, `Repeat Buyer Rate`, `Lifetime Spend`, `Average Spend per Buyer`, `Lapsed Buyers (30+ days)`.
+- Cards: `Customers on File`, `Buyers`, `Repeat Buyer Rate`, `Lifetime Spend`, `Average Spend per Buyer`, `Quiet Buyers (7+ days)`.
 - Bars and donut: buyers by favourite category, preferred payment method, lifetime spend by city. Columns: one-time and repeat buyers.
 - Table: top customers by lifetime spend with city, favourite category, orders and days since the last order.
 

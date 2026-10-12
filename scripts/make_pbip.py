@@ -192,12 +192,12 @@ def pg_table_tmdl(name, pg_table, cols):
 
 
 PCT = {"CTR", "Conversion Rate", "View Rate", "Cart Rate", "Checkout Rate", "Order Rate", "Session Conversion",
-       "Cart Abandon Rate", "Checkout Abandon Rate", "Delivered Share of Revenue", "Cancel Rate", "Return Rate",
-       "Failed Attempt Rate", "New Customer Share", "Direct Share", "Revenue Placed vs Last Week",
+       "Cart Abandon Rate", "Checkout Abandon Rate", "Delivered Share", "Cancel Rate", "Return Rate",
+       "Failed Attempt Rate", "New Customer Share", "Direct Share", "Revenue vs Prior 7 Days",
        "Out of Stock Rate", "Shrinkage Rate", "OOS Click Share", "Exposed Share of Spend", "Express On-time Rate",
-       "Product Cart Rate", "First Attempt Delivery Rate", "Repeat Buyer Rate"}
+       "Product Cart Rate", "First-Attempt Rate", "Repeat Buyer Rate"}
 RATIO2 = {"ROAS Placed", "ROAS Delivered", "ROAS Gap", "Platform vs Attributed"}
-ONE_DECIMAL = {"Days of Cover", "Slowest Express Delivery (min)", "Average Express Delivery (min)", "Average Delivery Hours"}
+ONE_DECIMAL = {"Days of Cover (max 90)", "Slowest Express (min)", "Average Express Delivery (min)", "Average Delivery Hours"}
 TEXT = {"Maturity Label", "Is Provisional", "Promise Met"}
 
 
@@ -281,10 +281,11 @@ import hashlib
 
 PAGE_W, PAGE_H, MARGIN, GAP = 1280, 720, 16, 8
 HEADER_H = 64
-SLICER_Y, SLICER_H = 72, 44
-CARD_Y, CARD_H = 124, 84
-BODY_Y = 216
+SLICER_Y, SLICER_H = 72, 64
+CARD_Y, CARD_H = 144, 84
+BODY_Y = 236
 BODY_H = PAGE_H - BODY_Y - MARGIN
+ROW_H = (BODY_H - GAP) // 2          # two body rows of 230 px with an 8 px gap
 BODY_BOTTOM = PAGE_H - MARGIN
 
 # Colours. The categorical order and the white surface were run through the dataviz skill's validate_palette.js:
@@ -316,8 +317,11 @@ def field_json(f):
         entity, prop, kind = "_Measures", f[1], "Measure"
     else:
         entity, prop, kind = f[1], f[2], "Column"
-    return {"field": {kind: {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}},
-            "queryRef": "%s.%s" % (entity, prop), "nativeQueryRef": prop}
+    out = {"field": {kind: {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}},
+           "queryRef": "%s.%s" % (entity, prop), "nativeQueryRef": prop}
+    if kind == "Column":
+        out["displayName"] = DISPLAY[(entity, prop)]   # KeyError names a column that still needs a readable name
+    return out
 
 
 # Power BI formatting values are expressions: a literal wrapped in {"expr": {"Literal": {"Value": ...}}}.
@@ -365,118 +369,124 @@ def card_row(measures, y=CARD_Y, h=CARD_H, x0=MARGIN, width=PAGE_W - 2 * MARGIN)
     return [vis("card", name, box, {"Values": [M(name)]}) for box, name in zip(row(len(measures), y, h, x0, width), measures)]
 
 
+# Readable names shown in slicers, table headers and axes instead of the raw column names (the projection's displayName).
+DISPLAY = {
+    ("Date", "date"): "Date",
+    ("Orders Daily", "channel"): "Channel", ("Orders Daily", "platform"): "Platform",
+    ("Orders Daily", "payment_method"): "Payment method",
+    ("Campaign", "name"): "Campaign", ("Campaign", "platform"): "Platform",
+    ("Funnel Daily", "channel"): "Channel", ("Funnel Daily", "platform"): "Platform",
+    ("Store", "store_name"): "Store",
+    ("Product", "category"): "Category", ("Product", "name"): "Product",
+    ("City Product Daily", "city"): "City",
+    ("Orders", "carrier"): "Carrier",
+    ("Customer 360", "city"): "City", ("Customer 360", "top_category"): "Favourite category",
+    ("Customer 360", "preferred_payment_method"): "Preferred payment",
+    ("Customer 360", "is_repeat_buyer"): "Repeat buyer", ("Customer 360", "customer_id"): "Customer",
+    ("Customer 360", "orders_count"): "Orders", ("Customer 360", "total_spend"): "Lifetime spend",
+    ("Customer 360", "days_since_last_order"): "Days since last order",
+}
+
+
 def page_layouts():
-    """page id -> (tab name, visuals). The first visual of every page is the header band."""
+    """page id -> (tab name, visuals), in tab order. The first visual of every page is the header band. Stage 2: seven pages,
+    one question each; no pie, donut or treemap; every chart title says what is shown."""
     date = C("Date", "date")
-    top, mid = BODY_Y, BODY_Y + 248          # two rows of the body: 240 and 240 high
+    top, mid = BODY_Y, BODY_Y + ROW_H + GAP          # two rows of the body, ROW_H high each
     pages = {}
-    pages["executive"] = ("Executive", [header("FunnelStream  |  Executive", "Revenue, orders and how they end, from the Gold layer in Databricks")]
-        + slicer_row([date, C("Orders Daily", "channel"), C("Orders Daily", "platform")])
-        + card_row(["Revenue Delivered", "Revenue Placed", "AOV", "Delivered Share of Revenue", "Orders Placed",
-                    "Cancel Rate", "Revenue Placed vs Last Week"])
-        + [vis("lineChart", "Revenue by day", (16, top, 760, 240),
+    channel, platform, payment = C("Orders Daily", "channel"), C("Orders Daily", "platform"), C("Orders Daily", "payment_method")
+    pages["executive"] = ("Executive", [header("FunnelStream  |  Executive", "Is revenue on track, and where do orders leak? The simulated data has a one-day volume peak on 9 October")]
+        + slicer_row([date, channel, platform])
+        + card_row(["Revenue Placed", "Revenue Delivered", "Orders Placed", "AOV", "Delivered Share", "Cancel Rate"])
+        + [vis("lineChart", "Revenue by day (one-day volume peak on 9 Oct)", (16, top, 760, ROW_H),
                {"Category": [date], "Y": [M("Revenue Placed"), M("Revenue Delivered")]}),
-           vis("clusteredBarChart", "Orders by channel", (784, top, 480, 240),
-               {"Category": [C("Orders Daily", "channel")], "Y": [M("Orders Placed")]}),
-           vis("tableEx", "Outcome rates by payment method", (16, mid, 760, 240),
-               {"Values": [C("Orders Daily", "payment_method"), M("Orders Placed"), M("Cancel Rate"), M("Return Rate"),
-                           M("Failed Attempt Rate")]}),
-           vis("donutChart", "Orders by platform", (784, mid, 480, 240),
-               {"Category": [C("Orders Daily", "platform")], "Y": [M("Orders Placed")]})])
-    pages["campaign"] = ("Campaign", [header("FunnelStream  |  Campaigns", "Spend, return on ad spend and conversions per campaign; ad numbers are the ad API's UTC day")]
-        + slicer_row([date, C("Campaign", "name"), C("Campaign", "platform")])
-        + card_row(["Spend", "CPA", "Cost per Delivered Order", "CTR", "Conversion Rate", "ROAS Gap", "Maturity Label"])
-        + [vis("clusteredBarChart", "ROAS placed and delivered by campaign", (16, top, 620, BODY_H),
-               {"Category": [C("Campaign", "name")], "Y": [M("ROAS Placed"), M("ROAS Delivered")]}),
-           vis("clusteredColumnChart", "Platform conversions against attributed orders", (644, top, 620, 240),
-               {"Category": [C("Campaign", "name")], "Y": [M("Platform Conversions"), M("Orders on Spend Days")]}),
-           vis("tableEx", "Campaign scorecard", (644, mid, 620, 240),
-               {"Values": [C("Campaign", "name"), M("Spend"), M("Attributed Orders"), M("CPA"), M("ROAS Placed"), M("CTR")]},
+           vis("clusteredBarChart", "Orders by channel", (784, top, 480, ROW_H),
+               {"Category": [channel], "Y": [M("Orders Placed")]}, sort=M("Orders Placed")),
+           vis("clusteredBarChart", "Where orders leak: cancelled, returned and failed-attempt rate by payment method", (16, mid, 760, ROW_H),
+               {"Category": [payment], "Y": [M("Cancel Rate"), M("Return Rate"), M("Failed Attempt Rate")]}),
+           vis("clusteredBarChart", "Orders by payment method", (784, mid, 480, ROW_H),
+               {"Category": [payment], "Y": [M("Orders Placed")]}, sort=M("Orders Placed"))])
+    camp, camp_platform = C("Campaign", "name"), C("Campaign", "platform")
+    pages["campaign"] = ("Campaign", [header("FunnelStream  |  Campaigns", "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling")]
+        + slicer_row([date, camp, camp_platform])
+        + card_row(["Spend", "CPA", "CTR", "Conversion Rate", "ROAS Delivered"])
+        + [vis("clusteredBarChart", "Return on ad spend by campaign: delivered against placed", (16, top, 620, BODY_H),
+               {"Category": [camp], "Y": [M("ROAS Delivered"), M("ROAS Placed")]}, sort=M("ROAS Delivered")),
+           vis("clusteredBarChart", "Cost per delivered order by campaign", (644, top, 620, ROW_H),
+               {"Category": [camp], "Y": [M("Cost per Delivered Order")]}, sort=M("Cost per Delivered Order")),
+           vis("tableEx", "Campaign scorecard", (644, mid, 620, ROW_H),
+               {"Values": [camp, M("Spend"), M("Orders on Spend Days"), M("CPA"), M("ROAS Delivered"), M("CTR")]},
                sort=M("Spend"))])
-    pages["funnel"] = ("Funnel", [header("FunnelStream  |  Funnel", "From session to order: where shoppers drop out, by channel, platform and country")]
-        + slicer_row([date, C("Funnel Daily", "channel"), C("Funnel Daily", "platform")])
+    store, category, product = C("Store", "store_name"), C("Product", "category"), C("Product", "name")
+    pages["marketing_inventory"] = ("Marketing and stock", [header("FunnelStream  |  Marketing and stock", "Which campaign sent shoppers to empty shelves? An estimate: spend is the ad UTC day and demand the Cairo day")]
+        + slicer_row([date, camp])
+        + card_row(["Exposed Spend", "OOS Click Share", "Exposed Share of Spend", "Revenue at Risk", "OOS Add to Cart"])
+        + [vis("clusteredBarChart", "Exposed spend next to campaign spend (D-1, estimate)", (16, top, 760, ROW_H),
+               {"Category": [camp], "Y": [M("Exposed Spend"), M("Campaign Spend D1")]}),
+           vis("clusteredColumnChart", "Out-of-stock add to cart by product category", (784, top, 480, ROW_H),
+               {"Category": [category], "Y": [M("OOS Add to Cart")]}, sort=M("OOS Add to Cart")),
+           vis("tableEx", "Products by revenue at risk (all campaigns)", (16, mid, 760, ROW_H),
+               {"Values": [product, store, M("Revenue at Risk")]}, sort=M("Revenue at Risk")),
+           vis("clusteredBarChart", "Revenue at risk by category (all campaigns)", (784, mid, 480, ROW_H),
+               {"Category": [category], "Y": [M("Revenue at Risk")]}, sort=M("Revenue at Risk"))])
+    pages["inventory"] = ("Operations", [header("FunnelStream  |  Operations", "What to restock today, and is the 20-minute express promise holding? The stock cards are the current snapshot of 8 dark stores")]
+        + slicer_row([date, store, category])
+        + card_row(["Out of Stock Lines", "Low Stock Lines", "Out of Stock Rate", "Express Orders", "Express On-time Rate",
+                    "Express Breaches"])
+        + [vis("clusteredBarChart", "Oversold units by store", (16, top, 400, ROW_H),
+               {"Category": [store], "Y": [M("Oversold Units")]}, sort=M("Oversold Units")),
+           vis("clusteredColumnChart", "Units sold and received by day", (424, top, 420, ROW_H),
+               {"Category": [date], "Y": [M("Units Sold"), M("Units Received")]}),
+           vis("clusteredColumnChart", "Shrinkage rate by store", (852, top, 412, ROW_H),
+               {"Category": [store], "Y": [M("Shrinkage Rate")]}),
+           vis("tableEx", "Products with oversold units", (16, mid, 420, ROW_H),
+               {"Values": [product, M("Oversold Units"), M("Days of Cover (max 90)")]}, sort=M("Oversold Units")),
+           vis("clusteredColumnChart", "Express breaches by store", (444, mid, 420, ROW_H),
+               {"Category": [store], "Y": [M("Express Breaches")]}),
+           vis("clusteredBarChart", "Average delivery hours by carrier (all orders)", (872, mid, 392, ROW_H),
+               {"Category": [C("Orders", "carrier")], "Y": [M("Average Delivery Hours")]})])
+    fchannel = C("Funnel Daily", "channel")
+    pages["funnel"] = ("Funnel", [header("FunnelStream  |  Funnel", "Which step and which channel should we fix first? From session to order, by channel")]
+        + slicer_row([date, fchannel, C("Funnel Daily", "platform")])
         + card_row(["Cart Abandon Rate", "Checkout Abandon Rate", "Session Conversion"])
         + [vis("funnel", "Funnel stages", (16, top, 480, BODY_H),
                {"Y": [M("Sessions"), M("Product View Sessions"), M("Cart Sessions"), M("Checkout Sessions"),
                       M("Funnel Orders")]}),
-           vis("clusteredBarChart", "Sessions and orders by channel", (504, top, 760, 240),
-               {"Category": [C("Funnel Daily", "channel")], "Y": [M("Sessions"), M("Funnel Orders")]}),
-           vis("clusteredBarChart", "Sessions and orders by platform", (504, mid, 370, 240),
-               {"Category": [C("Funnel Daily", "platform")], "Y": [M("Sessions"), M("Funnel Orders")]}),
-           vis("clusteredBarChart", "Sessions and orders by country", (882, mid, 382, 240),
-               {"Category": [C("Funnel Daily", "country")], "Y": [M("Sessions"), M("Funnel Orders")]})])
-    pages["inventory"] = ("Inventory", [header("FunnelStream  |  Inventory and express delivery", "Simulated stock in 8 dark stores; every express order carries a 20-minute promise")]
-        + slicer_row([date, C("Store", "store_name"), C("Product", "category")])
-        + card_row(["Out of Stock Lines", "Low Stock Lines", "Out of Stock Rate", "Stock Units Available",
-                    "Stock Freshness (seconds)"])
-        + [vis("lineChart", "Closing stock by day and store (simulated)", (16, top, 620, 240),
-               {"Category": [date], "Y": [M("Closing Stock")], "Series": [C("Store", "store_name")]}),
-           vis("clusteredColumnChart", "Units sold and received by day", (644, top, 620, 240),
-               {"Category": [date], "Y": [M("Units Sold"), M("Units Received")]}),
-           vis("tableEx", "Products that ended out of stock", (16, mid, 500, 240),
-               {"Values": [C("Product", "name"), M("Ended Out of Stock"), M("Days of Cover"), M("Oversold Units")]},
-               sort=M("Ended Out of Stock"))]
-        + card_row(["Express Orders", "Express On-time Rate", "Express Breaches", "Slowest Express Delivery (min)"],
-                   y=mid, h=84, x0=524, width=740)
-        + [vis("clusteredBarChart", "Shrinkage rate by store", (524, mid + 92, 740, 148),
-               {"Category": [C("Store", "store_name")], "Y": [M("Shrinkage Rate")]})])
-    pages["marketing_inventory"] = ("Marketing and inventory", [header("FunnelStream  |  Marketing and inventory", "Ad spend that sent shoppers to empty shelves; an estimate, spend is the ad UTC day and demand the Cairo day")]
-        + slicer_row([date, C("Campaign", "name")])
-        + card_row(["Exposed Spend", "OOS Click Share", "Exposed Share of Spend", "Revenue at Risk", "OOS Add to Cart"])
-        + [vis("clusteredBarChart", "Exposed spend next to spend by campaign (estimate)", (16, top, 620, 240),
-               {"Category": [C("Campaign", "name")], "Y": [M("Exposed Spend"), M("Campaign Spend D1")]}),
-           vis("lineChart", "Out-of-stock add to cart by day", (644, top, 620, 240),
-               {"Category": [date], "Y": [M("OOS Add to Cart")]}),
-           vis("tableEx", "Products by revenue at risk", (16, mid, 760, 240),
-               {"Values": [C("Product", "name"), C("Store", "store_name"), M("Revenue at Risk"), M("Days of Cover")]},
-               sort=M("Revenue at Risk")),
-           vis("clusteredBarChart", "Revenue at risk by store", (784, mid, 480, 240),
-               {"Category": [C("Store", "store_name")], "Y": [M("Revenue at Risk")]})])
-    pages["products"] = ("Products and cities", [header("FunnelStream  |  Products and cities", "What shoppers view, add to the cart and buy, by product category and city")]
-        + slicer_row([date, C("Product", "category"), C("City Product Daily", "city")])
-        + card_row(["Product Revenue", "Product Units", "Product Sessions", "Product Add to Carts", "Product Cart Rate"])
-        + [vis("treemap", "Revenue by product category", (16, top, 400, 240),
-               {"Group": [C("Product", "category")], "Values": [M("Product Revenue")]}),
-           vis("clusteredBarChart", "Revenue by city", (424, top, 420, 240),
-               {"Category": [C("City Product Daily", "city")], "Y": [M("Product Revenue")]}),
-           vis("clusteredColumnChart", "Units ordered by category (order lines)", (852, top, 412, 240),
-               {"Category": [C("Product", "category")], "Y": [M("Units Ordered")]}),
-           vis("lineChart", "Revenue by day", (16, mid, 400, 240),
-               {"Category": [date], "Y": [M("Product Revenue")]}),
-           vis("tableEx", "Top products", (424, mid, 840, 240),
-               {"Values": [C("Product", "name"), C("Product", "category"), M("Product Units"), M("Product Revenue"),
-                           M("Product Sessions"), M("Product Cart Rate")]},
+           vis("clusteredBarChart", "Cart and checkout abandon rate by channel", (504, top, 760, ROW_H),
+               {"Category": [fchannel], "Y": [M("Cart Abandon Rate"), M("Checkout Abandon Rate")]}),
+           vis("clusteredBarChart", "Sessions by channel", (504, mid, 760, ROW_H),
+               {"Category": [fchannel], "Y": [M("Sessions")]}, sort=M("Sessions"))])
+    pcategory, city = C("Product", "category"), C("City Product Daily", "city")
+    pages["products"] = ("Products and cities", [header("FunnelStream  |  Products and cities", "What should we stock and promote, and where? Revenue, add-to-cart and cart rate by category and city")]
+        + slicer_row([date, pcategory, city])
+        + card_row(["Product Revenue", "Product Units", "Product Page Views", "Product Add to Carts", "Product Cart Rate"])
+        + [vis("clusteredBarChart", "Revenue by product category", (16, top, 400, ROW_H),
+               {"Category": [pcategory], "Y": [M("Product Revenue")]}, sort=M("Product Revenue")),
+           vis("clusteredBarChart", "Revenue by city", (424, top, 420, ROW_H),
+               {"Category": [city], "Y": [M("Product Revenue")]}, sort=M("Product Revenue")),
+           vis("clusteredColumnChart", "Add to cart by product category", (852, top, 412, ROW_H),
+               {"Category": [pcategory], "Y": [M("Product Add to Carts")]}),
+           vis("tableEx", "Top products", (16, mid, 1248, ROW_H),
+               {"Values": [C("Product", "name"), pcategory, M("Product Units"), M("Product Revenue"),
+                           M("Product Page Views"), M("Product Cart Rate")]},
                sort=M("Product Revenue"))])
-    pages["customers_delivery"] = ("Customers and delivery", [header("FunnelStream  |  Customers and delivery", "Who orders, from where, and how fast and how reliably the order arrives")]
-        + slicer_row([date, C("Orders", "city"), C("Orders", "carrier")])
-        + card_row(["Active Customers", "Order Count", "Order Revenue", "Average Delivery Hours", "First Attempt Delivery Rate"])
-        + [vis("clusteredBarChart", "Orders by city", (16, top, 400, BODY_H),
-               {"Category": [C("Orders", "city")], "Y": [M("Order Count")]}),
-           vis("donutChart", "Orders by status", (424, top, 420, 240),
-               {"Category": [C("Orders", "current_status")], "Y": [M("Order Count")]}),
-           vis("clusteredColumnChart", "Customers by device", (852, top, 412, 240),
-               {"Category": [C("Customer", "primary_device")], "Y": [M("Active Customers")]}),
-           vis("clusteredBarChart", "Average delivery hours by carrier", (424, mid, 420, 240),
-               {"Category": [C("Orders", "carrier")], "Y": [M("Average Delivery Hours")]}),
-           vis("clusteredColumnChart", "Orders by payment method", (852, mid, 412, 240),
-               {"Category": [C("Orders", "payment_method")], "Y": [M("Order Count")]})])
-    pages["customer_360"] = ("Customer 360", [header("FunnelStream  |  Customer 360", "One row per customer: how often they buy, what they buy and who has gone quiet; no date filter, this is the current state")]
-        + slicer_row([C("Customer 360", "city"), C("Customer 360", "top_category"), C("Customer 360", "preferred_payment_method")])
+    c360 = lambda col: C("Customer 360", col)
+    pages["customers"] = ("Customers", [header("FunnelStream  |  Customers", "Who buys again, and who should we win back? One row per customer, the current state, no date filter")]
+        + slicer_row([c360("city"), c360("top_category"), c360("preferred_payment_method")])
         + card_row(["Customers on File", "Buyers", "Repeat Buyer Rate", "Lifetime Spend", "Average Spend per Buyer",
-                    "Lapsed Buyers (30+ days)"])
-        + [vis("clusteredBarChart", "Buyers by favourite category", (16, top, 400, 240),
-               {"Category": [C("Customer 360", "top_category")], "Y": [M("Buyers")]}),
-           vis("donutChart", "Preferred payment method", (424, top, 420, 240),
-               {"Category": [C("Customer 360", "preferred_payment_method")], "Y": [M("Buyers")]}),
-           vis("clusteredColumnChart", "One-time and repeat buyers", (852, top, 412, 240),
-               {"Category": [C("Customer 360", "is_repeat_buyer")], "Y": [M("Buyers")]}),
-           vis("clusteredBarChart", "Lifetime spend by city", (16, mid, 400, 240),
-               {"Category": [C("Customer 360", "city")], "Y": [M("Lifetime Spend")]}),
-           vis("tableEx", "Top customers by lifetime spend", (424, mid, 840, 240),
-               {"Values": [C("Customer 360", "customer_id"), C("Customer 360", "city"), C("Customer 360", "top_category"),
-                           C("Customer 360", "orders_count"), C("Customer 360", "total_spend"),
-                           C("Customer 360", "days_since_last_order")]},
-               sort=C("Customer 360", "total_spend"))])
+                    "Quiet Buyers (7+ days)"])
+        + [vis("clusteredBarChart", "Buyers by favourite category", (16, top, 400, ROW_H),
+               {"Category": [c360("top_category")], "Y": [M("Buyers")]}, sort=M("Buyers")),
+           vis("clusteredBarChart", "Buyers by preferred payment method", (424, top, 420, ROW_H),
+               {"Category": [c360("preferred_payment_method")], "Y": [M("Buyers")]}, sort=M("Buyers")),
+           vis("clusteredColumnChart", "Average spend per buyer by favourite category", (852, top, 412, ROW_H),
+               {"Category": [c360("top_category")], "Y": [M("Average Spend per Buyer")]}),
+           vis("clusteredBarChart", "Lifetime spend by city", (16, mid, 400, ROW_H),
+               {"Category": [c360("city")], "Y": [M("Lifetime Spend")]}, sort=M("Lifetime Spend")),
+           vis("tableEx", "Top customers by lifetime spend, with days since their last order", (424, mid, 840, ROW_H),
+               {"Values": [c360("customer_id"), c360("city"), c360("top_category"), c360("orders_count"),
+                           c360("total_spend"), c360("days_since_last_order")]},
+               sort=c360("total_spend"))])
     return pages
 
 
@@ -495,8 +505,9 @@ def theme():
             "header": {"fontSize": 11, "fontFace": FONT_BOLD, "color": INK},
             "label": {"fontSize": 10, "fontFace": FONT, "color": INK2}},
         "visualStyles": {"*": {"*": {
-            "categoryAxis": [{"labelColor": ink(MUTED), "fontSize": 9, "fontFamily": FONT, "gridlineShow": False}],
-            "valueAxis": [{"labelColor": ink(MUTED), "fontSize": 9, "fontFamily": FONT, "gridlineShow": True,
+            "categoryAxis": [{"labelColor": ink(MUTED), "fontSize": 9, "fontFamily": FONT, "gridlineShow": False,
+                              "showAxisTitle": False}],
+            "valueAxis": [{"labelColor": ink(MUTED), "fontSize": 9, "fontFamily": FONT, "gridlineShow": True, "showAxisTitle": False,
                            "gridlineColor": ink(GRID)}],
             "legend": [{"labelColor": ink(INK2), "fontSize": 10, "fontFamily": FONT, "position": "TopCenter"}]}}}}
 
@@ -518,7 +529,8 @@ def visual_objects(spec):
     """Formatting that belongs to the chart itself (callout, data labels, table header, funnel colours)."""
     kind = spec["kind"]
     if kind == "card":
-        return {"labels": [{"properties": {"color": solid(NAVY), "fontSize": number(24), "fontFamily": text(FONT_BOLD)}}],
+        return {"labels": [{"properties": {"color": solid(NAVY), "fontSize": number(24), "fontFamily": text(FONT_BOLD),
+                                           "labelDisplayUnits": number(1)}}],
                 "categoryLabels": [{"properties": {"show": flag(True), "color": solid(INK2), "fontSize": number(10),
                                                    "fontFamily": text(FONT)}}]}
     if kind in ("clusteredBarChart", "clusteredColumnChart"):
@@ -533,7 +545,8 @@ def visual_objects(spec):
                 "grid": [{"properties": {"gridHorizontal": flag(True), "gridHorizontalColor": solid(GRID),
                                          "gridVertical": flag(False)}}]}
     if kind == "funnel":
-        return {"dataPoint": [{"properties": {"fill": solid(color)}, "selector": {"metadata": "_Measures." + f[1]}}
+        return {"labels": [{"properties": {"labelDisplayUnits": number(1)}}],
+                "dataPoint": [{"properties": {"fill": solid(color)}, "selector": {"metadata": "_Measures." + f[1]}}
                               for f, color in zip(spec["roles"]["Y"], FUNNEL_RAMP)]}
     if kind == "slicer" and spec["dropdown"]:
         return {"data": [{"properties": {"mode": text("Dropdown")}}]}

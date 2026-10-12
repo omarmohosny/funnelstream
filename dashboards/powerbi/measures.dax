@@ -106,7 +106,7 @@ RETURN
     LastDay >= TODAY () - 3
 
 Maturity Label =
-IF ( [Is Provisional], "Provisional: orders still settling", "Settled" )
+IF ( [Is Provisional], "Settling", "Settled" )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Funnel
@@ -163,7 +163,7 @@ Revenue Delivered = SUM ( 'Orders Daily'[revenue_delivered] )   // counted on th
 
 AOV = DIVIDE ( [Revenue Placed], [Orders Placed] )
 
-Delivered Share of Revenue = DIVIDE ( [Revenue Delivered], [Revenue Placed] )
+Delivered Share = DIVIDE ( [Revenue Delivered], [Revenue Placed] )
 
 Cancel Rate = DIVIDE ( [Orders Cancelled], [Orders Placed] )
 
@@ -181,12 +181,16 @@ DIVIDE (
     CALCULATE ( [Orders Placed], REMOVEFILTERS ( 'Orders Daily'[channel] ) )
 )
 
-Revenue Placed vs Last Week =
-// Change against the same weekday one week earlier. Needs the marked date table.
-VAR ThisWeek = [Revenue Placed]
-VAR LastWeek = CALCULATE ( [Revenue Placed], DATEADD ( 'Date'[Date], -7, DAY ) )
+Revenue vs Prior 7 Days =
+// The latest 7 days with orders against the 7 days before them, whatever the date slicer says; blank when the earlier window is empty.
+// Variable names avoid DAX function names (a variable called Earlier is a syntax error and left the card empty in Power BI Desktop).
+VAR LastDay = MAXX ( FILTER ( ALL ( 'Date' ), [Orders Placed] > 0 ), 'Date'[Date] )
+VAR ThisWindow =
+    CALCULATE ( [Revenue Placed], REMOVEFILTERS ( 'Date' ), DATESBETWEEN ( 'Date'[Date], LastDay - 6, LastDay ) )
+VAR PriorWindow =
+    CALCULATE ( [Revenue Placed], REMOVEFILTERS ( 'Date' ), DATESBETWEEN ( 'Date'[Date], LastDay - 13, LastDay - 7 ) )
 RETURN
-    DIVIDE ( ThisWeek - LastWeek, LastWeek )
+    DIVIDE ( ThisWindow - PriorWindow, PriorWindow )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Inventory \ Now
@@ -197,23 +201,21 @@ Stock Lines = COUNTROWS ( 'Stock Now' )   // store and product pairs
 Stock Units Available = SUM ( 'Stock Now'[available] )
 
 Out of Stock Lines =
-CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) )
+COALESCE ( CALCULATE ( COUNTROWS ( 'Stock Now' ), KEEPFILTERS ( 'Stock Now'[available] <= 0 ) ), 0 )
 
 Low Stock Lines =
 // Above zero but below the reorder point. A column-to-column comparison needs FILTER, not a CALCULATE boolean.
-COUNTROWS (
-    FILTER (
-        'Stock Now',
-        'Stock Now'[available] > 0 && 'Stock Now'[available] < 'Stock Now'[reorder_point]
-    )
+COALESCE (
+    COUNTROWS (
+        FILTER (
+            'Stock Now',
+            'Stock Now'[available] > 0 && 'Stock Now'[available] < 'Stock Now'[reorder_point]
+        )
+    ),
+    0
 )
 
-Out of Stock Rate = DIVIDE ( [Out of Stock Lines], [Stock Lines] )
-
-Stock Freshness (seconds) =
-// Time between the newest stock row and NOW() at refresh. Stock Now is an Import snapshot, so this is the age of the data at the
-// last refresh; it grows while the report stays open and does not measure the live pipeline.
-DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
+Out of Stock Rate = COALESCE ( DIVIDE ( [Out of Stock Lines], [Stock Lines] ), 0 )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Inventory \ Daily
@@ -244,12 +246,17 @@ Net Stock Change = [Units Received] - [Units Sold] - [Units Shrunk] + [Units Adj
 Ended Out of Stock =
 CALCULATE ( COUNTROWS ( 'Inventory Daily' ), KEEPFILTERS ( 'Inventory Daily'[ended_out_of_stock] = TRUE () ) )
 
-Days of Cover =
-// Closing stock divided by the average units sold per day with data. Blank when nothing sold.
+Days of Cover (max 90) =
+// Closing stock divided by the average units sold per day with data, capped at 90 days. A product that sold nothing never runs out
+// in the data, so it is 90 with stock and 0 without. Never blank and never negative, so a table shows no empty cell.
 VAR Days = CALCULATE ( DISTINCTCOUNT ( 'Inventory Daily'[report_date] ) )
 VAR AvgDailySold = DIVIDE ( [Units Sold], Days )
 RETURN
-    DIVIDE ( [Closing Stock], AvgDailySold )
+    IF (
+        AvgDailySold > 0,
+        MAX ( 0, MIN ( DIVIDE ( [Closing Stock], AvgDailySold ), 90 ) ),
+        IF ( [Closing Stock] > 0, 90, 0 )
+    )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Inventory \ Demand on empty shelves
@@ -306,7 +313,7 @@ Express On-time Rate =
 // On-time orders over orders that have been decided: delivered, or undelivered past their promise.
 DIVIDE ( [Express On Time], [Express On Time] + [Express Breaches] )
 
-Slowest Express Delivery (min) = MAX ( 'Express Daily'[max_delivery_minutes] )
+Slowest Express (min) = MAX ( 'Express Daily'[max_delivery_minutes] )
 
 Average Express Delivery (min) =
 // Weighted by delivered orders, not an average of daily averages.
@@ -323,7 +330,10 @@ IF ( [Express Breaches] = 0, "Promise met", "Promise missed" )
 // 'City Product Daily' (Gold agg_city_product_daily) has one row per city, product and Cairo day; 'Order Lines'
 // (Gold fact_order_lines) has one row per order line. Both relate to 'Date' and 'Product'.
 // ---------------------------------------------------------------------------------------------------------------
-Product Sessions = SUM ( 'City Product Daily'[sessions_viewed] )
+Product Page Views =
+// Sessions that viewed a product, summed per city, product and day: one session that views three products counts three times,
+// so this is larger than the Sessions of the funnel page.
+SUM ( 'City Product Daily'[sessions_viewed] )
 
 Product Add to Carts = SUM ( 'City Product Daily'[add_to_cart] )
 
@@ -333,7 +343,7 @@ Product Revenue = SUM ( 'City Product Daily'[revenue] )
 
 Product Cart Rate =
 // Sessions that added the product to the cart, over sessions that viewed it.
-DIVIDE ( [Product Add to Carts], [Product Sessions] )
+DIVIDE ( [Product Add to Carts], [Product Page Views] )
 
 Lines Revenue = SUM ( 'Order Lines'[line_total] )
 
@@ -346,10 +356,17 @@ Units Ordered = SUM ( 'Order Lines'[quantity] )
 Active Customers = DISTINCTCOUNT ( Orders[customer_id] )
 
 Average Delivery Hours =
-// Hours from order to delivery, over delivered orders only (undelivered orders have no delivery time).
-AVERAGE ( Orders[delivery_lead_hours] )
+// Hours from order to delivery, over delivered orders that have a delivery time. Delivered orders without a carrier carry 0 hours,
+// which is unknown and not instant, so they are left out; a group with none is blank (no bar).
+VAR Known = CALCULATE ( COUNTROWS ( Orders ), Orders[is_delivered] = TRUE (), Orders[delivery_lead_hours] > 0 )
+RETURN
+    IF (
+        Known > 0,
+        CALCULATE ( AVERAGE ( Orders[delivery_lead_hours] ), Orders[is_delivered] = TRUE (), Orders[delivery_lead_hours] > 0 ),
+        BLANK ()
+    )
 
-First Attempt Delivery Rate =
+First-Attempt Rate =
 // Delivered orders that arrived on the first attempt, over all delivered orders.
 DIVIDE (
     CALCULATE ( COUNTROWS ( Orders ), Orders[first_attempt_delivered] = TRUE () ),
@@ -390,6 +407,6 @@ Browsers Without Order =
 // Customers with at least one session and no placed order.
 CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[total_sessions] > 0, 'Customer 360'[orders_count] = 0 )
 
-Lapsed Buyers (30+ days) =
-// Buyers whose last order is 30 or more days old; days_since_last_order is counted to today.
-CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[days_since_last_order] >= 30 )
+Quiet Buyers (7+ days) =
+// Buyers whose last order is 7 or more days old (the data spans about 15 days, so a 30-day rule would always be empty).
+COALESCE ( CALCULATE ( DISTINCTCOUNT ( 'Customer 360'[customer_id] ), 'Customer 360'[days_since_last_order] >= 7 ), 0 )
