@@ -1,66 +1,53 @@
 table Campaign
-	lineageTag: 6693c31d-8222-4cc1-b4d4-edc9692ae89d
 
 	column campaign_key
 		dataType: int64
-		isHidden
 		formatString: 0
-		lineageTag: 80aecda7-3923-41c6-ac17-705a4a0adeca
+		isHidden
 		summarizeBy: none
 		sourceColumn: campaign_key
 
 	column campaign_id
 		dataType: string
 		isHidden
-		lineageTag: b92944df-b3aa-4de6-bdf8-85abe0aa1699
 		summarizeBy: none
 		sourceColumn: campaign_id
 
 	column utm_campaign
 		dataType: string
-		lineageTag: 19362f8c-14ab-451e-828b-46446a80bcff
 		summarizeBy: none
 		sourceColumn: utm_campaign
 
 	column platform
 		dataType: string
-		lineageTag: 956911eb-2b5e-427c-91fd-8ea9ea478420
 		summarizeBy: none
 		sourceColumn: platform
 
 	column name
 		dataType: string
-		lineageTag: cccfa5f1-7ad4-4012-b9f9-2fc54efd4714
 		summarizeBy: none
 		sourceColumn: name
 
 	column start_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: ef7a71e0-be15-427d-a353-65f31b7d6211
 		summarizeBy: none
 		sourceColumn: start_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column end_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: 3624103b-93c4-4b7d-8b0b-e6fa85010bcb
 		summarizeBy: none
 		sourceColumn: end_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	partition Campaign = m
 		mode: import
 		source =
-				let
-					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-					Raw = Gold{[Name = "dim_campaign", Kind = "Table"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"campaign_key", "campaign_id", "utm_campaign", "platform", "name", "start_date", "end_date"})
-				in
-					Selected
-
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_campaign", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"campaign_key", "campaign_id", "utm_campaign", "platform", "name", "start_date", "end_date"})
+			in
+				Selected

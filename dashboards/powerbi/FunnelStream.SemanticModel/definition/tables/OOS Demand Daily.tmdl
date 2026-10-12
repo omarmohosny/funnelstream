@@ -1,91 +1,76 @@
 table 'OOS Demand Daily'
-	lineageTag: 0d587dac-30cb-4ecc-8bba-d84e4ddc1618
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: 3cdbcba0-a4b3-470d-ad78-bbac80b670a0
 		summarizeBy: none
 		sourceColumn: report_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column store_id
 		dataType: string
 		isHidden
-		lineageTag: 229866c7-66e9-41b5-8113-d339085b8d73
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column product_id
 		dataType: string
 		isHidden
-		lineageTag: 085b20eb-f8fb-4be9-8030-3f7260e46889
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column campaign_id
 		dataType: string
 		isHidden
-		lineageTag: 49a500f4-d557-4ca4-bac1-686f3ac052db
 		summarizeBy: none
 		sourceColumn: campaign_id
 
 	column utm_campaign
 		dataType: string
-		lineageTag: f003dd4e-15fd-4e36-8bb9-77060bb24328
 		summarizeBy: none
 		sourceColumn: utm_campaign
 
 	column served_views
 		dataType: int64
 		formatString: 0
-		lineageTag: 5fc1f982-ff58-4ece-8c2b-724d4c6687a3
 		summarizeBy: none
 		sourceColumn: served_views
 
 	column served_add_to_cart
 		dataType: int64
 		formatString: 0
-		lineageTag: 4d990533-d805-4b36-ae35-275b8d28529d
 		summarizeBy: none
 		sourceColumn: served_add_to_cart
 
 	column served_clicks
 		dataType: int64
 		formatString: 0
-		lineageTag: 8be0b914-d5bd-4115-9b2f-9863dc05aac3
 		summarizeBy: none
 		sourceColumn: served_clicks
 
 	column oos_views
 		dataType: int64
 		formatString: 0
-		lineageTag: a8aeea35-2e76-4028-9dae-3f0be9c49322
 		summarizeBy: none
 		sourceColumn: oos_views
 
 	column oos_add_to_cart
 		dataType: int64
 		formatString: 0
-		lineageTag: 058ce5ed-fed0-4425-9256-f6b305890eea
 		summarizeBy: none
 		sourceColumn: oos_add_to_cart
 
 	column oos_clicks
 		dataType: int64
 		formatString: 0
-		lineageTag: 8e126d29-1e5c-4e41-a792-61c5d9c9c795
 		summarizeBy: none
 		sourceColumn: oos_clicks
 
 	partition 'OOS Demand Daily' = m
 		mode: import
 		source =
-				let
-					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-					Raw = Source{[Schema = "public", Item = "oos_demand_daily"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "campaign_id", "utm_campaign", "served_views", "served_add_to_cart", "served_clicks", "oos_views", "oos_add_to_cart", "oos_clicks"})
-				in
-					Selected
-
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "oos_demand_daily"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "campaign_id", "utm_campaign", "served_views", "served_add_to_cart", "served_clicks", "oos_views", "oos_add_to_cart", "oos_clicks"})
+			in
+				Selected

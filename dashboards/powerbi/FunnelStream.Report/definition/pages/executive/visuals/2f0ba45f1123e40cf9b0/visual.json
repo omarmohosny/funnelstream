@@ -1,11 +1,11 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "2f0ba45f1123e40cf9b0",
   "position": {
-    "x": 16,
+    "x": 16.0,
     "y": 72,
     "z": 1,
-    "height": 44,
+    "height": 64,
     "width": 410.7,
     "tabOrder": 1
   },
@@ -28,7 +28,7 @@
               },
               "queryRef": "Date.date",
               "nativeQueryRef": "date",
-              "active": true
+              "displayName": "Date"
             }
           ]
         }
@@ -99,23 +99,5 @@
       ]
     },
     "drillFilterOtherVisuals": true
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "8e9fc57cd373bc7cce7a",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "Date"
-              }
-            },
-            "Property": "date"
-          }
-        },
-        "type": "Categorical"
-      }
-    ]
   }
 }

@@ -1,11 +1,11 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "51f4f292a2dbec5cc0bd",
   "position": {
     "x": 853.3,
     "y": 72,
     "z": 3,
-    "height": 44,
+    "height": 64,
     "width": 410.7,
     "tabOrder": 3
   },
@@ -28,7 +28,7 @@
               },
               "queryRef": "Campaign.platform",
               "nativeQueryRef": "platform",
-              "active": true
+              "displayName": "Platform"
             }
           ]
         }

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "03371a549bd114afadea",
   "position": {
     "x": 0,
@@ -21,25 +21,27 @@
                   {
                     "value": "FunnelStream  |  Executive",
                     "textStyle": {
-                      "fontWeight": "bold",
                       "fontFamily": "Segoe UI Semibold",
                       "fontSize": "20pt",
+                      "fontWeight": "bold",
                       "color": "#ffffff"
                     }
                   }
-                ]
+                ],
+                "horizontalTextAlignment": "left"
               },
               {
                 "textRuns": [
                   {
-                    "value": "Revenue, orders and how they end, from the Gold layer in Databricks",
+                    "value": "Is revenue on track, and where do orders leak? The simulated data has a one-day volume peak on 9 October",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "10pt",
                       "color": "#cde2fb"
                     }
                   }
-                ]
+                ],
+                "horizontalTextAlignment": "left"
               }
             ]
           }

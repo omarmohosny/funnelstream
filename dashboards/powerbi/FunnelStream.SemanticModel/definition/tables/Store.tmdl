@@ -1,32 +1,27 @@
 table Store
-	lineageTag: 018910dc-c245-4130-b27e-a8633ec24936
 
 	column store_id
 		dataType: string
 		isHidden
-		lineageTag: 37c4a4ac-65e4-4986-8c39-75cf431b1dec
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column store_name
 		dataType: string
-		lineageTag: 1b997e0b-e5de-45e2-a9bf-42b200232cbe
 		summarizeBy: none
 		sourceColumn: store_name
 
 	column city
 		dataType: string
-		lineageTag: 372a9dd6-6809-44ec-9f4c-c675b7750bf4
 		summarizeBy: none
 		sourceColumn: city
 
 	partition Store = m
 		mode: import
 		source =
-				let
-					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-					Raw = Source{[Schema = "public", Item = "dim_store"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"store_id", "store_name", "city"})
-				in
-					Selected
-
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "dim_store"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"store_id", "store_name", "city"})
+			in
+				Selected

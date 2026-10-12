@@ -1,84 +1,70 @@
 table 'Inventory Daily'
-	lineageTag: d86ea552-ddf2-477d-994b-80e17a66cdfb
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: 256b4268-5585-4273-8e49-176e7a281282
 		summarizeBy: none
 		sourceColumn: report_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column store_id
 		dataType: string
 		isHidden
-		lineageTag: afeb3cb9-cd03-4fd4-8c73-5d627c186657
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column product_id
 		dataType: string
 		isHidden
-		lineageTag: 401ec040-b3a6-4495-b37b-fe63ea58b9bf
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column closing_on_hand
 		dataType: int64
 		formatString: 0
-		lineageTag: 1bae8495-cf79-4ea6-948e-66d95236a6bb
 		summarizeBy: none
 		sourceColumn: closing_on_hand
 
 	column units_sold
 		dataType: int64
 		formatString: 0
-		lineageTag: e3478d63-f945-4f86-8a29-f69dfce80617
 		summarizeBy: none
 		sourceColumn: units_sold
 
 	column units_received
 		dataType: int64
 		formatString: 0
-		lineageTag: 2de21e8c-67ac-405d-a0e4-752ee16f8da5
 		summarizeBy: none
 		sourceColumn: units_received
 
 	column units_shrunk
 		dataType: int64
 		formatString: 0
-		lineageTag: 7c6efab9-be9d-4c9d-97d1-a7f8a8c04d96
 		summarizeBy: none
 		sourceColumn: units_shrunk
 
 	column units_adjusted
 		dataType: int64
 		formatString: 0
-		lineageTag: 3bd627ea-b5e3-4311-984a-bdddb1fd7aa2
 		summarizeBy: none
 		sourceColumn: units_adjusted
 
 	column oversold_units
 		dataType: int64
 		formatString: 0
-		lineageTag: 20871d1c-aa79-405b-a799-ae272c8dc5a4
 		summarizeBy: none
 		sourceColumn: oversold_units
 
 	column ended_out_of_stock
 		dataType: boolean
-		lineageTag: 2f5902ed-7708-4219-9f7f-28e08cd0e9a4
 		summarizeBy: none
 		sourceColumn: ended_out_of_stock
 
 	partition 'Inventory Daily' = m
 		mode: import
 		source =
-				let
-					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-					Raw = Source{[Schema = "public", Item = "inventory_daily"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "closing_on_hand", "units_sold", "units_received", "units_shrunk", "units_adjusted", "oversold_units", "ended_out_of_stock"})
-				in
-					Selected
-
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "inventory_daily"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "product_id", "closing_on_hand", "units_sold", "units_received", "units_shrunk", "units_adjusted", "oversold_units", "ended_out_of_stock"})
+			in
+				Selected

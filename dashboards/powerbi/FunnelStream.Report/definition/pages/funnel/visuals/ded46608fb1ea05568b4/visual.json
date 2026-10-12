@@ -33,7 +33,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "From session to order: where shoppers drop out, by channel, platform and country",
+                    "value": "Which step and which channel should we fix first? From session to order, by channel",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "10pt",

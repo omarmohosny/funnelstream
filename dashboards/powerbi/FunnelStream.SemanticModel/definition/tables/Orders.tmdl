@@ -1,221 +1,187 @@
 table Orders
-	lineageTag: 115eb195-bc70-4618-a0e8-b75578061d63
 
 	column order_id
 		dataType: string
-		lineageTag: 5bca3b1e-da1d-4f52-8011-2e94b309a5fa
 		summarizeBy: none
 		sourceColumn: order_id
 
 	column customer_key
 		dataType: int64
-		isHidden
 		formatString: 0
-		lineageTag: 0fe4271f-b63b-4c72-834a-32c2b72daea5
+		isHidden
 		summarizeBy: none
 		sourceColumn: customer_key
 
 	column customer_id
 		dataType: string
 		isHidden
-		lineageTag: 29756dc1-eecb-4c2a-954d-b56f8d5a8011
 		summarizeBy: none
 		sourceColumn: customer_id
 
 	column session_id
 		dataType: string
 		isHidden
-		lineageTag: 89d0f7e4-add3-4af8-9d24-368405f122aa
 		summarizeBy: none
 		sourceColumn: session_id
 
 	column channel
 		dataType: string
-		lineageTag: e50d0f8d-9a87-4d74-b8ec-12efdd188258
 		summarizeBy: none
 		sourceColumn: channel
 
 	column platform
 		dataType: string
-		lineageTag: 0aaad203-0ba9-4f51-a008-619989aaed4b
 		summarizeBy: none
 		sourceColumn: platform
 
 	column utm_source
 		dataType: string
-		lineageTag: 144010f1-f5c3-4be0-a4a5-18745532d421
 		summarizeBy: none
 		sourceColumn: utm_source
 
 	column utm_campaign
 		dataType: string
-		lineageTag: 6462e59a-7749-4769-8a5b-16f935eff93e
 		summarizeBy: none
 		sourceColumn: utm_campaign
 
 	column click_id
 		dataType: string
 		isHidden
-		lineageTag: 4430391d-a7e5-4043-a905-fe74c77ea441
 		summarizeBy: none
 		sourceColumn: click_id
 
 	column campaign_id
 		dataType: string
 		isHidden
-		lineageTag: 3934f5c5-ef44-4506-813c-e52e08bbffc7
 		summarizeBy: none
 		sourceColumn: campaign_id
 
 	column payment_method
 		dataType: string
-		lineageTag: 98283d60-d3a0-4579-9c03-9568b695e19b
 		summarizeBy: none
 		sourceColumn: payment_method
 
 	column carrier
 		dataType: string
-		lineageTag: 82c86191-7cfa-4473-856c-79f9431e4982
 		summarizeBy: none
 		sourceColumn: carrier
 
 	column city
 		dataType: string
-		lineageTag: b6c34970-10b2-4d7d-86f6-67d5c5d28055
 		summarizeBy: none
 		sourceColumn: city
 
 	column district
 		dataType: string
-		lineageTag: c1b0c8dc-5ca3-401f-affd-627702f77af9
 		summarizeBy: none
 		sourceColumn: district
 
 	column country
 		dataType: string
-		lineageTag: d2b12830-cfe4-4fab-8c24-310a0c25e1b1
 		summarizeBy: none
 		sourceColumn: country
 
 	column order_total
 		dataType: double
-		lineageTag: a95d3906-183f-4f72-a5f4-63898c3460af
 		summarizeBy: none
 		sourceColumn: order_total
 
 	column current_status
 		dataType: string
-		lineageTag: 3f894d3f-5db6-4b5a-ac1d-84004e600782
 		summarizeBy: none
 		sourceColumn: current_status
 
 	column status_rank
 		dataType: int64
 		formatString: 0
-		lineageTag: 77a8c8cc-b914-46a2-9b94-4cd71811f6e2
 		summarizeBy: none
 		sourceColumn: status_rank
 
 	column order_created_at
 		dataType: dateTime
 		formatString: yyyy-MM-dd HH:mm
-		lineageTag: acb078dd-c4ac-4434-8add-44e3e000fb09
 		summarizeBy: none
 		sourceColumn: order_created_at
 
 	column delivered_at
 		dataType: dateTime
 		formatString: yyyy-MM-dd HH:mm
-		lineageTag: 67c8c1f2-4a1a-4c22-9f9c-f5db155d7fb1
 		summarizeBy: none
 		sourceColumn: delivered_at
 
 	column cancelled_at
 		dataType: dateTime
 		formatString: yyyy-MM-dd HH:mm
-		lineageTag: cd46b069-c3e3-4233-a011-a3aac83f8284
 		summarizeBy: none
 		sourceColumn: cancelled_at
 
 	column returned_at
 		dataType: dateTime
 		formatString: yyyy-MM-dd HH:mm
-		lineageTag: 5529cb26-64ee-4084-9025-929fe78938b3
 		summarizeBy: none
 		sourceColumn: returned_at
 
 	column delivery_lead_hours
 		dataType: double
-		lineageTag: 29e7f563-e9d8-4073-8d33-d4b192900d0c
 		summarizeBy: none
 		sourceColumn: delivery_lead_hours
 
 	column delivery_failed_count
 		dataType: int64
 		formatString: 0
-		lineageTag: 0d667d6b-ca03-4707-9db2-44487b6ca803
 		summarizeBy: none
 		sourceColumn: delivery_failed_count
 
 	column has_failed_attempt
 		dataType: boolean
-		lineageTag: 6c63ca75-5c37-4e13-8313-64d409d0a04c
 		summarizeBy: none
 		sourceColumn: has_failed_attempt
 
 	column first_attempt_delivered
 		dataType: boolean
-		lineageTag: 3e0aab7c-64b6-4cec-803e-1ef258f7c869
 		summarizeBy: none
 		sourceColumn: first_attempt_delivered
 
 	column is_cancelled
 		dataType: boolean
-		lineageTag: 36487830-56fa-4523-9fa7-92eec4f7960b
 		summarizeBy: none
 		sourceColumn: is_cancelled
 
 	column is_delivered
 		dataType: boolean
-		lineageTag: 81243582-e3c5-4812-972b-eabd5b958adf
 		summarizeBy: none
 		sourceColumn: is_delivered
 
 	column is_returned
 		dataType: boolean
-		lineageTag: 686f0206-05e4-4dc1-b606-78250e2a05b3
 		summarizeBy: none
 		sourceColumn: is_returned
 
 	column order_seq
 		dataType: int64
 		formatString: 0
-		lineageTag: 96c5ecea-157f-4fbe-9a55-63c1f4287041
 		summarizeBy: none
 		sourceColumn: order_seq
 
 	column is_first_order
 		dataType: boolean
-		lineageTag: a04e5315-57c7-45a4-a73b-6717d2e0e536
 		summarizeBy: none
 		sourceColumn: is_first_order
 
 	column date_key
 		dataType: int64
 		formatString: 0
-		lineageTag: 06bba44e-e070-4eab-b724-826aeb441ecd
 		summarizeBy: none
 		sourceColumn: date_key
 
 	partition Orders = m
 		mode: import
 		source =
-				let
-					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-					Raw = Gold{[Name = "fact_orders", Kind = "Table"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "district", "country", "order_total", "current_status", "status_rank", "order_created_at", "delivered_at", "cancelled_at", "returned_at", "delivery_lead_hours", "delivery_failed_count", "has_failed_attempt", "first_attempt_delivered", "is_cancelled", "is_delivered", "is_returned", "order_seq", "is_first_order", "date_key"})
-				in
-					Selected
-
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "fact_orders", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"order_id", "customer_key", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "click_id", "campaign_id", "payment_method", "carrier", "city", "district", "country", "order_total", "current_status", "status_rank", "order_created_at", "delivered_at", "cancelled_at", "returned_at", "delivery_lead_hours", "delivery_failed_count", "has_failed_attempt", "first_attempt_delivered", "is_cancelled", "is_delivered", "is_returned", "order_seq", "is_first_order", "date_key"})
+			in
+				Selected

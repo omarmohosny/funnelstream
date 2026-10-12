@@ -1,77 +1,64 @@
 table Date
-	lineageTag: 7f07b394-db3e-4347-9a0c-a884f6fec814
 	dataCategory: Time
 
 	column date_key
 		dataType: int64
 		formatString: 0
-		lineageTag: 36b49007-791f-43c3-9d15-1fdc37f6aa20
 		summarizeBy: none
 		sourceColumn: date_key
 
 	column date
 		dataType: dateTime
-		isKey
 		formatString: yyyy-MM-dd
-		lineageTag: 4eb98d65-dbaf-4a25-aff2-516129cef125
+		isKey
 		summarizeBy: none
 		sourceColumn: date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column week
 		dataType: int64
 		formatString: 0
-		lineageTag: 9fe862ed-ff2f-4ea2-9ff1-663914d80398
 		summarizeBy: none
 		sourceColumn: week
 
 	column month
 		dataType: int64
 		formatString: 0
-		lineageTag: dba9ff82-8680-4837-aec4-c97b3d00e68e
 		summarizeBy: none
 		sourceColumn: month
 
 	column is_weekend
 		dataType: boolean
-		lineageTag: cdfc45fc-b5ec-4592-ab41-ac32e5a8d497
 		summarizeBy: none
 		sourceColumn: is_weekend
 
 	column is_friday_saturday
 		dataType: boolean
-		lineageTag: 956871fd-db3d-4cae-9642-fa185ad7ded1
 		summarizeBy: none
 		sourceColumn: is_friday_saturday
 
 	column is_ramadan
 		dataType: boolean
-		lineageTag: e9ed5d30-c863-4d8f-ad2f-08e1093f2c52
 		summarizeBy: none
 		sourceColumn: is_ramadan
 
 	column is_eid
 		dataType: boolean
-		lineageTag: e6010cf3-244a-4667-a879-122426dcc025
 		summarizeBy: none
 		sourceColumn: is_eid
 
 	column is_holiday
 		dataType: boolean
-		lineageTag: bf8d17d8-cefa-4cdd-84fe-3d0fa2c112a4
 		summarizeBy: none
 		sourceColumn: is_holiday
 
 	partition Date = m
 		mode: import
 		source =
-				let
-					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-					Raw = Gold{[Name = "dim_date", Kind = "Table"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"date_key", "date", "week", "month", "is_weekend", "is_friday_saturday", "is_ramadan", "is_eid", "is_holiday"})
-				in
-					Selected
-
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "dim_date", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"date_key", "date", "week", "month", "is_weekend", "is_friday_saturday", "is_ramadan", "is_eid", "is_holiday"})
+			in
+				Selected

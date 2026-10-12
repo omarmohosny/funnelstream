@@ -3,9 +3,9 @@
   "name": "20fb3ec8bbb4870577ef",
   "position": {
     "x": 16,
-    "y": 216,
+    "y": 236,
     "z": 7,
-    "height": 488,
+    "height": 468,
     "width": 480,
     "tabOrder": 7
   },
@@ -90,6 +90,19 @@
       }
     },
     "objects": {
+      "labels": [
+        {
+          "properties": {
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ],
       "dataPoint": [
         {
           "properties": {

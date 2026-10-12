@@ -53,7 +53,8 @@
             },
             "fontSize": 9,
             "fontFamily": "Segoe UI",
-            "gridlineShow": false
+            "gridlineShow": false,
+            "showAxisTitle": false
           }
         ],
         "valueAxis": [
@@ -66,6 +67,7 @@
             "fontSize": 9,
             "fontFamily": "Segoe UI",
             "gridlineShow": true,
+            "showAxisTitle": false,
             "gridlineColor": {
               "solid": {
                 "color": "#e1e0d9"

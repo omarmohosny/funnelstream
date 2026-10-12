@@ -1,11 +1,11 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "ce11793fbc1f495e3c85",
   "position": {
     "x": 424,
-    "y": 216,
+    "y": 236,
     "z": 10,
-    "height": 240,
+    "height": 230,
     "width": 420,
     "tabOrder": 10
   },
@@ -28,7 +28,7 @@
               },
               "queryRef": "City Product Daily.city",
               "nativeQueryRef": "city",
-              "active": true
+              "displayName": "City"
             }
           ]
         },
@@ -50,6 +50,24 @@
             }
           ]
         }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Measures"
+                  }
+                },
+                "Property": "Product Revenue"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
       }
     },
     "objects": {

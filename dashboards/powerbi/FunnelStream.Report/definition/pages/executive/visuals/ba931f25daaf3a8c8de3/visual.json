@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "ba931f25daaf3a8c8de3",
   "position": {
-    "x": 913.1,
-    "y": 124,
+    "x": 1062.7,
+    "y": 144,
     "z": 9,
     "height": 84,
-    "width": 171.4,
+    "width": 201.3,
     "tabOrder": 9
   },
   "visual": {
@@ -59,6 +59,13 @@
               "expr": {
                 "Literal": {
                   "Value": "'Segoe UI Semibold'"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
                 }
               }
             }

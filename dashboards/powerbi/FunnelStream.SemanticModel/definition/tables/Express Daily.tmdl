@@ -1,77 +1,57 @@
 table 'Express Daily'
-	lineageTag: ac6fae37-970e-4379-ac30-dc3e7b3b4256
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: 580899d6-bb61-4c31-b2a2-3bc5579a71c8
 		summarizeBy: none
 		sourceColumn: report_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column store_id
 		dataType: string
 		isHidden
-		lineageTag: 34720410-4598-4c73-bdee-650babb01e8a
 		summarizeBy: none
 		sourceColumn: store_id
 
 	column orders
 		dataType: int64
 		formatString: 0
-		lineageTag: 2e5e941b-6b27-43f9-8f2f-00bdf6d16b5c
 		summarizeBy: none
 		sourceColumn: orders
 
 	column delivered
 		dataType: int64
 		formatString: 0
-		lineageTag: 00aafc88-3704-4a53-9cce-ba08401e5661
 		summarizeBy: none
 		sourceColumn: delivered
 
 	column on_time
 		dataType: int64
 		formatString: 0
-		lineageTag: 729ad7c7-1c4b-4043-a313-a28684e440ba
 		summarizeBy: none
 		sourceColumn: on_time
 
 	column breached
 		dataType: int64
 		formatString: 0
-		lineageTag: efe9c3ad-d661-4719-ae04-0b3e7904264d
 		summarizeBy: none
 		sourceColumn: breached
 
 	column avg_delivery_minutes
-		dataType: double
-		lineageTag: 722ffee2-77db-4ff0-a61b-27a7c8eb1fef
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: avg_delivery_minutes
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column max_delivery_minutes
-		dataType: double
-		lineageTag: 745d4a80-778b-4fa5-bfaa-33fb2238dda4
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: max_delivery_minutes
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	partition 'Express Daily' = m
 		mode: import
 		source =
-				let
-					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-					Raw = Source{[Schema = "public", Item = "express_daily"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "orders", "delivered", "on_time", "breached", "avg_delivery_minutes", "max_delivery_minutes"})
-				in
-					Selected
-
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "express_daily"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "store_id", "orders", "delivered", "on_time", "breached", "avg_delivery_minutes", "max_delivery_minutes"})
+			in
+				Selected

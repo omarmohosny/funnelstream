@@ -1,152 +1,100 @@
 table 'Marketing D1 Campaign'
-	lineageTag: e7ee30e7-8a9f-4014-9ce9-77fc701ceda1
 
 	column report_date
 		dataType: dateTime
 		formatString: yyyy-MM-dd
-		lineageTag: db7a60fa-7c51-4d30-93a8-1054c279eac0
 		summarizeBy: none
 		sourceColumn: report_date
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column campaign_id
 		dataType: string
 		isHidden
-		lineageTag: eac2197a-3dc9-4308-b763-4386993c2b9a
 		summarizeBy: none
 		sourceColumn: campaign_id
 
 	column utm_campaign
 		dataType: string
-		lineageTag: e0a20eed-17aa-4e42-bf36-11f8c2d9a873
 		summarizeBy: none
 		sourceColumn: utm_campaign
 
 	column spend
-		dataType: double
-		lineageTag: e898c98d-5998-4729-b10e-61a7a5f19f44
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: spend
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	column ad_clicks
 		dataType: int64
 		formatString: 0
-		lineageTag: a35afcb0-f6b8-4fba-9be2-710318cc54e4
 		summarizeBy: none
 		sourceColumn: ad_clicks
 
 	column orders_placed
 		dataType: int64
 		formatString: 0
-		lineageTag: 91bfdc02-211b-4829-b0ae-e15f0b69b6d0
 		summarizeBy: none
 		sourceColumn: orders_placed
 
 	column revenue_placed
-		dataType: double
-		lineageTag: c0a50103-c4b2-4080-9501-b663b9005e00
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: revenue_placed
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column revenue_delivered
-		dataType: double
-		lineageTag: 6264b51b-c540-4725-8de5-6a9883b80c28
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: revenue_delivered
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column cpa
-		dataType: double
+		dataType: decimal
 		isHidden
-		lineageTag: 36b23a6b-4e84-4755-af55-d38ae77d72f9
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: cpa
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column roas_placed
-		dataType: double
+		dataType: decimal
 		isHidden
-		lineageTag: 8fe693f6-decc-458f-be90-dab73d10cd0b
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: roas_placed
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column roas_delivered
-		dataType: double
+		dataType: decimal
 		isHidden
-		lineageTag: 8baef756-9bc6-41fd-9a63-174bff8edd32
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: roas_delivered
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	column served_clicks
 		dataType: int64
 		formatString: 0
-		lineageTag: 85fa097f-395b-4542-b2ae-f72d2e3ef271
 		summarizeBy: none
 		sourceColumn: served_clicks
 
 	column oos_clicks
 		dataType: int64
 		formatString: 0
-		lineageTag: d463a645-6162-4ef7-afd1-b3f05a9ffdf0
 		summarizeBy: none
 		sourceColumn: oos_clicks
 
 	column oos_click_share
-		dataType: double
-		lineageTag: 3927b3f7-ee77-46a2-8fe5-3e39d5caae63
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: oos_click_share
 
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column exposed_spend
-		dataType: double
-		lineageTag: f30ead9c-2863-45f9-ac4c-87da20b7ae27
-		summarizeBy: sum
+		dataType: decimal
+		summarizeBy: none
 		sourceColumn: exposed_spend
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	column provisional
 		dataType: boolean
-		lineageTag: 7afad9e3-e64c-4c51-9e22-2e1913a7cc6c
 		summarizeBy: none
 		sourceColumn: provisional
 
 	partition 'Marketing D1 Campaign' = m
 		mode: import
 		source =
-				let
-					Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
-					Raw = Source{[Schema = "public", Item = "marketing_d1_campaign"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"report_date", "campaign_id", "utm_campaign", "spend", "ad_clicks", "orders_placed", "revenue_placed", "revenue_delivered", "cpa", "roas_placed", "roas_delivered", "served_clicks", "oos_clicks", "oos_click_share", "exposed_spend", "provisional"})
-				in
-					Selected
-
+			let
+				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
+				Raw = Source{[Schema = "public", Item = "marketing_d1_campaign"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"report_date", "campaign_id", "utm_campaign", "spend", "ad_clicks", "orders_placed", "revenue_placed", "revenue_delivered", "cpa", "roas_placed", "roas_delivered", "served_clicks", "oos_clicks", "oos_click_share", "exposed_spend", "provisional"})
+			in
+				Selected

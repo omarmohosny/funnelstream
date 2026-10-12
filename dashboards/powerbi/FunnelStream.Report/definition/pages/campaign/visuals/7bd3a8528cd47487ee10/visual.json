@@ -33,7 +33,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Spend, return on ad spend and conversions per campaign; ad numbers are the ad API's UTC day",
+                    "value": "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "10pt",

@@ -1,94 +1,80 @@
 table 'Orders Daily'
-	lineageTag: 0d130e1f-7858-4597-9a66-c4e7bda2263d
 
 	column date_key
 		dataType: int64
 		formatString: 0
-		lineageTag: 579d0591-ba58-4461-bba9-1fe9335b0293
 		summarizeBy: none
 		sourceColumn: date_key
 
 	column channel
 		dataType: string
-		lineageTag: 58bf4c47-24d4-4e8d-9229-2d9131de16a0
 		summarizeBy: none
 		sourceColumn: channel
 
 	column payment_method
 		dataType: string
-		lineageTag: a8c6e93f-3ddc-4bbe-af19-b51c5ca1f702
 		summarizeBy: none
 		sourceColumn: payment_method
 
 	column platform
 		dataType: string
-		lineageTag: dac5039b-c017-4b5d-a67c-017258302003
 		summarizeBy: none
 		sourceColumn: platform
 
 	column orders_placed
 		dataType: int64
 		formatString: 0
-		lineageTag: 8a4cb1ae-0565-4b79-8dd8-32b19781e6c6
 		summarizeBy: none
 		sourceColumn: orders_placed
 
 	column orders_delivered
 		dataType: int64
 		formatString: 0
-		lineageTag: d559c4dc-c0d0-4a79-9d3d-644d3d80f24a
 		summarizeBy: none
 		sourceColumn: orders_delivered
 
 	column orders_cancelled
 		dataType: int64
 		formatString: 0
-		lineageTag: cd033382-d6f3-40e5-a1b5-14fb5fec4bfb
 		summarizeBy: none
 		sourceColumn: orders_cancelled
 
 	column orders_returned
 		dataType: int64
 		formatString: 0
-		lineageTag: 0dc8a015-e766-4770-816e-4b89d03be9b0
 		summarizeBy: none
 		sourceColumn: orders_returned
 
 	column orders_with_failed_attempt
 		dataType: int64
 		formatString: 0
-		lineageTag: c4d4f85f-f365-461d-9e33-622ced76863a
 		summarizeBy: none
 		sourceColumn: orders_with_failed_attempt
 
 	column revenue_placed
 		dataType: double
-		lineageTag: c8a65674-ed30-4cd0-b887-82ce19e30213
 		summarizeBy: none
 		sourceColumn: revenue_placed
 
 	column revenue_delivered
 		dataType: double
-		lineageTag: e5ea4cc0-42a3-4738-9196-50c971862c9f
 		summarizeBy: none
 		sourceColumn: revenue_delivered
 
 	column new_customer_orders
 		dataType: int64
 		formatString: 0
-		lineageTag: 29ff6fb4-dc76-434a-b779-1310cc6d4945
 		summarizeBy: none
 		sourceColumn: new_customer_orders
 
 	partition 'Orders Daily' = m
 		mode: import
 		source =
-				let
-					Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
-					Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
-					Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
-					Raw = Gold{[Name = "agg_orders_daily", Kind = "Table"]}[Data],
-					Selected = Table.SelectColumns(Raw, {"date_key", "channel", "payment_method", "platform", "orders_placed", "orders_delivered", "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed", "revenue_delivered", "new_customer_orders"})
-				in
-					Selected
-
+			let
+				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
+				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
+				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
+				Raw = Gold{[Name = "agg_orders_daily", Kind = "Table"]}[Data],
+				Selected = Table.SelectColumns(Raw, {"date_key", "channel", "payment_method", "platform", "orders_placed", "orders_delivered", "orders_cancelled", "orders_returned", "orders_with_failed_attempt", "revenue_placed", "revenue_delivered", "new_customer_orders"})
+			in
+				Selected
