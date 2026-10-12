@@ -32,11 +32,10 @@ from modeling import llm_provider  # noqa: E402
 
 st.sidebar.caption("LLM: %s, model %s (set FUNNELSTREAM_LLM_PROVIDER in .env to switch)" % (
     llm_provider.provider_label(), llm_provider.default_model()))
-api_key = st.sidebar.text_input("%s key" % llm_provider.provider_label(),
-                                llm_provider.active_token() if llm_provider.openai_style()
-                                else os.environ.get("ANTHROPIC_API_KEY", ""), type="password")
-workspace = st.sidebar.text_input("Workspace ID (only for sk-ant-usr keys)",
-                                  os.environ.get("ANTHROPIC_WORKSPACE_ID", ""))
+# The key from .env or the environment is used when this field is empty; it is never copied into the page.
+api_key = st.sidebar.text_input("%s key (optional, overrides .env)" % llm_provider.provider_label(), "",
+                                type="password")
+workspace = st.sidebar.text_input("Workspace ID (only for sk-ant-usr keys)", "")
 
 
 @st.cache_resource(show_spinner="Loading data...")
@@ -78,10 +77,12 @@ for role, text in st.session_state.shown:
 if q := st.chat_input("e.g. Which platform has the best CTR?"):
     st.chat_message("user").write(q)
     st.session_state.shown.append(("user", q))
-    if not api_key:
-        st.error("Paste your Anthropic API key in the sidebar (or put it in a .env file).")
+    try:
+        client = agent.make_client(api_key or None, workspace or None)
+    except RuntimeError as e:
+        st.error(str(e))
         st.stop()
     with st.chat_message("assistant"), st.spinner("Querying..."):
-        a = agent.ask(agent.make_client(api_key, workspace), con, q, st.session_state.history, verbose=False)
+        a = agent.ask(client, con, q, st.session_state.history, verbose=False)
         st.write(a)
     st.session_state.shown.append(("assistant", a))

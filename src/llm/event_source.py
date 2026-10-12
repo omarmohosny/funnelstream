@@ -12,6 +12,7 @@ import json
 import random
 import sys
 import tempfile
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
@@ -26,22 +27,36 @@ def _topics() -> dict:
 
 
 def consume_kafka(bootstrap: str = "localhost:9092", idle_ms: int = 5000, max_messages: int = 500_000) -> dict:
-    """Read every message currently in the three topics (earliest -> end), then stop."""
-    from kafka import KafkaConsumer
+    """Read every message currently in the three topics (earliest -> end), then stop after idle_ms without news.
+
+    Uses confluent-kafka (the client in requirements.txt). The consumer has no committed offsets and no group
+    state worth keeping: auto commit is off and the group id is unique per call, so reading never moves the offsets
+    of the pipeline's own consumers."""
+    import uuid
+
+    from confluent_kafka import Consumer
 
     topics = _topics()
-    consumer = KafkaConsumer(
-        *topics.values(), bootstrap_servers=bootstrap, auto_offset_reset="earliest",
-        enable_auto_commit=False, group_id=None, consumer_timeout_ms=idle_ms,
-        value_deserializer=lambda b: json.loads(b.decode("utf-8")),
-    )
+    consumer = Consumer({"bootstrap.servers": bootstrap, "group.id": "funnelstream-assistant-" + uuid.uuid4().hex,
+                         "auto.offset.reset": "earliest", "enable.auto.commit": False})
     out = {t: [] for t in topics.values()}
+    consumer.subscribe(list(topics.values()))
+    n, idle_since = 0, time.monotonic()
     try:
-        for n, msg in enumerate(consumer):
-            if isinstance(msg.value, dict):
-                out[msg.topic].append(msg.value)
-            if n + 1 >= max_messages:
-                break
+        while n < max_messages and (time.monotonic() - idle_since) * 1000 < idle_ms:
+            msg = consumer.poll(0.2)
+            if msg is None:
+                continue
+            if msg.error():
+                continue
+            idle_since = time.monotonic()
+            try:
+                value = json.loads(msg.value().decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                continue  # a message that is not JSON is the pipeline's quarantine problem, not the assistant's
+            n += 1
+            if isinstance(value, dict) and msg.topic() in out:
+                out[msg.topic()].append(value)
     finally:
         consumer.close()
     return out
@@ -132,7 +147,7 @@ CREATE VIEW order_current AS
   SELECT o.*, s.status AS current_status, s.status_rank,
          coalesce(f.failed_attempts, 0) AS delivery_failed_count,
          s.carrier,
-         s.status = 'delivered' AS is_delivered
+         o.order_id IN (SELECT order_id FROM delivery_events WHERE event_type = 'delivered') AS is_delivered
   FROM orders o
   LEFT JOIN (SELECT * FROM order_status_timeline
              QUALIFY row_number() OVER (PARTITION BY order_id ORDER BY status_rank DESC, event_time DESC) = 1) s
@@ -150,14 +165,30 @@ CREATE VIEW session_funnel AS
 """
 
 
+def _split_columns(spec: str) -> list[str]:
+    """Split "a INT, b STRUCT(x INT, y INT)[]" at the commas outside brackets."""
+    parts, depth, cur = [], 0, ""
+    for ch in spec:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    return parts + [cur.strip()]
+
+
 def load_events(con, events: dict) -> dict:
     """Create raw tables from the three topics plus the cleaned event views. Returns row counts."""
     t = _topics()
     names = {"app_events": "raw_app", "orders": "raw_orders", "delivery": "raw_delivery"}
     counts = {}
-    empty_schemas = {
-        "app_events": "event_id VARCHAR, event_type VARCHAR, event_version INTEGER, event_time TIMESTAMP, session_id VARCHAR, device VARCHAR, channel VARCHAR, country VARCHAR, city VARCHAR, district VARCHAR, platform VARCHAR, customer_id VARCHAR, product_id VARCHAR, order_id VARCHAR, utm_source VARCHAR, utm_medium VARCHAR, utm_campaign VARCHAR",
-        "orders": "event_id VARCHAR, event_type VARCHAR, event_version INTEGER, event_time TIMESTAMP, session_id VARCHAR, order_id VARCHAR, customer_id VARCHAR, country VARCHAR, city VARCHAR, district VARCHAR, payment_method VARCHAR, items STRUCT(product_id VARCHAR, quantity BIGINT, unit_price DOUBLE, line_total DOUBLE)[], order_total DOUBLE, channel VARCHAR, utm_source VARCHAR, utm_medium VARCHAR, utm_campaign VARCHAR, click_id VARCHAR, carrier VARCHAR, reason VARCHAR, attempts BIGINT",
+    # Explicit columns, not inferred ones: a small sample without a cancelled or failed event would otherwise have no
+    # `reason` column and the views below would not bind. Keys that are absent in a row become NULL.
+    schemas = {
+        "app_events": "event_id VARCHAR, event_type VARCHAR, event_version INTEGER, event_time TIMESTAMP, session_id VARCHAR, device VARCHAR, channel VARCHAR, country VARCHAR, city VARCHAR, district VARCHAR, platform VARCHAR, customer_id VARCHAR, page VARCHAR, page_url VARCHAR, click_id VARCHAR, product_id VARCHAR, price DOUBLE, category VARCHAR, dwell_seconds BIGINT, element VARCHAR, quantity BIGINT, cart_id VARCHAR, order_id VARCHAR, total DOUBLE, utm_source VARCHAR, utm_medium VARCHAR, utm_campaign VARCHAR",
+        "orders": "event_id VARCHAR, event_type VARCHAR, event_version INTEGER, event_time TIMESTAMP, session_id VARCHAR, order_id VARCHAR, customer_id VARCHAR, country VARCHAR, city VARCHAR, district VARCHAR, payment_method VARCHAR, items STRUCT(product_id VARCHAR, quantity BIGINT, unit_price DOUBLE, line_total DOUBLE)[], order_total DOUBLE, channel VARCHAR, platform VARCHAR, utm_source VARCHAR, utm_medium VARCHAR, utm_campaign VARCHAR, click_id VARCHAR, carrier VARCHAR, reason VARCHAR, attempts BIGINT",
         "delivery": "event_id VARCHAR, event_type VARCHAR, event_version INTEGER, event_time TIMESTAMP, session_id VARCHAR, order_id VARCHAR, customer_id VARCHAR, country VARCHAR, city VARCHAR, district VARCHAR, carrier VARCHAR, attempt BIGINT, reason VARCHAR",
     }
     scratch = dl.ROOT / "data" / ".tmp"  # keep scratch files on the project drive, not the system temp
@@ -176,11 +207,12 @@ def load_events(con, events: dict) -> dict:
                     rows.append({**event, **body, **utm, "payload": body})
             counts[t[key]] = len(rows)
             if not rows:
-                con.execute(f"CREATE TABLE {table} ({empty_schemas[key]})")
+                con.execute(f"CREATE TABLE {table} ({schemas[key]})")
                 continue
             path = Path(tmp) / f"{table}.ndjson"
             path.write_text("\n".join(json.dumps(r) for r in rows) or "{}", encoding="utf-8")
-            con.execute(f"CREATE TABLE {table} AS SELECT * FROM read_json_auto(?, format='nd', sample_size=-1)",
+            columns = ", ".join("'%s': '%s'" % tuple(col.split(" ", 1)) for col in _split_columns(schemas[key]))
+            con.execute(f"CREATE TABLE {table} AS SELECT * FROM read_json(?, format='nd', columns={{{columns}}})",
                         [path.as_posix()])
         con.execute(EVENT_VIEWS_SQL)
     return counts
@@ -189,7 +221,8 @@ def load_events(con, events: dict) -> dict:
 def connect_events(source: str, scale: str = "small", bootstrap: str = "localhost:9092",
                    sessions: int = 2000, seed: int = 42):
     """CSV dimensions/ads + the event views. source: 'kafka' or 'sim'."""
-    con = dl.connect(scale)
+    con = dl.connect(scale, lock=False)  # read_json below needs file access; lock once everything is loaded
     events = consume_kafka(bootstrap) if source == "kafka" else simulate(scale, sessions, seed)
     counts = load_events(con, events)
+    dl.lock_down(con)
     return con, counts

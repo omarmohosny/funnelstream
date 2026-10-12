@@ -130,3 +130,10 @@ def test_spark_env_file_is_optional_dotenv():
     assert isinstance(env_file, list)
     entries = [e if isinstance(e, dict) else {"path": e, "required": True} for e in env_file]
     assert {"path": ".env", "required": False} in entries
+
+
+def test_published_ports_listen_on_the_loopback_interface_only():
+    """Kafka, Postgres, Airflow and Grafana are for this machine; they must not be reachable from the network."""
+    for name, svc in load()["services"].items():
+        for port in svc.get("ports", []):
+            assert str(port).startswith("127.0.0.1:"), f"{name} publishes {port} on every interface"

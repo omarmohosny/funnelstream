@@ -209,6 +209,17 @@ def test_fact_orders_order_seq_and_single_first_order(spark):
     assert sum(1 for r in res.values() if r["customer_id"] == "cx" and r["is_first_order"]) == 1
 
 
+def test_fact_orders_anonymous_orders_have_no_sequence_and_are_not_first(spark):
+    orders = [order_row("a1", customer=None, created=t(1, 10)), order_row("a2", customer=None, created=t(2, 10)),
+              order_row("oA", customer="cx", created=t(1, 11))]
+    rows = [status_row(o["order_id"], "order_created", o["order_created_at"], customer=o["customer_id"])
+            for o in orders]
+    res = fo(spark, orders, rows)
+    assert res["a1"]["order_seq"] is None and res["a2"]["order_seq"] is None
+    assert res["a1"]["is_first_order"] is False and res["a2"]["is_first_order"] is False
+    assert (res["oA"]["order_seq"], res["oA"]["is_first_order"]) == (1, True)
+
+
 def test_fact_orders_date_key_uses_cairo_date(spark):
     created = datetime(2026, 10, 4, 23, 30, tzinfo=timezone.utc)  # 02:30 on 5 Oct in Cairo
     r = fo(spark, [order_row("o1", created=created)], [status_row("o1", "order_created", created)])["o1"]

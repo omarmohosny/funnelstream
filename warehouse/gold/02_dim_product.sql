@@ -1,6 +1,7 @@
 -- dim_product: SCD2 built from the versions in silver_products, same pattern as dim_customer.
--- Natural key (product_id, valid_from). Tracked attributes: category, price. One new version per product per
--- Cairo day at most (the last of the day wins). name and is_active are those of the first version of a run.
+-- Natural key (product_id, valid_from). Tracked attributes: category, price, is_active. One new version per product per
+-- Cairo day at most (the last of the day wins). name is that of the first version of a run; a product that is deactivated or
+-- reactivated starts a new version, so is_active (and rec_product eligibility) is never stale.
 -- A kept version only ever gets a SMALLER valid_to (it is closed by a newer version), never a later one.
 -- MERGE INSERT names its columns and never supplies product_key (identity). The unknown member (key -1) is
 -- seeded by apply_ddl and never touched here.
@@ -21,13 +22,15 @@ USING (
     SELECT l.*,
            ROW_NUMBER() OVER (PARTITION BY l.product_id ORDER BY l.updated_at) AS vn,
            LAG(l.category) OVER (PARTITION BY l.product_id ORDER BY l.updated_at) AS p_category,
-           LAG(l.price) OVER (PARTITION BY l.product_id ORDER BY l.updated_at) AS p_price
+           LAG(l.price) OVER (PARTITION BY l.product_id ORDER BY l.updated_at) AS p_price,
+           LAG(l.is_active) OVER (PARTITION BY l.product_id ORDER BY l.updated_at) AS p_active
     FROM last_of_day l
   ),
   kept AS (
     SELECT product_id, name, category, price, is_active, updated_at
     FROM flagged
     WHERE vn = 1 OR NOT (category <=> p_category) OR NOT (price <=> p_price)
+       OR NOT (is_active <=> p_active)
   )
   SELECT k.product_id, k.name, k.category, CAST(k.price AS DECIMAL(12,2)) AS price, k.is_active,
          k.updated_at AS valid_from,

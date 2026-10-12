@@ -131,9 +131,17 @@ Order Rate = DIVIDE ( [Funnel Orders], [Checkout Sessions] )
 
 Session Conversion = DIVIDE ( [Funnel Orders], [Sessions] )
 
-Cart Abandon Rate = 1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
+Cart Abandon Rate =
+// Gold definition: BLANK for an empty slice, clamped to 0..1.
+VAR Rate = DIVIDE ( [Funnel Orders], [Cart Sessions] )
+RETURN
+    IF ( NOT ISBLANK ( Rate ), MAX ( 0, MIN ( 1, 1 - Rate ) ) )
 
-Checkout Abandon Rate = 1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
+Checkout Abandon Rate =
+// Gold definition: BLANK for an empty slice, clamped to 0..1.
+VAR Rate = DIVIDE ( [Funnel Orders], [Checkout Sessions] )
+RETURN
+    IF ( NOT ISBLANK ( Rate ), MAX ( 0, MIN ( 1, 1 - Rate ) ) )
 
 // ---------------------------------------------------------------------------------------------------------------
 // Display folder: Executive
@@ -203,7 +211,8 @@ COUNTROWS (
 Out of Stock Rate = DIVIDE ( [Out of Stock Lines], [Stock Lines] )
 
 Stock Freshness (seconds) =
-// Age of the newest stock row. Stock is recomputed after each Silver batch, so about one batch behind real time.
+// Time between the newest stock row and NOW() at refresh. Stock Now is an Import snapshot, so this is the age of the data at the
+// last refresh; it grows while the report stays open and does not measure the live pipeline.
 DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
 
 // ---------------------------------------------------------------------------------------------------------------

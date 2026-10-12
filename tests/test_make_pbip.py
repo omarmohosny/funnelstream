@@ -289,3 +289,23 @@ def test_bar_and_column_charts_show_data_labels_because_three_palette_colours_ar
         for v in items:
             if v["visual"]["visualType"] in ("clusteredBarChart", "clusteredColumnChart"):
                 assert "labels" in v["visual"]["objects"], (page, v["name"])
+
+
+def _flat(text):
+    return re.sub(r"\s+", "", re.sub(r"//[^\n]*", "", text))
+
+
+@pytest.mark.parametrize("name", ["Cart Abandon Rate", "Checkout Abandon Rate"])
+def test_abandon_rates_are_blank_for_an_empty_slice_and_clamped(name):
+    """I7: `1 - DIVIDE(...)` showed 100 percent for an empty slice and could go below zero. Gold returns NULL for
+    an empty slice and clamps to 0..1; measures.dax and the model saved by Desktop must do the same."""
+    dax = {m["name"]: "\n".join(m["body"]) for m in make_pbip.parse_measures()}[name]
+    saved = (ROOT / "dashboards" / "powerbi" / "FunnelStream.SemanticModel" / "definition" / "tables"
+             / "_Measures.tmdl").read_text(encoding="utf-8")
+    block = re.search(r"^\tmeasure '%s' =(.*?)(?=^\t\w|\Z)" % name, saved, re.M | re.S).group(1)
+    block = block.split("formatString")[0]
+    for body in (dax, block):
+        flat = _flat(body)
+        assert "1-DIVIDE(" not in flat
+        assert "ISBLANK" in flat and "MAX(0,MIN(1,1-" in flat
+    assert _flat(dax) == _flat(block)

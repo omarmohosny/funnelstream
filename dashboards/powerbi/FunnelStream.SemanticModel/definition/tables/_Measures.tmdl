@@ -164,12 +164,20 @@ table _Measures
 		displayFolder: Funnel
 		lineageTag: e323979a-b30e-4a8a-bd8f-e0374ed49e8a
 
-	measure 'Cart Abandon Rate' = 1 - DIVIDE ( [Funnel Orders], [Cart Sessions] )   // Gold definition
+	measure 'Cart Abandon Rate' =
+			// Gold definition: BLANK for an empty slice, clamped to 0..1.
+			VAR Rate = DIVIDE ( [Funnel Orders], [Cart Sessions] )
+			RETURN
+				IF ( NOT ISBLANK ( Rate ), MAX ( 0, MIN ( 1, 1 - Rate ) ) )
 		formatString: 0.0%
 		displayFolder: Funnel
 		lineageTag: 1a531a5c-4250-4780-9e4b-edbc13f6f5ba
 
-	measure 'Checkout Abandon Rate' = 1 - DIVIDE ( [Funnel Orders], [Checkout Sessions] )   // Gold definition
+	measure 'Checkout Abandon Rate' =
+			// Gold definition: BLANK for an empty slice, clamped to 0..1.
+			VAR Rate = DIVIDE ( [Funnel Orders], [Checkout Sessions] )
+			RETURN
+				IF ( NOT ISBLANK ( Rate ), MAX ( 0, MIN ( 1, 1 - Rate ) ) )
 		formatString: 0.0%
 		displayFolder: Funnel
 		lineageTag: 7e57ef86-26f6-44f2-8d71-adb0511e3ca4
@@ -296,7 +304,8 @@ table _Measures
 		lineageTag: 2ac586ba-aad4-4ff0-b728-2cdf4c86ae27
 
 	measure 'Stock Freshness (seconds)' =
-			// Age of the newest stock row. Stock is recomputed after each Silver batch, so about one batch behind real time.
+			// Time between the newest stock row and NOW() at refresh. Stock Now is an Import snapshot, so this is the age of the data at the
+			// last refresh; it grows while the report stays open and does not measure the live pipeline.
 			DATEDIFF ( MAX ( 'Stock Now'[updated_at] ), NOW (), SECOND )
 		formatString: #,0
 		displayFolder: Inventory\Now

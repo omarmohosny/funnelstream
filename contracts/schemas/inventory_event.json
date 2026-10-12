@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Inventory Event",
+  "description": "Topic inventory.events, keyed by store_id. Mirrors contracts/validate.py (_check_stock); a test keeps the two in step.",
+  "type": "object",
+  "required": ["event_id", "event_type", "event_version", "event_time", "store_id", "product_id", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1, "description": "Unique identifier for the event"},
+    "event_type": {"type": "string", "enum": ["stock_snapshot", "stock_movement"]},
+    "event_version": {"type": "integer", "enum": [1]},
+    "event_time": {"type": "string", "format": "date-time", "description": "ISO 8601 timestamp of when the stock changed"},
+    "store_id": {"type": "string", "minLength": 1, "description": "One of the dark stores in contracts/stores.py"},
+    "product_id": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"event_type": {"const": "stock_snapshot"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["on_hand"],
+            "properties": {
+              "on_hand": {"type": "integer", "minimum": 0},
+              "reserved_qty": {"type": "integer", "minimum": 0},
+              "reorder_point": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "stock_movement"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["qty_delta", "reason"],
+            "properties": {
+              "qty_delta": {"type": "integer", "not": {"const": 0}},
+              "reason": {"type": "string", "enum": ["received", "sold", "shrinkage", "adjustment"]},
+              "order_id": {"type": "string", "minLength": 1},
+              "requested_qty": {"type": "integer", "minimum": 1}
+            },
+            "allOf": [
+              {"if": {"properties": {"reason": {"const": "received"}}, "required": ["reason"]},
+               "then": {"properties": {"qty_delta": {"minimum": 1}}}},
+              {"if": {"properties": {"reason": {"enum": ["sold", "shrinkage"]}}, "required": ["reason"]},
+               "then": {"properties": {"qty_delta": {"maximum": -1}}}},
+              {"if": {"properties": {"reason": {"const": "sold"}}, "required": ["reason"]},
+               "then": {"required": ["order_id"]}}
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

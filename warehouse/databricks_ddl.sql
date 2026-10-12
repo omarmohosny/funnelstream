@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_campaign (
     end_date DATE
 )
 USING DELTA
-COMMENT 'keys: campaign_key (documented, not enforced); campaign dimension, no history';
+COMMENT 'keys: campaign_key (documented, not enforced); campaign dimension, no history; channel and daily budget stay in simulator/campaigns.py';
 
 CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_date (
     date_key INT NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.gold.dim_date (
     is_holiday BOOLEAN NOT NULL
 )
 USING DELTA
-COMMENT 'keys: date_key (documented, not enforced); calendar day, date_key is yyyymmdd';
+COMMENT 'keys: date_key (documented, not enforced); calendar day, date_key is yyyymmdd; week is the ISO week number without a year, is_friday_saturday equals is_weekend (the Egyptian weekend)';
 
 CREATE TABLE IF NOT EXISTS funnelstream.gold.fact_orders (
     order_id STRING NOT NULL,
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS funnelstream.gold.agg_funnel_daily (
     checkout_abandon_rate DECIMAL(8,4)
 )
 USING DELTA
-COMMENT 'keys: event_date, country, channel, platform (documented, not enforced); day, country, channel, platform';
+COMMENT 'keys: event_date, country, channel, platform (documented, not enforced); day, country, channel, platform; product_views and orders count SESSIONS that had a product view and a purchase, not events or orders';
 
 CREATE TABLE IF NOT EXISTS funnelstream.gold.agg_campaign_daily (
     campaign_id STRING NOT NULL,

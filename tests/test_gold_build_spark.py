@@ -449,6 +449,16 @@ def test_late_order_for_a_customer_shifts_later_orders_first_flag(spark, env):
     assert ag == {20261002: 1, 20261005: 0}  # the Oct 5 day was recomputed although it is outside the window
 
 
+def test_anonymous_orders_have_no_sequence_and_do_not_count_as_new_customers(spark, env):
+    seed_dims(spark, env)
+    put_order(spark, env, "anon1", None, t(2, 10))
+    put_order(spark, env, "anon2", None, t(2, 11))
+    put_order(spark, env, "known", "c1", t(2, 12))
+    run_build(env, steps=ORD, **MONTH)
+    rows = {r["order_id"]: (r["order_seq"], r["is_first_order"]) for r in spark.table(env.gold + ".fact_orders").collect()}
+    assert rows == {"anon1": (None, False), "anon2": (None, False), "known": (1, True)}
+
+
 def test_a_day_that_loses_all_its_orders_in_the_window_is_deleted_from_the_summary(spark, env):
     seed_dims(spark, env)
     put_order(spark, env, "o1", "c1", t(2, 10))
@@ -568,6 +578,20 @@ def test_dim_product_scd2_tracks_category_and_price(spark, env):
         "SELECT * FROM %s.dim_product WHERE product_id = 'p' ORDER BY valid_from" % env.gold).collect()]
     assert rows == [(datetime(2026, 1, 1), datetime(2026, 3, 1), False, Decimal("10.00")),
                     (datetime(2026, 3, 1), far, True, Decimal("12.50"))]
+
+
+def test_dim_product_deactivation_starts_a_new_version(spark, env):
+    far = datetime(9999, 12, 31)
+    load(spark, env.silver, "silver_products", [
+        {"product_id": "p", "updated_at": datetime(2026, 1, 1), "name": "A", "category": "x", "price": Decimal("10.00"),
+         "is_active": True},
+        {"product_id": "p", "updated_at": datetime(2026, 2, 1), "name": "A", "category": "x", "price": Decimal("10.00"),
+         "is_active": False}])  # deactivated, nothing else changed
+    run_build(env, steps=["dim_product"], full=True)
+    rows = [(r["valid_from"], r["valid_to"], r["is_current"], r["is_active"]) for r in spark.sql(
+        "SELECT * FROM %s.dim_product WHERE product_id = 'p' ORDER BY valid_from" % env.gold).collect()]
+    assert rows == [(datetime(2026, 1, 1), datetime(2026, 2, 1), False, True),
+                    (datetime(2026, 2, 1), far, True, False)]
 
 
 def test_dim_campaign_rows_come_from_the_simulator_and_unknown_member_is_untouched(spark, env):

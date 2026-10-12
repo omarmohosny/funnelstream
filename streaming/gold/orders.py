@@ -119,8 +119,9 @@ def build_fact_orders(silver_orders: DataFrame, silver_order_status: DataFrame, 
          .withColumn("campaign_id", F.lit(None).cast("string")))
     o = _version_key(o, dim_customer, "customer_id", "customer_key", "order_created_at")
     seq = Window.partitionBy("customer_id").orderBy("order_created_at", "order_id")
-    o = (o.withColumn("order_seq", F.row_number().over(seq).cast("int"))
-         .withColumn("is_first_order", F.col("order_seq") == 1)
+    # an anonymous order (NULL customer_id) has no customer history: no order_seq, never a first order
+    o = (o.withColumn("order_seq", F.when(F.col("customer_id").isNotNull(), F.row_number().over(seq).cast("int")))
+         .withColumn("is_first_order", F.coalesce(F.col("order_seq") == 1, F.lit(False)))
          .withColumn("date_key", cairo_date_key(F.col("order_created_at"))))
     o = o.select(*FACT_ORDERS_COLUMNS)
     return o if attribution is None else with_last_touch_campaign(o, attribution)

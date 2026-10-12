@@ -79,11 +79,12 @@ GOLD_TABLES = [
     _gold("dim_campaign",
           "campaign_key:bigint campaign_id:string utm_campaign:string? platform:string? name:string? "
           "start_date:date? end_date:date?",
-          ["campaign_key"], identity=["campaign_key"], comment="campaign dimension, no history"),
+          ["campaign_key"], identity=["campaign_key"], comment="campaign dimension, no history; channel and daily budget stay in simulator/campaigns.py"),
     _gold("dim_date",
           "date_key:int date:date week:int month:int is_weekend:boolean is_friday_saturday:boolean "
           "is_ramadan:boolean is_eid:boolean is_holiday:boolean",
-          ["date_key"], comment="calendar day, date_key is yyyymmdd"),
+          ["date_key"], comment="calendar day, date_key is yyyymmdd; week is the ISO week number without a year, "
+          "is_friday_saturday equals is_weekend (the Egyptian weekend)"),
     _gold("fact_orders",
           "order_id:string customer_key:bigint? customer_id:string? session_id:string? channel:string? "
           "platform:string? utm_source:string? utm_campaign:string? click_id:string? campaign_id:string? "
@@ -113,7 +114,8 @@ GOLD_TABLES = [
           "product_views:bigint? cart_sessions:bigint? checkout_sessions:bigint? orders:bigint? "
           "cart_abandon_rate:%s? checkout_abandon_rate:%s?" % (R, R),
           ["event_date", "country", "channel", "platform"],
-          comment="day, country, channel, platform"),
+          comment="day, country, channel, platform; product_views and orders count SESSIONS that had a product view "
+          "and a purchase, not events or orders"),
     _gold("agg_campaign_daily",
           "campaign_id:string report_date:date attribution_model:string ad_platform:string? impressions:bigint? "
           "clicks:bigint? platform_conversions:bigint? spend:decimal(12,4)? orders_placed:bigint? "

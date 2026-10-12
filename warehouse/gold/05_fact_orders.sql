@@ -5,7 +5,8 @@
 --         whose event_date is in the window;
 --   r   = win plus every later order (created at or after the earliest order of that customer in win) of the
 --         customers in win, because order_seq and is_first_order of those orders depend on the earlier order.
--- order_seq is computed over ALL orders of the customer (seq), not only over r.
+-- order_seq is computed over ALL orders of the customer (seq), not only over r. An anonymous order (NULL customer_id)
+-- has order_seq NULL and is_first_order FALSE: it has no customer history, so it never counts as a new customer.
 --
 -- Rules: current status = highest status_rank, a counted cancel (no order_shipped row EARLIER than the cancel)
 -- is terminal, rank ties go to the latest status_time (spec 17.6); delivery_lead_hours = exact hours from
@@ -108,8 +109,9 @@ USING (
   ),
   seq AS (
     SELECT so.order_id,
-           CAST(ROW_NUMBER() OVER (PARTITION BY so.customer_id ORDER BY so.order_created_at, so.order_id) AS INT)
-             AS order_seq
+           CASE WHEN so.customer_id IS NULL THEN NULL
+                ELSE CAST(ROW_NUMBER() OVER (PARTITION BY so.customer_id ORDER BY so.order_created_at, so.order_id)
+                          AS INT) END AS order_seq
     FROM {silver}.silver_orders so
     WHERE so.order_created_at IS NOT NULL
       AND EXISTS (SELECT 1 FROM {silver}.silver_order_status s WHERE s.order_id = so.order_id)
@@ -123,7 +125,7 @@ USING (
          d.delivery_lead_hours, d.delivery_failed_count, d.has_failed_attempt, d.first_attempt_delivered,
          d.is_cancelled, d.is_delivered, d.is_returned,
          seq.order_seq,
-         (seq.order_seq = 1) AS is_first_order,
+         COALESCE(seq.order_seq = 1, FALSE) AS is_first_order,
          CAST(date_format(from_utc_timestamp(d.order_created_at, 'Africa/Cairo'), 'yyyyMMdd') AS INT) AS date_key
   FROM d JOIN ck ON ck.order_id = d.order_id JOIN seq ON seq.order_id = d.order_id
 ) AS s

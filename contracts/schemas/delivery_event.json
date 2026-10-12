@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Delivery Event",
+  "description": "Topic delivery.events, keyed by order_id. The event types are those of delivery_event_types in contracts/topics.yaml.",
+  "type": "object",
+  "required": ["event_id", "event_type", "event_version", "event_time", "order_id", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "description": "Unique identifier for the event"},
+    "event_type": {"type": "string", "enum": ["out_for_delivery", "delivered", "delivery_failed"]},
+    "event_version": {"type": "integer", "description": "Version of the event schema"},
+    "event_time": {"type": "string", "format": "date-time", "description": "ISO 8601 timestamp of when the event occurred"},
+    "order_id": {"type": "string", "description": "Order identifier"},
+    "payload": {"type": "object", "description": "Delivery event payload (carrier, attempt, reason)"}
+  }
+}

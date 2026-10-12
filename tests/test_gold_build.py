@@ -336,6 +336,20 @@ def test_fact_orders_leaves_campaign_id_to_the_attribution_step():
     assert "campaign_id" not in update and "campaign_id" in text.split("WHEN NOT MATCHED")[1]
 
 
+def test_fact_orders_anonymous_orders_get_no_sequence_and_are_never_first():
+    """I1: orders without a customer_id must not share one partition (one fake first order, endless order_seq)."""
+    text = open(step_file("fact_orders"), encoding="utf-8").read()
+    seq = text.split("seq AS (")[1].split("SELECT d.order_id,")[0]
+    assert re.search(r"CASE\s+WHEN\s+so\.customer_id\s+IS\s+NULL\s+THEN\s+NULL", seq)
+    assert "COALESCE(seq.order_seq = 1, FALSE) AS is_first_order" in text
+
+
+def test_dim_product_tracks_is_active_so_a_deactivated_product_gets_a_new_version():
+    """I10: without it a product deactivated without a price or category change stayed is_active = TRUE forever."""
+    text = open(step_file("dim_product"), encoding="utf-8").read()
+    assert "LAG(l.is_active)" in text and "NOT (is_active <=> p_active)" in text
+
+
 def test_window_predicates_are_in_the_expected_steps_and_summaries_delete_before_merge():
     values = placeholders("s", "g", "2026-10-01", "2026-10-03")
     for name in ("agg_orders_daily", "agg_funnel_daily", "agg_campaign_daily", "agg_city_product_daily"):

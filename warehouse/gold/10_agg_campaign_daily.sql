@@ -1,4 +1,4 @@
--- agg_campaign_daily: campaign x Cairo report date x attribution model (always last_touch here), recomputed from
+-- agg_campaign_daily: campaign x ad report date x attribution model (always last_touch here), recomputed from
 -- silver_campaign_snapshots (ad measures) and fact_orders + fact_attribution (order measures), never incremented
 -- (spec 17.1). Same semantics as streaming/gold/agg_campaign.py.
 --
@@ -6,6 +6,8 @@
 --   Silver and are never summed. Ties on pulled_at: the row with the greatest impressions, then clicks,
 --   platform_conversions, spend, ad_platform. A pull without pulled_at loses to any pull that has one. Snapshot rows
 --   with a NULL campaign_id or report_date are ignored. A day without an ad row has NULL ad measures (not 0).
+-- Day rule: report_date is the ad API's UTC day. The order columns of a row are the orders PLACED on the Cairo date
+--   (fact_orders.date_key) that has the same date value; the two days differ by at most 3 hours and the mismatch is accepted.
 -- Order measures: orders whose last_touch campaign is not NULL and not 'unknown', on the Cairo date the order was
 --   PLACED (fact_orders.date_key), so delivered revenue sits on the order day. A day with ad data and no orders
 --   has 0 counts and 0.00 revenue and NULL order rates.

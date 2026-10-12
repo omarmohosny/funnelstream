@@ -1,6 +1,7 @@
 """agg_campaign_daily as a pure Spark function over fact_orders, fact_attribution and the ad snapshots.
 
-Grain: campaign_id, report_date (Cairo date), attribution_model (always 'last_touch' here). Same semantics as
+Grain: campaign_id, report_date (the ad API's UTC day), attribution_model (always 'last_touch' here). The order columns
+of a row are the orders placed on the Cairo date with the same date value (at most 3 hours apart, accepted). Same semantics as
 warehouse/gold/10_agg_campaign_daily.sql:
 
 * Ad measures come from the snapshot row with the LATEST pulled_at per (campaign_id, report_date); earlier pulls

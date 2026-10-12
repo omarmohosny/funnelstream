@@ -238,7 +238,7 @@ def test_platform_conversions_deterministic():
 
 
 # ---- 5. topics ----
-def test_topics_yaml_has_exactly_three_topics():
+def test_topics_yaml_has_exactly_four_topics():
     topics = yaml.safe_load((ROOT / "contracts" / "topics.yaml").read_text())["topics"]
     assert set(topics) == {"app.events", "orders", "delivery.events", "inventory.events"}
 
