@@ -19,16 +19,18 @@ function Step($name, $cmd) {
     return $true
 }
 
-Write-Host "Gold sync every $Every s (publish Silver, then build the last $Days days). Ctrl+C stops it." -ForegroundColor Green
+Write-Host "Gold sync every $Every s (publish Silver, Gold build, inventory daily, D-1 marketing). Ctrl+C stops it." -ForegroundColor Green
 try {
     while ($true) {
-        docker rm -f fs-sync *> $null
+        docker rm -f fs-sync fs-sync-inv *> $null
         if (Step 'publish Silver -> Databricks' { docker compose run --rm --name fs-sync sync python scripts/publish_silver.py }) {
             Step "Gold build ($Days days)" { docker compose run --rm --name fs-sync sync python -m warehouse.gold_build --days $Days } | Out-Null
         }
+        Step "Inventory daily (Postgres)" { docker compose run --rm --name fs-sync-inv spark python scripts/build_inventory_daily.py --days 2 } | Out-Null
+        Step "D-1 marketing (Postgres)"  { docker compose run --rm --name fs-sync sync python scripts/build_d1_marketing.py } | Out-Null
         Write-Host ("[{0}] next round in {1} s" -f (Get-Date -Format 'HH:mm:ss'), $Every)
         Start-Sleep $Every
     }
 } finally {
-    docker rm -f fs-sync *> $null
+    docker rm -f fs-sync fs-sync-inv *> $null
 }
