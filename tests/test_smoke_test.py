@@ -283,6 +283,17 @@ def test_the_window_of_the_macros_can_be_widened():
         "WHERE t >= now() - interval '30 days' AND x > now() - interval '30 days'"
 
 
+def test_a_cast_after_a_window_macro_applies_to_the_whole_window_not_to_the_interval():
+    """Grafana's $__timeFrom() is a timestamp, so dashboards cast it; the plain-SQL window must survive the same cast."""
+    assert sm.expand_macros("x >= $__timeFrom()::timestamptz - interval '5 minutes'", days=30) ==         "x >= (now() - interval '30 days')::timestamptz - interval '5 minutes'"
+
+
+def test_a_backfilled_history_run_does_not_need_live_metrics_minute(monkeypatch, tmp_path):
+    """Every event of a history run arrives days late, and live_metrics_minute leaves out late events by design."""
+    assert "live_metrics_minute" not in sm.LIVE_POPULATED
+    sm.stage_invariants(invariants_ctx(monkeypatch, tmp_path, pg=invariants_pg(empty=("live_metrics_minute",))))
+
+
 def test_an_unknown_macro_is_an_error_not_a_silent_pass():
     with pytest.raises(ValueError, match="unexpanded"):
         sm.expand_macros("SELECT $__unixEpochFilter(t)")
@@ -608,10 +619,10 @@ def test_each_invariant_can_fail_on_its_own(monkeypatch, tmp_path):
     bad = {"quarantine": 80, "pairs": 100, "negative_count": 2, "mismatch_count": 1, "negative": ["s/p", "s/q"], "mismatch": ["s/r replay=1 live=2"]}
     with pytest.raises(sm.StageFail) as e:
         sm.stage_invariants(invariants_ctx(monkeypatch, tmp_path, inv=bad, pg=invariants_pg(express=(10, 2, 3, 25.0, 20), negative=4,
-                                                                                           empty=("live_metrics_minute",), beat=0), dup_rc=1))
+                                                                                           empty=("pipeline_health_minute",), beat=0), dup_rc=1))
     text = str(e.value)
     for part in ("check_duplicates.py exited", "expected 50", "below zero for 2", "ledger replay for 1", "available < 0",
-                 "no promised_minutes", "at or after their promise", "live_metrics_minute is empty", "no silver_job row"):
+                 "no promised_minutes", "at or after their promise", "pipeline_health_minute is empty", "no silver_job row"):
         assert part in text, part
 
 
@@ -849,6 +860,7 @@ def test_databricks_stage_needs_batch_ok_and_passing_checks():
     assert "BATCH OK in catalog workspace" in out and "56 run, 0 failed" in out
     publish = next(c for c in runner.calls if "publish_silver.py" in " ".join(c))
     assert "DATABRICKS_CATALOG=workspace" in publish and "PG_DSN=" in publish
+    assert "--reset" in publish and "--yes" in publish  # the insert-only MERGE would keep rows of earlier runs
     with pytest.raises(sm.StageFail, match="no BATCH OK"):
         sm.stage_databricks(make_ctx(runner=FakeRunner(outputs={"run_batch": "BATCH FAILED at checks"})))
     with pytest.raises(sm.StageFail, match="exited with code 1"):

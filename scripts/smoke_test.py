@@ -54,7 +54,9 @@ MEASURES_DAX = os.path.join(ROOT, "dashboards", "powerbi", "measures.dax")
 SILVER_NON_EMPTY = ("silver_events", "silver_orders", "silver_order_status", "silver_order_items", "silver_quarantine",
                     "silver_products", "silver_customers", "silver_stock_movements", "silver_stock_snapshots",
                     "silver_express_orders")
-LIVE_POPULATED = ("live_metrics_minute", "pipeline_health_minute", "live_stock_now", "live_express_orders")
+# live_metrics_minute is left out on purpose: the run replays days of history, every event arrives late, and that table
+# counts only events that are not late. The live rehearsals prove it with events produced in real time.
+LIVE_POPULATED = ("pipeline_health_minute", "live_stock_now", "live_express_orders")
 DASHBOARD_DAYS = 30  # the smoke data is days old: the panels must look back far enough to find it
 TINY_PROMISE_MINUTES = 2
 CONTROL_STORE, CONTROL_PRODUCT = "smoke_control_store", "smoke_control_product"
@@ -217,7 +219,7 @@ def expand_macros(sql, days=1):
             if name == "timeFilter":
                 new = "%s >= %s" % (args[0], window)
             elif name == "timeFrom":
-                new = window
+                new = "(%s)" % window if out[end:].startswith("::") else window  # a cast must apply to the window, not to the interval
             elif name == "timeTo":
                 new = "now()"
             else:
@@ -985,7 +987,8 @@ def stage_databricks(ctx):
     if not ctx.state.get("dbx_ddl_done"):
         ctx.run_ok(ctx.spark("scripts/apply_ddl.py", "--backend", "databricks", "--catalog", a.catalog, dbx=True, pg=False),
                    "apply_ddl.py", timeout=1800)
-    ctx.run_ok(ctx.spark("scripts/publish_silver.py", "--lake", lake, "--export-dir", SMOKE_REL + "/export", dbx=True, pg=False),
+    ctx.run_ok(ctx.spark("scripts/publish_silver.py", "--lake", lake, "--export-dir", SMOKE_REL + "/export",
+                         "--reset", "--yes", dbx=True, pg=False),
                "publish_silver.py", timeout=3600)
     out = ctx.run_ok(ctx.spark("scripts/run_batch.py", "--skip-publish", "--full", "--manifest", SMOKE_REL + "/noise_manifest.json",
                                dbx=True, pg=False), "run_batch.py", timeout=3600)
