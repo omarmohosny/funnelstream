@@ -2,6 +2,8 @@
 
 How to run everything locally: [docs/RUNNING.md](docs/RUNNING.md)
 
+Full project documentation with diagrams and screenshots: [docs/FunnelStream-Project-Documentation.pdf](docs/FunnelStream-Project-Documentation.pdf) (source: [docs/FunnelStream-Project-Documentation.md](docs/FunnelStream-Project-Documentation.md))
+
 New to the project? Start with the team handoff (Q&A, status, remaining tasks): [docs/FunnelStream-Team-Handoff.pdf](docs/FunnelStream-Team-Handoff.pdf)
 
 Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.

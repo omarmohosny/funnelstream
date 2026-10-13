@@ -14,3 +14,4 @@ logs/
 # Power BI local cache
 dashboards/powerbi/**/.pbi/
 *.pbix
+scripts/docs_build/pylibs/

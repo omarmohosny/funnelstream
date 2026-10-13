@@ -1,0 +1,1682 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FunnelStream: project documentation</title><style>
+:root{--navy:#0d366b;--blue:#2a78d6;--ink:#1c2433;--muted:#5b6578;--line:#d6dce8;--bg:#fff;--soft:#f3f6fb}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;
+  @bottom-center{content:"FunnelStream project documentation   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+*{box-sizing:border-box}
+body{font:10.5pt/1.55 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0 auto;max-width:980px;padding:0 28px}
+h1{font-size:30pt;color:var(--navy);margin:34px 0 4px;letter-spacing:-.5px}
+h2{font-size:17pt;color:var(--navy);margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue);break-after:avoid}
+h3{font-size:13pt;color:var(--navy);margin:24px 0 6px;break-after:avoid}
+h4{font-size:11.5pt;color:var(--blue);margin:20px 0 4px;break-after:avoid}
+p{margin:8px 0}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:9.4pt;break-inside:auto}
+th{background:var(--navy);color:#fff;text-align:left;padding:6px 9px;font-weight:600}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:var(--soft)}
+tr{break-inside:avoid}
+code{font:9.2pt Consolas,"Cascadia Mono",monospace;background:#eef2f9;padding:1px 4px;border-radius:3px}
+pre{background:#0c0e14;color:#d7dae0;padding:12px 14px;border-radius:6px;overflow:auto;font-size:8.8pt;line-height:1.45;break-inside:avoid}
+pre code{background:none;color:inherit;padding:0;font-size:inherit}
+img{max-width:100%;max-height:228mm;width:auto;height:auto;display:block;margin:14px auto 4px;border:1px solid var(--line);border-radius:4px;break-inside:avoid}
+p>em:only-child{display:block;text-align:center;color:var(--muted);font-size:9pt;margin:0 0 16px}
+h2{break-before:page}
+h1+p,h1+h2{break-before:auto}
+.cover{padding:60px 0 20px}
+@media print{body{max-width:none;padding:0}a{color:inherit;text-decoration:none}}
+</style></head><body><h1 id="funnelstream">FunnelStream</h1>
+<h2 id="project-documentation-real-time-e-commerce-and-campaign-analytics">Project documentation: real-time e-commerce and campaign analytics</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Project</strong></td>
+<td>FunnelStream, a graduation project</td>
+</tr>
+<tr>
+<td><strong>Version</strong></td>
+<td>1.0, 13 October 2026 (defense day)</td>
+</tr>
+<tr>
+<td><strong>Repository</strong></td>
+<td><code>https://github.com/omarmohosny/funnelstream</code>, branch <code>funnelstream-build</code></td>
+</tr>
+<tr>
+<td><strong>Scope</strong></td>
+<td>Simulated Egyptian online store and quick-commerce dark stores, from the first click to a dashboard decision</td>
+</tr>
+<tr>
+<td><strong>Stack</strong></td>
+<td>Python 3.11, Apache Kafka 3.7, Apache Spark 3.5.1 with Delta Lake 3.2, Databricks (Unity Catalog), PostgreSQL 16, Grafana 11.3, Apache Airflow 2.9, Power BI Desktop, Docker</td>
+</tr>
+</tbody>
+</table>
+<p>All data in this project is synthetic. No real customer, order or advertising account is involved. The inventory (stock levels) is simulated as well, and every dashboard that shows it says so.</p>
+<hr />
+<h2 id="contents">Contents</h2>
+<ol>
+<li>Executive summary</li>
+<li>Business problem and users</li>
+<li>Solution architecture</li>
+<li>Data sources and the simulator</li>
+<li>The streaming pipeline: Kafka, Bronze and Silver</li>
+<li>Live serving and monitoring: Postgres, Grafana and alerts</li>
+<li>The batch lane: Databricks Gold, checks and daily marts</li>
+<li>Inventory and express delivery</li>
+<li>The Power BI report</li>
+<li>Metric dictionary</li>
+<li>Quality assurance and measured results</li>
+<li>Security and privacy</li>
+<li>The LLM analytics assistant</li>
+<li>Running the project</li>
+<li>Known limitations and assumptions</li>
+<li>Future work</li>
+<li>Appendices</li>
+</ol>
+<hr />
+<h2 id="1-executive-summary">1. Executive summary</h2>
+<p>FunnelStream is an end-to-end data platform for a synthetic Egyptian online store. A simulator produces customer journeys, orders, deliveries, advertising numbers and dark-store stock. The events travel through Kafka into a Bronze and Silver Delta lake on local disk, are checked and deduplicated, and then split into two lanes:</p>
+<ul>
+<li><strong>A live lane</strong> that fills small Postgres tables within a minute and shows them in Grafana, with eight alert rules, for an <em>operations</em> user who must act now.</li>
+<li><strong>A batch lane</strong> that publishes Silver to Databricks, builds a Gold star schema with 66 data quality checks, adds daily marts in Postgres, and feeds a seven-page Power BI report for a <em>marketing</em> user who reads yesterday's results.</li>
+</ul>
+<p>The point that only a joined platform can make is the bridge between the two users: <strong>advertising spend sent to products that were out of stock</strong>. Operations sees it as lost demand while it happens. Marketing sees it the next morning as an estimated exposed spend.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kafka topics</td>
+<td>4 (<code>app.events</code>, <code>orders</code>, <code>delivery.events</code>, <code>inventory.events</code>)</td>
+</tr>
+<tr>
+<td>Silver tables</td>
+<td>10 streaming tables (events, orders, status, items, stock movements and snapshots, express orders, products, customers, quarantine) plus the campaign snapshots from the ad API</td>
+</tr>
+<tr>
+<td>Gold tables</td>
+<td>12 built (<code>rec_product</code> is an empty slot by design)</td>
+</tr>
+<tr>
+<td>Data quality checks</td>
+<td>66, run on every Gold build</td>
+</tr>
+<tr>
+<td>Postgres live and serving tables</td>
+<td>16</td>
+</tr>
+<tr>
+<td>Grafana dashboards and alert rules</td>
+<td>6 and 8</td>
+</tr>
+<tr>
+<td>Power BI</td>
+<td>7 pages, 92 visuals, 103 measures, 19 tables, 27 relationships</td>
+</tr>
+<tr>
+<td>Automated tests</td>
+<td>1,169 host tests pass, 0 fail; 217 Spark tests pass in Docker on 22 files</td>
+</tr>
+<tr>
+<td>Benchmark</td>
+<td>1,000,000 simulated events through the whole pipeline in 654.73 seconds</td>
+</tr>
+<tr>
+<td>Failure demo</td>
+<td>Kill and restart of the Silver job: <code>NO DUPLICATES</code> in two runs in a row</td>
+</tr>
+<tr>
+<td>Code</td>
+<td>about 30,000 lines of Python in 104 commits, of which about 17,800 lines are tests</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What the project demonstrates</strong></p>
+<ol>
+<li>A streaming pipeline that survives a crash without duplicates (checkpoints, idempotent <code>MERGE</code>, replay safety).</li>
+<li>Data quality as a feature: bad rows are quarantined with a reason, and the quarantine count is compared with the noise the simulator injected on purpose.</li>
+<li>A clean lakehouse model (Bronze, Silver, Gold) with slowly changing dimensions and last-touch and first-touch attribution.</li>
+<li>Two audiences served from the same events: real-time operations and next-day marketing.</li>
+<li>Honest numbers: every estimate (exposed spend, ROAS maturity) is labelled with its definition and its limit.</li>
+</ol>
+<hr />
+<h2 id="2-business-problem-and-users">2. Business problem and users</h2>
+<p>An online store spends money on Meta and Google campaigns, ships by cash on delivery (COD) and prepaid methods, and in the quick-commerce case serves orders from dark stores with a 20-minute express promise. Three questions are hard to answer in one place:</p>
+<ol>
+<li>Which campaign turns ad spend into <strong>delivered</strong> orders, not only placed orders, given that COD orders are often cancelled or fail delivery?</li>
+<li>Where do shoppers drop out between product view, cart, checkout and order, by channel and platform?</li>
+<li>Which stores and products need action today, and how much advertising is pushing shoppers to shelves that are empty?</li>
+</ol>
+<h3 id="the-business-questions-in-the-design">The business questions in the design</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>Answered by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Spend, CPA and ROAS per campaign and day. The headline ROAS uses delivered revenue; placed ROAS is secondary</td>
+<td>Power BI page Campaigns</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Conversion and cart and checkout abandonment per channel and platform</td>
+<td>Power BI page Funnel</td>
+</tr>
+<tr>
+<td>3</td>
+<td>The funnel from view to cart, checkout, order and delivery</td>
+<td>Power BI pages Funnel and Executive</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Cancellation, failed delivery and delivery lead time per carrier and city</td>
+<td>Power BI page Operations and Executive</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Products browsed and bought per city, recommended products (labelled co-view)</td>
+<td>Power BI page Products and cities</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Stock, stock-outs and demand that met an empty shelf, now</td>
+<td>Grafana operations dashboards</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Express delivery against its 20-minute promise</td>
+<td>Grafana Express SLA dashboard and alerts</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Estimated ad spend exposed to out-of-stock products, the next morning</td>
+<td>Power BI Marketing and stock, Grafana Marketing D-1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-two-end-users">The two end users</h3>
+<ul>
+<li><strong>Operations user</strong> (in the style of Breadfast or noon Minutes). Watches live traffic and the real stock of eight dark stores in Grafana. Needs to know within a minute which product ran out, how many shoppers arrived at the empty shelf, and which express order is about to miss its promise.</li>
+<li><strong>Marketing user.</strong> Reads each morning the report for day minus one: yesterday's campaign results and sales, including how much spend landed on products that could not be served.</li>
+</ul>
+<hr />
+<h2 id="3-solution-architecture">3. Solution architecture</h2>
+<p><img alt="Architecture" src="images/diagrams/architecture.png" /></p>
+<p><em>Figure 1. End-to-end architecture. Everything left of Databricks runs on one Windows laptop in Docker.</em></p>
+<h3 id="31-design-principles">3.1 Design principles</h3>
+<table>
+<thead>
+<tr>
+<th>Principle</th>
+<th>How it is implemented</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Medallion layers</strong></td>
+<td>Bronze keeps every raw message forever. Silver is validated, typed and deduplicated. Gold is business ready. Silver and Gold can be rebuilt from Bronze</td>
+</tr>
+<tr>
+<td><strong>At-least-once delivery with idempotent writes</strong></td>
+<td>Kafka producers use <code>acks=all</code> and idempotence. Silver deduplicates on <code>event_id</code> and writes with a Delta <code>MERGE</code>. Gold upserts on its primary key. The result is exactly-once in effect, without a broker switch</td>
+</tr>
+<tr>
+<td><strong>Single writer per table</strong></td>
+<td>Every Gold table is written only by the Databricks Gold build. The local Spark stream writes only Bronze, Silver and the live tables</td>
+</tr>
+<tr>
+<td><strong>Two lanes</strong></td>
+<td>A live lane for seconds-to-minutes decisions in Grafana. A batch lane for trusted, reconciled daily numbers in Power BI</td>
+</tr>
+<tr>
+<td><strong>Contracts at the door</strong></td>
+<td>A validator checks every event against a versioned schema. A bad event goes to quarantine with an error code, never into the numbers</td>
+</tr>
+<tr>
+<td><strong>Declared definitions</strong></td>
+<td>One metric dictionary (<code>docs/metrics.md</code>) defines every KPI. Dashboards repeat the definition next to the number</td>
+</tr>
+<tr>
+<td><strong>Fallbacks</strong></td>
+<td>A <code>GoldStore</code> interface has a Databricks and a Postgres backend, so the Gold tables can load into Postgres if Databricks is unavailable. The Airflow steps also run as a Python script</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-technology">3.2 Technology</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Event transport</td>
+<td>Apache Kafka 3.7 (KRaft), 4 topics</td>
+<td>Decouples producers and the lake, keeps messages while the job is down, replays after a crash</td>
+</tr>
+<tr>
+<td>Stream processing</td>
+<td>Spark Structured Streaming 3.5.1 in Docker, Delta Lake 3.2</td>
+<td>Checkpoints, <code>MERGE</code>, partitioned Delta tables. Spark needs Linux on this Windows host, so it runs in a container</td>
+</tr>
+<tr>
+<td>Local lake</td>
+<td>Delta folders under <code>data/lake</code></td>
+<td>No object store needed on a laptop</td>
+</tr>
+<tr>
+<td>Cloud lakehouse</td>
+<td>Databricks (Free Edition SQL warehouse, Unity Catalog <code>funnelstream</code>)</td>
+<td>Holds the Silver mirror and the Gold star schema</td>
+</tr>
+<tr>
+<td>Serving store</td>
+<td>PostgreSQL 16</td>
+<td>Small, fast tables for Grafana and Power BI marts</td>
+</tr>
+<tr>
+<td>Monitoring</td>
+<td>Grafana 11.3 with provisioned dashboards and alert rules</td>
+<td>Live view and alerts, defined as code</td>
+</tr>
+<tr>
+<td>Orchestration</td>
+<td>Apache Airflow 2.9 (optional profile)</td>
+<td>Daily ad report; the batch also runs as a script</td>
+</tr>
+<tr>
+<td>BI</td>
+<td>Power BI Desktop (project format, Import mode)</td>
+<td>Seven-page report on Gold and the Postgres marts</td>
+</tr>
+<tr>
+<td>Tooling</td>
+<td>Python 3.11, pytest, Docker Compose, PowerShell scripts</td>
+<td>Reproducible runs and demos</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-where-the-code-lives">3.3 Where the code lives</h3>
+<table>
+<thead>
+<tr>
+<th>Folder</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>simulator/</code>, <code>mock_apis/</code></td>
+<td>Event generators with injected noise, stock ledger, express orders; mock Meta and Google Ads API</td>
+</tr>
+<tr>
+<td><code>contracts/</code></td>
+<td>Event schemas, topic configuration, the validator, the store and district map</td>
+</tr>
+<tr>
+<td><code>kafka/</code></td>
+<td>Topic creation</td>
+</tr>
+<tr>
+<td><code>streaming/</code></td>
+<td>The Spark jobs: Bronze ingest, Silver clean, the combined pipeline, live metrics</td>
+</tr>
+<tr>
+<td><code>warehouse/</code></td>
+<td>Table definitions, DDL generators, the Databricks and Postgres stores, publish, the Gold SQL (13 numbered steps), data quality checks, live sink, daily marts</td>
+</tr>
+<tr>
+<td><code>batch/</code>, <code>airflow/dags/</code></td>
+<td>Attribution and campaign batch logic, the <code>ads_yesterday_report</code> DAG</td>
+</tr>
+<tr>
+<td><code>monitoring/</code></td>
+<td>Python builders for the Grafana dashboards (the JSON files are generated), provisioning and alert rules</td>
+</tr>
+<tr>
+<td><code>dashboards/powerbi/</code></td>
+<td>The Power BI project, <code>measures.dax</code> and <code>MODEL.md</code></td>
+</tr>
+<tr>
+<td><code>scripts/</code></td>
+<td>Demo, benchmark, smoke test, failure demo, publish, Gold build, daily marts</td>
+</tr>
+<tr>
+<td><code>src/llm/</code></td>
+<td>The LLM analytics assistant</td>
+</tr>
+<tr>
+<td><code>tests/</code></td>
+<td>88 test files</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>Specifications, plans, metrics, running guide, this document</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-data-sources-and-the-simulator">4. Data sources and the simulator</h2>
+<p>The simulator is a seeded generator: the same seed gives the same customers, products and events, which makes demos and replay tests repeatable.</p>
+<h3 id="41-what-it-produces">4.1 What it produces</h3>
+<ul>
+<li><strong>App and web events</strong> with a funnel and drop-off at each step: <code>app_open</code>, <code>page_view</code>, <code>product_view</code>, <code>product_click</code>, <code>product_search</code>, <code>add_to_cart</code>, <code>remove_from_cart</code>, <code>checkout_started</code>, <code>purchase</code>. Anonymous events have no <code>customer_id</code> and are keyed by <code>session_id</code>.</li>
+<li><strong>Orders and deliveries</strong> created only after checkout, with a full lifecycle (section 5.4).</li>
+<li><strong>Catalog and customers</strong>: about 200 products in four categories (fashion, beauty, electronics, home) and 5,000 customers, with price and category changes so that the slowly changing dimensions have history.</li>
+<li><strong>Campaign data</strong> from a mock Meta and Google Ads API, consistent with the <code>utm_campaign</code> values in the traffic.</li>
+<li><strong>Stock events</strong> for eight dark stores (section 8).</li>
+</ul>
+<h3 id="42-egyptian-realism">4.2 Egyptian realism</h3>
+<p>Egyptian names and <code>+20</code> phone numbers (kept only in Bronze and Silver); cities weighted by population (Cairo, Giza, Alexandria, Mansoura, Tanta, Assiut and others) with the official districts under each city (for example Nasr City, Maadi and Heliopolis under Cairo); EGP; payment methods cash on delivery (the largest share), Fawry, Vodafone Cash, InstaPay and card; carriers Bosta, Aramex and J&amp;T Express; Ramadan, Eid and weekend peaks; events stored in UTC with the business day taken in <code>Africa/Cairo</code>.</p>
+<h3 id="43-injected-noise">4.3 Injected noise</h3>
+<p>The simulator injects faults on purpose, at configurable seeded rates, and writes the counts to <code>noise_manifest.json</code>. After Silver, the pipeline compares the quarantine count with the manifest; they must match within a tolerance.</p>
+<table>
+<thead>
+<tr>
+<th>Noise</th>
+<th>Rate</th>
+<th>Handled by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Duplicate event (same <code>event_id</code>)</td>
+<td>1%</td>
+<td>Silver deduplicates on <code>event_id</code></td>
+</tr>
+<tr>
+<td>Malformed or truncated JSON</td>
+<td>0.3%</td>
+<td>Quarantine <code>BAD_JSON</code></td>
+</tr>
+<tr>
+<td>Missing required field</td>
+<td>0.3%</td>
+<td>Quarantine <code>MISSING_FIELD</code></td>
+</tr>
+<tr>
+<td>Unknown event type or version</td>
+<td>0.2%</td>
+<td>Quarantine <code>UNKNOWN_EVENT_TYPE</code>, <code>BAD_VERSION</code></td>
+</tr>
+<tr>
+<td>Negative or zero price</td>
+<td>0.2%</td>
+<td>Quarantine <code>NEGATIVE_PRICE</code></td>
+</tr>
+<tr>
+<td>Future timestamp</td>
+<td>0.1%</td>
+<td>Quarantine <code>FUTURE_TIMESTAMP</code></td>
+</tr>
+<tr>
+<td>Late event (10 to 120 minutes) and very late</td>
+<td>2% and 0.3%</td>
+<td><code>is_late</code> flag, left out of live metrics, corrected by the batch</td>
+</tr>
+<tr>
+<td>Timestamp with a non-UTC offset</td>
+<td>1%</td>
+<td>Normalised to UTC</td>
+</tr>
+<tr>
+<td>Product id not in the catalog, null product id</td>
+<td>0.3% and 0.5%</td>
+<td>Quarantine <code>UNKNOWN_PRODUCT</code>, <code>MISSING_FIELD</code></td>
+</tr>
+<tr>
+<td>Dirty <code>city</code>, <code>device</code>, <code>district</code> text</td>
+<td>3% and 2%</td>
+<td>Standardised by lookup</td>
+</tr>
+<tr>
+<td>UTM values upper-cased or padded</td>
+<td>5% of campaign URLs</td>
+<td>Lower-cased and trimmed</td>
+</tr>
+<tr>
+<td>Number sent as a string</td>
+<td>0.3%</td>
+<td>Cast, quarantined if it fails</td>
+</tr>
+<tr>
+<td>Order status out of order, cancel after shipment</td>
+<td>0.5% and 0.3%</td>
+<td>Resolved by status rank; the cancel goes to quarantine</td>
+</tr>
+<tr>
+<td>Bot session (hundreds of events in seconds)</td>
+<td>0.1% of sessions</td>
+<td><code>is_bot</code> flag, left out of funnel and attribution</td>
+</tr>
+<tr>
+<td>Ad API: duplicate pull, <code>clicks &gt; impressions</code>, negative spend, HTTP 503</td>
+<td>small</td>
+<td>Latest-pull rule, SQL checks, Airflow retries</td>
+</tr>
+</tbody>
+</table>
+<p>Synthetic data cannot be proven fully realistic. The assumptions are documented and the distributions are checked against them.</p>
+<hr />
+<h2 id="5-the-streaming-pipeline-kafka-bronze-and-silver">5. The streaming pipeline: Kafka, Bronze and Silver</h2>
+<h3 id="51-kafka-topics">5.1 Kafka topics</h3>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Event types</th>
+<th>Key</th>
+<th>Partitions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app.events</code></td>
+<td><code>app_open</code>, <code>page_view</code>, <code>product_view</code>, <code>product_click</code>, <code>product_view_end</code>, <code>product_search</code>, <code>add_to_cart</code>, <code>remove_from_cart</code>, <code>checkout_started</code>, <code>purchase</code></td>
+<td><code>session_id</code></td>
+<td>6</td>
+</tr>
+<tr>
+<td><code>orders</code></td>
+<td><code>order_created</code>, <code>payment_authorised</code>, <code>order_packed</code>, <code>order_shipped</code>, <code>order_cancelled</code>, <code>order_completed</code>, <code>order_returned</code></td>
+<td><code>order_id</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>delivery.events</code></td>
+<td><code>out_for_delivery</code>, <code>delivered</code>, <code>delivery_failed</code></td>
+<td><code>order_id</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>inventory.events</code></td>
+<td><code>stock_snapshot</code>, <code>stock_movement</code></td>
+<td><code>store_id</code></td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>Keys keep per-session and per-order ordering. Every event uses one envelope: <code>event_id</code>, <code>event_type</code>, <code>event_version</code>, <code>event_time</code> and a <code>payload</code> object.</p>
+<h3 id="52-bronze">5.2 Bronze</h3>
+<p>Bronze tables hold the raw message value plus Kafka metadata (partition, offset, timestamp) and the ingest time. Nothing is dropped or changed. Bronze is append-only and is the source for any rebuild.</p>
+<h3 id="53-silver">5.3 Silver</h3>
+<p>Silver validates, types, normalises and deduplicates. Every table has a key, and every write is a Delta <code>MERGE</code> on that key, so replaying a batch changes nothing.</p>
+<p><img alt="Quality flow" src="images/diagrams/quality.png" /></p>
+<p><em>Figure 2. What happens to an event on its way into Silver.</em></p>
+<p><img alt="Data layers" src="images/diagrams/layers.png" /></p>
+<p><em>Figure 3. The three layers and the tables in each.</em></p>
+<table>
+<thead>
+<tr>
+<th>Silver table</th>
+<th>Grain</th>
+<th>Key</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>silver_events</code></td>
+<td>one app or web event</td>
+<td><code>event_id</code></td>
+</tr>
+<tr>
+<td><code>silver_orders</code>, <code>silver_order_status</code></td>
+<td>order, and each status change</td>
+<td><code>order_id</code>; <code>event_id</code></td>
+</tr>
+<tr>
+<td><code>silver_order_items</code></td>
+<td>one order line</td>
+<td><code>order_id</code>, <code>line_no</code></td>
+</tr>
+<tr>
+<td><code>silver_stock_movements</code>, <code>silver_stock_snapshots</code></td>
+<td>one stock event</td>
+<td><code>event_id</code></td>
+</tr>
+<tr>
+<td><code>silver_express_orders</code></td>
+<td>one express order</td>
+<td><code>order_id</code></td>
+</tr>
+<tr>
+<td><code>silver_customers</code>, <code>silver_products</code></td>
+<td>one version of an entity</td>
+<td>id and <code>updated_at</code></td>
+</tr>
+<tr>
+<td><code>silver_campaign_snapshots</code></td>
+<td>one campaign per report date per pull</td>
+<td><code>campaign_id</code>, <code>report_date</code>, <code>pulled_at</code></td>
+</tr>
+<tr>
+<td><code>silver_quarantine</code></td>
+<td>one rejected row</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Key Silver rules:</p>
+<ul>
+<li><code>is_late</code> is true when Kafka time minus event time exceeds 10 minutes. Late rows stay in Silver and Gold but are left out of the live metrics.</li>
+<li>A micro-batch is deduplicated on its key before the <code>MERGE</code>, so two rows with the same key never meet in one merge.</li>
+<li>A cancel after <code>order_shipped</code> is rejected to quarantine.</li>
+<li>Silver can be rebuilt from Bronze at any time.</li>
+</ul>
+<h3 id="54-the-order-lifecycle">5.4 The order lifecycle</h3>
+<p><img alt="Order lifecycle" src="images/diagrams/lifecycle.png" /></p>
+<p><em>Figure 4. Order lifecycle. Cash-on-delivery orders skip <code>payment_authorised</code>. A cancel is valid only before shipment, judged by event time.</em></p>
+<p>Arrival order is not trusted. The current status of an order is the status with the highest <strong>rank</strong>: <code>order_created</code> 1, <code>payment_authorised</code> 2, <code>order_packed</code> 3, <code>order_shipped</code> 4, <code>out_for_delivery</code> and <code>delivery_failed</code> 5, <code>delivered</code> 6, <code>order_completed</code> and <code>order_returned</code> 7 (a tie is resolved by the latest status time), <code>order_cancelled</code> 2 and terminal.</p>
+<h3 id="55-reliability">5.5 Reliability</h3>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>What protects the data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spark job killed</td>
+<td>Checkpoints on disk hold the committed Kafka offsets. The restarted job resumes from them and reads what Kafka kept</td>
+</tr>
+<tr>
+<td>Message delivered twice</td>
+<td><code>MERGE</code> on the key inserts nothing the second time</td>
+</tr>
+<tr>
+<td>Event arrives late or out of order</td>
+<td><code>is_late</code> flag; status rank; stock is recomputed in full, never incremented</td>
+</tr>
+<tr>
+<td>Bad message</td>
+<td>Quarantine with an error code and the raw payload</td>
+</tr>
+<tr>
+<td>Postgres briefly unavailable</td>
+<td>The live sink keeps the touched minutes pending and retries on the next batch; Silver is the source of truth</td>
+</tr>
+<tr>
+<td>A Gold step fails</td>
+<td>The Gold build stops on failed checks and nothing downstream is trusted</td>
+</tr>
+</tbody>
+</table>
+<h3 id="56-performance">5.6 Performance</h3>
+<p>On one laptop (12 CPUs, Docker limited to about 8 GB) the benchmark of 1,000,000 simulated events (1,022,333 Kafka messages) ran the whole pipeline in 654.73 seconds. See section 11.4.</p>
+<hr />
+<h2 id="6-live-serving-and-monitoring-postgres-grafana-and-alerts">6. Live serving and monitoring: Postgres, Grafana and alerts</h2>
+<p>After each Silver batch a <strong>live sink</strong> recomputes only the minutes and the store and product pairs that the batch touched, and writes them to Postgres. Grafana reads Postgres with a read-only role (<code>grafana_ro</code>).</p>
+<h3 id="61-postgres-live-and-serving-tables">6.1 Postgres live and serving tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>live_metrics_minute</code></td>
+<td>events, active sessions, product views, add to cart, orders per minute and country (non-late, non-bot events)</td>
+</tr>
+<tr>
+<td><code>pipeline_health_minute</code>, <code>pipeline_batch_log</code>, <code>pipeline_heartbeat</code></td>
+<td>late and quarantined counts per minute, one row per batch, a heartbeat per component</td>
+</tr>
+<tr>
+<td><code>live_stock_now</code>, <code>live_stock_store_minute</code></td>
+<td>current stock per store and product; a per-minute snapshot per store (kept 24 hours)</td>
+</tr>
+<tr>
+<td><code>live_oos_demand_minute</code></td>
+<td>demand per minute, store, product and campaign, with the flag <em>out of stock when the minute was written</em></td>
+</tr>
+<tr>
+<td><code>live_express_orders</code></td>
+<td>express orders of the last three hours with their own promise</td>
+</tr>
+<tr>
+<td><code>dim_store</code>, <code>dim_store_district</code>, <code>dim_product_current</code></td>
+<td>the store map and current product names, filled once from one source</td>
+</tr>
+<tr>
+<td><code>inventory_daily</code>, <code>oos_demand_daily</code>, <code>express_daily</code>, <code>marketing_d1_campaign</code>, <code>marketing_d1_product</code></td>
+<td>daily marts (section 7.5)</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Platform state" src="images/terminal/platform_state.png" /></p>
+<p><em>Figure 5. The running platform after the rehearsal of 13 October 2026: containers, the four Kafka topics and the row counts of the live tables.</em></p>
+<h3 id="62-dashboards">6.2 Dashboards</h3>
+<p>Six dashboards are provisioned as code: Python builders in <code>monitoring/</code> generate the JSON, and a test fails if a file drifts from its builder. All use one Postgres data source.</p>
+<h4 id="live-pipeline-fs-live">Live pipeline (<code>fs-live</code>)</h4>
+<p>Watches the pipeline itself: events per minute, active sessions, orders, product views and add-to-cart, the late-event rate and the quarantine share, quarantine rows per hour, and the age of the Silver heartbeat, the last Gold update and the last publish.</p>
+<p><img alt="Live pipeline dashboard" src="images/grafana/pipeline_live.png" /></p>
+<p><em>Figure 6. "FunnelStream: live pipeline" during the rehearsal: about 2,400 to 2,950 events per minute.</em></p>
+<h4 id="operations-live-inventory-fs-inventory-ops">Operations, live inventory (<code>fs-inventory-ops</code>)</h4>
+<p>The operations user's page: out-of-stock and low-stock products now, how old the last stock change is, demand that arrived on out-of-stock products per minute (the bridge panel), app traffic, the lowest stock and the lost demand of the last 15 minutes, and an express section with at-risk orders, breaches, the on-time rate and the slowest orders.</p>
+<p><img alt="Operations dashboard" src="images/grafana/operations_live_inventory.png" /></p>
+<p><em>Figure 7. "FunnelStream: Operations, live inventory". The express section shows breaches because the rehearsal used a 2-minute promise and delivered every 15th order late on purpose.</em></p>
+<h4 id="express-delivery-sla-fs-express-sla">Express delivery SLA (<code>fs-express-sla</code>)</h4>
+<p>Dedicated to the 20-minute promise: on-time rate (target 95%) with colours at 90 and 95, breaches, orders at risk, open orders, the median delivery time, the on-time rate and the p50 and p90 delivery time by order creation time, a table by store and the open orders closest to their promise. Empty five-minute buckets are shown as gaps, not as 0%.</p>
+<p><img alt="Express SLA dashboard" src="images/grafana/express_sla.png" /></p>
+<p><em>Figure 8. "FunnelStream: Express delivery SLA". The dashed line is the 95% target.</em></p>
+<h4 id="live-stock-monitor-fs-live-stock">Live stock monitor (<code>fs-live-stock</code>)</h4>
+<p>Out-of-stock, low-stock, the in-stock rate and units on hand; out-of-stock products and units on hand per store over time (from the per-minute snapshots); units added and removed per minute; demand on empty shelves; a stock health table by store and a restock watchlist.</p>
+<p><img alt="Live stock monitor" src="images/grafana/live_stock_monitor.png" /></p>
+<p><em>Figure 9. "FunnelStream: Live stock monitor".</em></p>
+<h4 id="inventory-insights-daily-fs-inventory-daily">Inventory insights, daily (<code>fs-inventory-daily</code>)</h4>
+<p>Closing stock, products out of stock at day end, oversold units, shrinkage share, closing stock by store, units sold, received and shrunk, lowest days of cover, demand on empty shelves and the express on-time rate and slowest delivery per day.</p>
+<p><img alt="Inventory insights" src="images/grafana/inventory_daily.png" /></p>
+<p><em>Figure 10. "FunnelStream: Inventory insights, daily".</em></p>
+<h4 id="marketing-d-1-fs-marketing-d1">Marketing, D-1 (<code>fs-marketing-d1</code>)</h4>
+<p>Yesterday's spend, orders, ROAS placed and delivered, the estimated spend exposed to out-of-stock products and the out-of-stock click share, a campaign table sorted by exposed spend and the top products by revenue at risk.</p>
+<p><img alt="Marketing D-1" src="images/grafana/marketing_d1.png" /></p>
+<p><em>Figure 11. "FunnelStream: Marketing, D-1".</em></p>
+<h3 id="63-alert-rules">6.3 Alert rules</h3>
+<p>Eight rules are provisioned. Each has a condition, a runbook line and a webhook to a local alert sink.</p>
+<table>
+<thead>
+<tr>
+<th>Rule (uid)</th>
+<th>Fires when</th>
+<th>For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Late-event rate above 5% (<code>fs-late-rate</code>)</td>
+<td>late events over the last 5 minutes exceed 5% with at least 20 events</td>
+<td>1m</td>
+</tr>
+<tr>
+<td>Quarantine share above 2% (<code>fs-quarantine-share</code>)</td>
+<td>quarantined rows over the last 5 minutes exceed 2% with at least 20 rows</td>
+<td>1m</td>
+</tr>
+<tr>
+<td>Silver job silent for 2 minutes (<code>fs-silver-silent</code>)</td>
+<td>the Silver heartbeat is older than 2 minutes (no data also fires)</td>
+<td>0</td>
+</tr>
+<tr>
+<td>No events for 5 minutes (<code>fs-no-events</code>)</td>
+<td>no Silver event arrived in the last 5 minutes (no data also fires)</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products (<code>fs-oos-demand</code>)</td>
+<td>at least 5 add-to-carts on an out-of-stock product of one store in each of two consecutive minutes</td>
+<td>0</td>
+</tr>
+<tr>
+<td>An express order missed its delivery promise (<code>fs-express-sla</code>)</td>
+<td>any breach: delivered after the promise, or undelivered beyond the promise plus a 1-minute grace</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Express on-time rate is below the 95% target (<code>fs-express-ontime</code>)</td>
+<td>on-time rate below 95% over 30 minutes with at least 5 orders</td>
+<td>2m</td>
+</tr>
+<tr>
+<td>Many products are out of stock in one store (<code>fs-stock-outs</code>)</td>
+<td>more than 20% of a store's products are out of stock</td>
+<td>1m</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Alert rules" src="images/grafana/alert_rules.png" /></p>
+<p><em>Figure 12. The provisioned rules in Grafana (8 rules). The four firing at capture time were firing because the rehearsal pipeline had been stopped, which is what the silence and no-events rules are meant to detect.</em></p>
+<hr />
+<h2 id="7-the-batch-lane-databricks-gold-checks-and-daily-marts">7. The batch lane: Databricks Gold, checks and daily marts</h2>
+<h3 id="71-publish-to-databricks">7.1 Publish to Databricks</h3>
+<p>Databricks cannot reach the laptop's Kafka, so Silver crosses as files. <code>scripts/publish_silver.py</code> exports the Silver tables with an allow-list of columns (no names or phone numbers), uploads Parquet to a Unity Catalog volume and <code>MERGE</code>s it into the Silver mirror (insert-only and idempotent). An optional <code>--reset</code> truncates the owned mirror tables before a fresh publish.</p>
+<h3 id="72-the-gold-model">7.2 The Gold model</h3>
+<p>Gold is written only by the Databricks Gold build, as 13 numbered SQL steps (step 12, <code>rec_product</code>, is an empty slot).</p>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Grain</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dim_customer</code></td>
+<td>customer version</td>
+<td>SCD2: tracked <code>city</code>, <code>district</code>, <code>primary_device</code>; <code>valid_from</code>, <code>valid_to</code>, <code>is_current</code></td>
+</tr>
+<tr>
+<td><code>dim_product</code></td>
+<td>product version</td>
+<td>SCD2: tracked <code>category</code>, <code>price</code>, <code>is_active</code></td>
+</tr>
+<tr>
+<td><code>dim_campaign</code>, <code>dim_date</code></td>
+<td>campaign; day</td>
+<td><code>dim_date</code> flags weekend, Friday and Saturday, Ramadan, Eid and holidays. Key <code>-1</code> is the unknown member of the other dimensions</td>
+</tr>
+<tr>
+<td><code>fact_orders</code></td>
+<td>order, current state</td>
+<td>resolved by status rank; delivery lead hours; cancelled, delivered, returned and first-attempt flags; first-order flag</td>
+</tr>
+<tr>
+<td><code>fact_order_lines</code></td>
+<td>order line</td>
+<td>quantity and line total in EGP</td>
+</tr>
+<tr>
+<td><code>fact_attribution</code></td>
+<td>order and model</td>
+<td><code>last_touch</code> and <code>first_touch</code>; direct orders have a NULL campaign</td>
+</tr>
+<tr>
+<td><code>agg_orders_daily</code></td>
+<td>day, channel, payment method, platform</td>
+<td>placed, delivered, cancelled, returned and failed-attempt orders and revenue</td>
+</tr>
+<tr>
+<td><code>agg_funnel_daily</code></td>
+<td>day, country, channel, platform</td>
+<td>sessions, cart and checkout sessions, orders, abandon rates</td>
+</tr>
+<tr>
+<td><code>agg_campaign_daily</code></td>
+<td>campaign, report date, model</td>
+<td>spend, impressions, clicks, orders, ROAS placed and delivered, CPA, cost per delivered order</td>
+</tr>
+<tr>
+<td><code>agg_city_product_daily</code></td>
+<td>city, product, day</td>
+<td>views, add to cart, units, revenue</td>
+</tr>
+<tr>
+<td><code>customer_360</code></td>
+<td>customer, current state</td>
+<td>orders, spend, last order, preferred payment, repeat buyer</td>
+</tr>
+</tbody>
+</table>
+<p>Dimension keys are resolved when the fact is built, from the dimension version valid at event time. Rows without a match go to quarantine, not to a guessed key.</p>
+<p><img alt="Gold checks" src="images/terminal/gold_checks.png" /></p>
+<p><em>Figure 13. Gold build on the scratch catalog, 13 October 2026: <code>BATCH OK</code>, 66 checks run, 0 failed. The excerpt shows the reconciliation, SCD2 and quarantine-against-manifest checks.</em></p>
+<h3 id="73-attribution">7.3 Attribution</h3>
+<p><code>last_touch</code> gives an order to the campaign of its own session click first, and otherwise to the customer's last click in the previous seven days. <code>first_touch</code> gives it to the first click. An order without a click is direct. The report states both, because last touch favours bottom-funnel channels such as search and retargeting, and neither proves incrementality.</p>
+<h3 id="74-data-quality-checks">7.4 Data quality checks</h3>
+<p>The build runs 66 SQL checks and stops on a failure. They fall into groups:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Duplicate keys</td>
+<td>every Silver and Gold table has zero duplicate primary keys</td>
+</tr>
+<tr>
+<td>Silver hygiene</td>
+<td>no null <code>event_id</code>, no event in the future, no unknown product, every status allowed, <code>line_total = quantity x unit_price</code>, no <code>clicks &gt; impressions</code>, no negative spend</td>
+</tr>
+<tr>
+<td>Hierarchy and history</td>
+<td>exactly one current row per dimension key, no overlapping validity, district belongs to its city</td>
+</tr>
+<tr>
+<td>Reconciliation</td>
+<td><code>order_total</code> equals the sum of its lines; the order and line counts in Gold match Silver; attribution has two rows per order and its total matches the order total</td>
+</tr>
+<tr>
+<td>Manifest</td>
+<td>the quarantine count equals the noise manifest within 2%</td>
+</tr>
+<tr>
+<td>Reported</td>
+<td>late rate, quarantine share, row counts per table</td>
+</tr>
+</tbody>
+</table>
+<h3 id="75-daily-marts-and-the-ad-report">7.5 Daily marts and the ad report</h3>
+<p>Two daily builders write Postgres tables that Grafana and Power BI read:</p>
+<ul>
+<li><code>scripts/build_inventory_daily.py</code> rebuilds the last two Cairo days of <code>inventory_daily</code>, <code>oos_demand_daily</code> and <code>express_daily</code>. Rebuilding two days settles an order that was still open at midnight.</li>
+<li><code>scripts/build_d1_marketing.py</code> builds <code>marketing_d1_campaign</code> and <code>marketing_d1_product</code> for day minus one: spend, ROAS and CPA come from the Databricks <code>agg_campaign_daily</code>; out-of-stock demand comes from the Postgres live demand table.</li>
+</ul>
+<p>The Airflow DAG <code>ads_yesterday_report</code> (03:00 UTC) pulls the ad API once for yesterday, stores it in <code>silver_campaign_snapshots</code> and writes a JSON report. A rerun on the same day returns the stored report without calling the API.</p>
+<hr />
+<h2 id="8-inventory-and-express-delivery">8. Inventory and express delivery</h2>
+<p>This feature joins the two users. Stock is simulated for eight dark stores: Nasr City, Maadi and New Cairo in Cairo; Dokki in Giza; Montaza and Raml in Alexandria; one in Mansoura; one in Tanta. Each district has one primary store. Assiut and "other" have no store and are excluded from out-of-stock metrics.</p>
+<p><img alt="Inventory flow" src="images/diagrams/inventory.png" /></p>
+<p><em>Figure 14. From a stock event to the operations alert and the next-morning marketing number.</em></p>
+<h3 id="81-the-stock-model">8.1 The stock model</h3>
+<p>A <code>StockLedger</code> in the simulator holds stock per store and product and never lets it go below zero. It emits an opening snapshot for every pair, a baseline snapshot every five minutes and a <code>sold</code> movement for each order line. A sale is booked when the order is created (reserve on order). Demand events are not stopped by empty stock: that is the lost demand. A <strong>product is out of stock</strong> when <code>available &lt;= 0</code>, and <strong>low</strong> when <code>0 &lt; available &lt; reorder point</code>.</p>
+<p>The <strong>hero scenario</strong> (<code>--scenario hero-stockout</code>) makes three hero products at the busiest store start with 40 units, boosts their views and add-to-carts, and restocks them about 90 seconds after the stock-out. The same seed gives the same demo.</p>
+<h3 id="82-express-orders">8.2 Express orders</h3>
+<p>Orders from the quick-commerce section carry <code>service = express</code> and their own <code>promised_minutes</code> (20). A normal express order takes 8 to 17.5 minutes. Definitions used everywhere: <strong>on time</strong> means delivered within the order's promise; <strong>breached</strong> means delivered later, or still undelivered beyond the promise plus one minute of grace; <strong>at risk</strong> means undelivered with at least 75% of the promise used. A rehearsal can shorten the promise and force late orders (<code>--express-promise-minutes 2 --late-express-every 15</code>).</p>
+<h3 id="83-exposed-spend-the-bridge">8.3 Exposed spend, the bridge</h3>
+<pre><code>oos_click_share = out-of-stock landing clicks / served landing clicks
+exposed_spend   = spend x oos_click_share
+revenue_at_risk = add-to-carts on out-of-stock products x price
+</code></pre>
+<p>Both click counts come from the same table and count only served districts. The advertising API gives spend per campaign per day only, so exposed spend assumes spend is spread evenly over served landing clicks. It is titled "estimated spend exposed to out-of-stock". It is not a measured loss and not "wasted", because a shopper may buy a substitute.</p>
+<h3 id="84-measured-timeline-of-the-demo">8.4 Measured timeline of the demo</h3>
+<p>Measured on 12 October 2026 (Windows laptop, Docker with 8 GB, a clean lake, <code>-Rate 10 -SyncEvery 0 -Inventory</code>, times from Postgres and the alert sink):</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stock rows and per-minute history appear</td>
+<td>with the first Silver batches; one history row per store per minute</td>
+</tr>
+<tr>
+<td>First hero product reaches <code>available = 0</code></td>
+<td>about 4 minutes after the demo command (Galabeya 61 at Nasr City, 21:16:14 Cairo time)</td>
+</tr>
+<tr>
+<td>Alert "Demand on out-of-stock products" fires</td>
+<td>1 minute after the stock-out, resolves 1 minute later</td>
+</tr>
+<tr>
+<td>Restock</td>
+<td>about 2 minutes after the stock-out; the out-of-stock count falls to 0</td>
+</tr>
+<tr>
+<td>Express rehearsal</td>
+<td>33 express orders, 31 on time, 2 breached; first breach about 7 minutes after the command</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-the-power-bi-report">9. The Power BI report</h2>
+<p>The report is a Power BI project in <code>dashboards/powerbi/</code> (a <code>.pbip</code> with a report and a semantic model folder). It reads two sources in Import mode, with read-only credentials: eleven Databricks Gold tables and seven Postgres marts (nineteen tables with the measures table), joined by 27 relationships.</p>
+<h3 id="91-model">9.1 Model</h3>
+<p>The report sits at the end of both lanes (Figure 1). The model is a star: four dimensions and the facts around them.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Relates to (many side, single direction, many-to-one)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Date</code> (<code>date_key</code>)</td>
+<td><code>Orders Daily</code>, <code>Orders</code>, <code>Campaign Daily</code>, <code>Funnel Daily</code>, <code>Inventory Daily</code>, <code>OOS Demand Daily</code>, <code>Marketing D1 Campaign</code>, <code>Marketing D1 Product</code></td>
+</tr>
+<tr>
+<td><code>Campaign</code> (<code>campaign_id</code>)</td>
+<td><code>Campaign Daily</code>, <code>Marketing D1 Campaign</code>, <code>OOS Demand Daily</code>, <code>Orders</code></td>
+</tr>
+<tr>
+<td><code>Store</code> (<code>store_id</code>)</td>
+<td><code>Stock Now</code>, <code>Inventory Daily</code>, <code>OOS Demand Daily</code>, <code>Express Daily</code>, <code>Marketing D1 Product</code></td>
+</tr>
+<tr>
+<td><code>Product</code> (<code>product_id</code>)</td>
+<td><code>Stock Now</code>, <code>Inventory Daily</code>, <code>OOS Demand Daily</code>, <code>Marketing D1 Product</code></td>
+</tr>
+</tbody>
+</table>
+<p>There is no many-to-many relationship and no bidirectional filter. <code>Customer</code> and <code>Customer 360</code> follow their own columns. The report shows <code>customer_id</code> only: no names or phone numbers.</p>
+<h3 id="92-design-system">9.2 Design system</h3>
+<p>The report was redesigned on 12 October 2026 around one design identity: a navy header band on every page with a one-line takeaway as its subtitle, one blue accent for the primary series and orange for the comparison, status colours only with a word, Segoe UI, a 1280 x 720 canvas on a computed grid with equal margins and gaps, at most three slicers per page (64 pixels tall, dropdown), six cards at most per row with labels of at most 24 characters, ranked bars instead of pie and donut charts, and units in titles. Cards never show "(Blank)": the measures return a value for an empty slice.</p>
+<h3 id="93-the-seven-pages">9.3 The seven pages</h3>
+<p>Each page answers one question.</p>
+<h4 id="1-executive-is-revenue-on-track-and-where-do-orders-leak">1. Executive: is revenue on track, and where do orders leak?</h4>
+<p>Placed and delivered revenue, orders, average order value, delivered share and cancel rate; revenue by day; orders by channel and payment method; the leak by payment method (cancelled, returned and failed-attempt rate). The subtitle states that the simulated data has a one-day volume peak on 9 October (about 55% of all revenue on one day).</p>
+<p><img alt="Executive" src="images/powerbi/01_executive.png" /></p>
+<p><em>Figure 15. Executive page.</em></p>
+<h4 id="2-campaigns-where-should-the-next-budget-go">2. Campaigns: where should the next budget go?</h4>
+<p>Spend, CPA, CTR, conversion rate and ROAS delivered; ROAS delivered against placed by campaign; cost per delivered order; a campaign scorecard. The subtitle reminds the reader that ad numbers use the ad API's UTC day and that the latest days are still settling.</p>
+<p><img alt="Campaigns" src="images/powerbi/02_campaigns.png" /></p>
+<p><em>Figure 16. Campaigns page.</em></p>
+<h4 id="3-marketing-and-stock-which-campaign-sent-shoppers-to-empty-shelves">3. Marketing and stock: which campaign sent shoppers to empty shelves?</h4>
+<p>Exposed spend, out-of-stock click share, exposed share of spend, revenue at risk and out-of-stock add to cart; exposed spend next to each campaign's own spend; products by revenue at risk; add to cart on out-of-stock products by category.</p>
+<p><img alt="Marketing and stock" src="images/powerbi/03_marketing_and_stock.png" /></p>
+<p><em>Figure 17. Marketing and stock page.</em></p>
+<h4 id="4-operations-what-to-restock-and-is-the-20-minute-promise-holding">4. Operations: what to restock, and is the 20-minute promise holding?</h4>
+<p>Out-of-stock and low-stock lines and rate, express orders, the express on-time rate and breaches; units sold and received by day; shrinkage rate by store; products that ended out of stock; express breaches by store; average delivery hours by carrier (all orders, standard delivery).</p>
+<p><img alt="Operations" src="images/powerbi/04_operations.png" /></p>
+<p><em>Figure 18. Operations page.</em></p>
+<h4 id="5-funnel-which-step-and-channel-should-we-fix-first">5. Funnel: which step and channel should we fix first?</h4>
+<p>Cart abandon rate, checkout abandon rate and session conversion; the funnel from sessions to orders; abandon rate by channel; sessions by channel.</p>
+<p><img alt="Funnel" src="images/powerbi/05_funnel.png" /></p>
+<p><em>Figure 19. Funnel page.</em></p>
+<h4 id="6-products-and-cities-what-should-we-stock-and-promote-and-where">6. Products and cities: what should we stock and promote, and where?</h4>
+<p>Revenue, units, page views, add to cart and cart rate; revenue by category and by city; add to cart by category; top products.</p>
+<p><img alt="Products and cities" src="images/powerbi/06_products_and_cities.png" /></p>
+<p><em>Figure 20. Products and cities page.</em></p>
+<h4 id="7-customers-who-buys-again-and-who-should-we-win-back">7. Customers: who buys again, and who should we win back?</h4>
+<p>Customers on file, buyers, repeat buyer rate, lifetime spend, average spend per buyer and quiet buyers (7 or more days since the last order); buyers by favourite category and payment method; lifetime spend by category and city; top customers.</p>
+<p><img alt="Customers" src="images/powerbi/07_customers.png" /></p>
+<p><em>Figure 21. Customers page.</em></p>
+<h3 id="94-notes-on-specific-measures">9.4 Notes on specific measures</h3>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Revenue vs Prior 7 Days</code></td>
+<td>Latest seven days against the seven before, from explicit date ranges. On this data it reads very high because of the 9 October spike</td>
+</tr>
+<tr>
+<td><code>Average Delivery Hours</code></td>
+<td>Ignores delivered orders with zero hours. Carrier averages are about 21 to 25 hours; the earlier 4 to 5 hours were diluted by those zeros</td>
+</tr>
+<tr>
+<td><code>Days of Cover (max 90)</code></td>
+<td>Capped at 90 so a slow product does not dominate the axis</td>
+</tr>
+<tr>
+<td><code>Quiet Buyers (7+ days)</code></td>
+<td>Replaces a 30-day measure that was empty, because the data covers about 15 days</td>
+</tr>
+<tr>
+<td><code>Maturity Label</code></td>
+<td>"Settling" or "Settled", marking days whose delivered revenue can still grow</td>
+</tr>
+<tr>
+<td>Cart and checkout abandon rate</td>
+<td>Blank for an empty slice and clamped to 0 to 1, never 100%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="95-refreshing-the-report">9.5 Refreshing the report</h3>
+<p>Open <code>FunnelStream.pbip</code> in Power BI Desktop. Desktop asks for a read-only Databricks token and the <code>grafana_ro</code> Postgres password (credentials are never stored in the file). After a Gold batch and the two Postgres builders, use Refresh. The generator <code>scripts/make_pbip.py</code> rebuilds the whole report folder from code and must not be run over the saved project except deliberately; backups exist under <code>data/_archive/</code>.</p>
+<hr />
+<h2 id="10-metric-dictionary">10. Metric dictionary</h2>
+<p>The full dictionary with formulas and filters is in <code>docs/metrics.md</code>. The headline definitions:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Formula</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROAS delivered</td>
+<td><code>revenue_delivered / spend</code></td>
+<td>Headline. Delivery lags spend by about 2 to 4 days, so recent days read low and are labelled provisional</td>
+</tr>
+<tr>
+<td>ROAS placed</td>
+<td><code>revenue_placed / spend</code></td>
+<td>Secondary</td>
+</tr>
+<tr>
+<td>CPA</td>
+<td><code>spend / orders_placed</code></td>
+<td>Placed orders</td>
+</tr>
+<tr>
+<td>Cost per delivered order</td>
+<td><code>spend / orders_delivered</code></td>
+<td>Delivered orders only</td>
+</tr>
+<tr>
+<td>Conversion rate</td>
+<td><code>orders_placed / sessions</code></td>
+<td>Per channel</td>
+</tr>
+<tr>
+<td>Cart abandon rate</td>
+<td><code>1 - orders_placed / cart_sessions</code></td>
+<td>Sessions with add to cart</td>
+</tr>
+<tr>
+<td>Checkout abandon rate</td>
+<td><code>1 - orders_placed / checkout_sessions</code></td>
+<td>Sessions that started checkout</td>
+</tr>
+<tr>
+<td>Cancel, return, failed-attempt rate</td>
+<td>cancelled, returned, or at least one failed attempt, over placed orders</td>
+<td></td>
+</tr>
+<tr>
+<td>First-attempt delivery rate</td>
+<td>first-attempt deliveries / shipped orders</td>
+<td></td>
+</tr>
+<tr>
+<td>Average order value</td>
+<td><code>revenue_placed / orders_placed</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Delivery lead time</td>
+<td>average <code>delivered_at - order_created_at</code></td>
+<td>Delivered orders</td>
+</tr>
+<tr>
+<td>Out-of-stock click share</td>
+<td>out-of-stock landing clicks / served landing clicks</td>
+<td>Served districts only</td>
+</tr>
+<tr>
+<td>Exposed spend</td>
+<td><code>spend x out-of-stock click share</code></td>
+<td>An estimate</td>
+</tr>
+<tr>
+<td>Express on-time rate</td>
+<td>on time / (on time + breached)</td>
+<td>Target 95%</td>
+</tr>
+</tbody>
+</table>
+<p>Two day definitions exist and are stated wherever they matter: ad spend and ad clicks belong to the ad platform's <strong>UTC day</strong>; orders and demand belong to the <strong>Cairo day</strong>. They differ by at most three hours and the mismatch is accepted.</p>
+<hr />
+<h2 id="11-quality-assurance-and-measured-results">11. Quality assurance and measured results</h2>
+<h3 id="111-automated-tests">11.1 Automated tests</h3>
+<p><img alt="Host tests" src="images/terminal/host_tests.png" /></p>
+<p><em>Figure 22. The full host test suite on 13 October 2026.</em></p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>What</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Host tests</td>
+<td>contracts, validator, simulator, Silver transform, store and warehouse logic, Gold SQL files, data quality definitions, Grafana JSON and alert rules, Power BI generator and measures, the LLM assistant guards</td>
+<td>1,169 passed, 0 failed, 218 skipped (the Spark tests)</td>
+</tr>
+<tr>
+<td>Spark tests (Docker, one file at a time)</td>
+<td>Bronze, Silver, the live sink, replay, a crash in the middle of a batch, late and duplicate events, stock never negative, Gold build</td>
+<td>22 files, 217 tests passed on 12 October 2026</td>
+</tr>
+<tr>
+<td>Smoke test</td>
+<td><code>scripts/smoke_test.py</code> walks 15 stages from the simulator to the Power BI source check in an isolated lake and database and writes a report</td>
+<td>see 11.3</td>
+</tr>
+<tr>
+<td>Benchmark</td>
+<td>1,000,000 events end to end</td>
+<td>see 11.4</td>
+</tr>
+<tr>
+<td>Failure demo</td>
+<td>kill the Silver job, restart it, check for duplicates</td>
+<td>see 11.5</td>
+</tr>
+</tbody>
+</table>
+<h3 id="112-duplicate-check-after-a-crash-and-restart">11.2 Duplicate check after a crash and restart</h3>
+<p><code>scripts/check_duplicates.py</code> reads every Silver table that has a key and reports duplicates. On the lake of the 13 October rehearsal:</p>
+<p><img alt="Duplicate check" src="images/terminal/duplicate_check.png" /></p>
+<p><em>Figure 23. <code>NO DUPLICATES</code> across the seven keyed Silver tables.</em></p>
+<h3 id="113-smoke-test">11.3 Smoke test</h3>
+<p>The first complete run (13 October 2026, without the Spark test stage) showed 10 stages passing and three failing. None was a pipeline defect:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Result</th>
+<th>Cause and fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Host tests</td>
+<td>pass</td>
+<td>1,153 passed at the time</td>
+</tr>
+<tr>
+<td>Reset and generate, Bronze and Silver</td>
+<td>pass</td>
+<td>22,274 messages produced, Bronze 22,274 rows (exactly equal), Silver tables non-empty with no duplicate key</td>
+</tr>
+<tr>
+<td>Daily marts, Alert logic, Replay safety</td>
+<td>pass</td>
+<td>Replay of Bronze left 10 Silver tables unchanged</td>
+</tr>
+<tr>
+<td>Power BI source check</td>
+<td>pass</td>
+<td>11 Gold and 7 Postgres source tables exist; 79 column references of 68 measures resolve</td>
+</tr>
+<tr>
+<td>Data invariants</td>
+<td>fail, fixed</td>
+<td><code>live_metrics_minute</code> was empty: the run replays days of history, every event is late, and that table leaves late events out by design. The check no longer requires that table</td>
+</tr>
+<tr>
+<td>Dashboards run</td>
+<td>fail, fixed</td>
+<td>The test's stand-in for Grafana's <code>$__timeFrom()</code> placed a cast on the interval instead of the whole window. Fixed in the macro expansion</td>
+</tr>
+<tr>
+<td>Databricks batch</td>
+<td>fail, fixed</td>
+<td>The insert-only <code>MERGE</code> kept rows of earlier runs in the scratch catalog (manifest check: 308 expected, 15,472 observed). The stage now publishes with <code>--reset</code>, and <code>scripts/reset_scratch_gold.py</code> empties the scratch Gold tables</td>
+</tr>
+</tbody>
+</table>
+<p>After the fixes, the Gold stages were rerun on the scratch catalog: <code>BATCH OK</code> in 175.6 seconds with 66 checks and 0 failures, and the quarantine count matched the manifest (308 expected, 308 observed). The marketing D-1 mart built three campaign rows for the data day 2026-10-07. A single uninterrupted green run of all stages is on the list of open items (section 15).</p>
+<h3 id="114-benchmark">11.4 Benchmark</h3>
+<p><img alt="Benchmark" src="images/terminal/benchmark.png" /></p>
+<p><em>Figure 24. Benchmark of 12 October 2026 (<code>docs/benchmark.md</code>).</em></p>
+<p>The numbers measure this one setup and are not a capacity claim. The Databricks stages ran on a Free Edition SQL warehouse.</p>
+<h3 id="115-failure-demo">11.5 Failure demo</h3>
+<p>The story: kill the Spark job while data flows, watch Grafana and the alert notice, restart with the same checkpoints, show that Silver has no duplicates.</p>
+<p><img alt="Failure demo" src="images/diagrams/failure.png" /></p>
+<p><em>Figure 25. Failure demo sequence.</em></p>
+<p>Measured on 12 October 2026, twice in a row, on a clean lake (Cairo time):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Run 1</th>
+<th>Run 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kill</td>
+<td>21:40:05</td>
+<td>21:45:23</td>
+</tr>
+<tr>
+<td>"Silver job silent for 2 minutes" fired</td>
+<td>2 min 12 s after the kill</td>
+<td>2 min 54 s after the kill</td>
+</tr>
+<tr>
+<td>Heartbeat back under 30 s</td>
+<td>about 40 s after the restart</td>
+<td>about 35 s after the restart</td>
+</tr>
+<tr>
+<td>Duplicate check after restart</td>
+<td>NO DUPLICATES (8,469 events, 123 orders, 217 stock movements)</td>
+<td>NO DUPLICATES (16,404 events, 210 orders, 367 stock movements)</td>
+</tr>
+</tbody>
+</table>
+<p>The promise to make is "within 3 minutes", not "within 2". The check covers Silver only: it does not look at Bronze (append-only, may hold re-delivered messages) and does not prove that no event was lost.</p>
+<h3 id="116-dashboard-rehearsal-of-13-october-2026">11.6 Dashboard rehearsal of 13 October 2026</h3>
+<p>A live rehearsal with the inventory scenario ran about 30 minutes. All 64 panel queries of the six dashboards were executed against the live database without error. The rehearsal drove fixes that are now in the repository: gaps instead of zero-fill on rates and stock levels, leftover express orders from earlier runs no longer shown as open, one colour rule at the 95% target for every on-time rate, a neutral dash for "no data", thousands separators instead of "4 K", and readable headers on the marketing tables.</p>
+<hr />
+<h2 id="12-security-and-privacy">12. Security and privacy</h2>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Practice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Secrets</td>
+<td><code>.env</code> is never committed. <code>.env.example</code> lists names only (Postgres, Databricks host, token, warehouse id, catalog, volume, Grafana passwords, optional <code>ANTHROPIC_API_KEY</code>)</td>
+</tr>
+<tr>
+<td>Network exposure</td>
+<td>Kafka, Postgres, Grafana and Airflow ports are bound to <code>127.0.0.1</code> only</td>
+</tr>
+<tr>
+<td>Databricks</td>
+<td>Power BI and Grafana use read-only credentials. The write token is used only by the load jobs and never goes into a Power BI file. The smoke test refuses to touch the real catalog and works in a scratch catalog</td>
+</tr>
+<tr>
+<td>Postgres</td>
+<td>Grafana and Power BI use the read-only role <code>grafana_ro</code> with SELECT on named tables</td>
+</tr>
+<tr>
+<td>Personal data</td>
+<td>Names and phone numbers exist only in Bronze and Silver and are not published to the Databricks mirror (allow-listed columns). Gold and Power BI hold <code>customer_id</code> only. All data is synthetic</td>
+</tr>
+<tr>
+<td>Destructive actions</td>
+<td>Lake resets, truncates and Databricks resets need explicit approval and are scripted with a plan-only mode</td>
+</tr>
+<tr>
+<td>Repository hygiene</td>
+<td><code>.env</code>, <code>.venv</code>, <code>data/</code> and scratch folders are git-ignored</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-the-llm-analytics-assistant">13. The LLM analytics assistant</h2>
+<p><code>src/llm/</code> lets a user ask questions in natural language about the generated data ("Which campaign had the highest CTR?"). The model writes one <code>SELECT</code> at a time, which runs against read-only DuckDB views.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No file or network access</td>
+<td>File access is switched off and the configuration locked after the data is loaded</td>
+</tr>
+<tr>
+<td>Limits</td>
+<td>20 second time limit and a 200 row cap per query</td>
+</tr>
+<tr>
+<td>Data is not instructions</td>
+<td>Query results are wrapped in <code>&lt;query_result&gt;</code> tags and cut, so data cannot pass for instructions</td>
+</tr>
+<tr>
+<td>No personal data</td>
+<td>The model does not receive names or phone numbers</td>
+</tr>
+<tr>
+<td>Keys</td>
+<td>The API key is read from the environment or <code>.env</code> (only the LLM settings are loaded) and is never logged; the Streamlit key field is not pre-filled</td>
+</tr>
+<tr>
+<td>Errors</td>
+<td>API calls have a 60 second timeout and 3 retries; errors become plain messages</td>
+</tr>
+</tbody>
+</table>
+<p>Sources are <code>sim</code> (default, generated in memory with the project's simulator, no Docker needed), <code>csv</code>, <code>kafka</code> and <code>delta</code>. Run <code>python src/llm/agent.py "question"</code> or <code>streamlit run src/llm/app.py</code>. The guards are tested in <code>tests/test_llm_assistant.py</code>.</p>
+<hr />
+<h2 id="14-running-the-project">14. Running the project</h2>
+<h3 id="141-prerequisites">14.1 Prerequisites</h3>
+<p>Windows 11, Docker Desktop with about 8 GB of memory, Python 3.11. Java and Spark live inside the Docker image; do not install them on the host. Before a live demo: at least 4 GB of free RAM (6 GB is better), synchronise the clock (<code>w32tm /resync /force</code> in an administrator shell), prevent sleep, and switch Docker Resource Saver off.</p>
+<h3 id="142-first-time-setup">14.2 First-time setup</h3>
+<pre><code class="language-powershell">Copy-Item .env.example .env                       # then set your own passwords; never commit .env
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+docker compose build spark
+docker compose up -d kafka postgres grafana
+.venv\Scripts\python kafka/create_topics.py
+docker compose run --rm spark python scripts/seed_silver_reference.py --lake data/lake
+</code></pre>
+<h3 id="143-live-demo">14.3 Live demo</h3>
+<pre><code class="language-powershell">.\scripts\watch_demo.ps1 -Inventory -Events 60000      # Kafka, pipeline and generator windows; Grafana at http://localhost:3000
+.\scripts\watch_demo.ps1 -Inventory -ExpressPromiseMinutes 2 -LateExpressEvery 15   # fast express rehearsal
+.\scripts\stop_demo.ps1
+</code></pre>
+<p><code>watch_demo.ps1</code> starts Kafka, Postgres and Grafana, creates the topics, applies the live DDL and opens the windows. Each round of the generator runs its stock and express timeline to the end before the next round starts, so a short round leaves a quiet gap in the traffic panels. A longer round keeps traffic on for longer: a 30,000-event round gave about 8 minutes of continuous traffic followed by a gap of about 4 minutes in the rehearsal, and <code>-Events 60000</code> should double the traffic window (not yet rehearsed).</p>
+<p><strong>Start from a clean state.</strong> Old Bronze and Silver data and old checkpoints make Silver work through a backlog first. Move <code>data/lake</code> and <code>data/checkpoints</code> aside, recreate Kafka (<code>docker compose rm -sf kafka</code>, then <code>docker compose up -d kafka</code>), empty the live Postgres tables and start again. The smoke test recreates Kafka too, so delete <code>data\checkpoints</code> after it.</p>
+<h3 id="144-failure-demo">14.4 Failure demo</h3>
+<pre><code class="language-powershell">.\scripts\watch_demo.ps1 -Rate 20 -SyncEvery 0     # wait about 2 minutes
+python scripts\alert_sink.py                        # separate terminal: shows alert messages
+.\scripts\failure_demo.ps1 status                   # heartbeat under 30 s
+.\scripts\failure_demo.ps1 kill                     # docker kill: a real crash
+.\scripts\failure_demo.ps1 status                   # repeat: heartbeat age grows
+.\scripts\failure_demo.ps1 restart                  # same command and checkpoints
+.\scripts\failure_demo.ps1 verify                   # duplicate check on Silver
+</code></pre>
+<h3 id="145-publish-gold-build-and-daily-marts">14.5 Publish, Gold build and daily marts</h3>
+<pre><code class="language-powershell">docker compose run --rm spark python scripts/run_batch.py --full                 # publish, Gold build, 66 checks
+docker compose run --rm spark python scripts/build_inventory_daily.py --date today --days 2
+docker compose run --rm spark python scripts/build_d1_marketing.py               # needs Databricks settings and a finished Gold batch
+</code></pre>
+<h3 id="146-tests-smoke-test-and-benchmark">14.6 Tests, smoke test and benchmark</h3>
+<pre><code class="language-powershell">.venv\Scripts\python -m pytest tests -q -p no:cacheprovider                      # host tests
+docker compose run --rm -e RUN_SPARK_TESTS=1 spark python -m pytest tests/test_silver_clean_spark.py -q   # one Spark test file
+.venv\Scripts\python scripts\smoke_test.py --dry-run                              # read the plan first
+.venv\Scripts\python scripts\smoke_test.py --yes --skip-spark-tests               # recreates Kafka
+.venv\Scripts\python scripts\benchmark.py --events 1000000 --yes                  # one-off; already done
+</code></pre>
+<h3 id="147-troubleshooting">14.7 Troubleshooting</h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause and remedy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Silver batches slower than the 10 second trigger</td>
+<td>Normal on this laptop (a "batch is falling behind" warning). Keep the Gold sync window off during a demo</td>
+</tr>
+<tr>
+<td>Docker engine crashes or processes are killed</td>
+<td>Low free RAM. Close Power BI Desktop and browsers; keep at least 4 GB free</td>
+</tr>
+<tr>
+<td><code>localhost:9092</code> or <code>localhost:3000</code> stop answering after Docker restarts</td>
+<td><code>docker compose restart kafka</code> or <code>docker compose up -d --force-recreate grafana</code></td>
+</tr>
+<tr>
+<td>The alert does not notify a second time</td>
+<td>Alerts notify only on a state change. Empty the old state before an on-camera demo</td>
+</tr>
+<tr>
+<td>Dashboards show last run's data</td>
+<td>Provisioned dashboards are read from files; restart the Grafana container after changing them</td>
+</tr>
+<tr>
+<td>A script cannot read the Databricks settings</td>
+<td>The host does not read <code>.env</code>. Run such scripts in the <code>spark</code> container</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15-known-limitations-and-assumptions">15. Known limitations and assumptions</h2>
+<p>These are stated on the dashboards and in the documents, and are the honest answers to questions at the defense.</p>
+<table>
+<thead>
+<tr>
+<th>Limitation</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Simulated data</strong></td>
+<td>Customers, orders, ad numbers and stock are generated. Numbers show the pipeline and the method, not real business performance</td>
+</tr>
+<tr>
+<td><strong>One-day peak</strong></td>
+<td>About 55% of all revenue falls on 9 October in the simulated data. The Executive page says so</td>
+</tr>
+<tr>
+<td><strong>Out-of-stock flag</strong></td>
+<td>The flag on a demand minute is the stock when the minute was written. A replay or a late event can flag it differently, and a stock-out that begins mid-minute credits the whole minute. Exposed spend and the daily marts inherit this. The fix (zero-stock intervals from Silver joined by event time) is future work</td>
+</tr>
+<tr>
+<td><strong>No stock reversal</strong></td>
+<td>Stock is reserved when an order is placed and not put back on cancellation, return or failed delivery, so stock drifts down</td>
+</tr>
+<tr>
+<td><strong>Exposed spend is an estimate</strong></td>
+<td>Spread-evenly assumption over served landing clicks; Assiut and "other" are not served</td>
+</tr>
+<tr>
+<td><strong>Two day definitions</strong></td>
+<td>Ad numbers use the UTC day, orders the Cairo day, at most three hours apart</td>
+</tr>
+<tr>
+<td><strong>Store is conformed in Postgres only</strong></td>
+<td>Gold has City, not Store. "Orders and stock for the same store" is answered in Postgres only</td>
+</tr>
+<tr>
+<td><strong>Express KPIs</strong></td>
+<td>Exist only in <code>express_daily</code> and <code>live_express_orders</code>; the Gold delivery measures include express with standard orders</td>
+</tr>
+<tr>
+<td><strong>Campaign key</strong></td>
+<td>Traffic without a campaign is <code>direct</code>, which the Campaign dimension has no row for (it shows as blank)</td>
+</tr>
+<tr>
+<td><strong>Bots in demand</strong></td>
+<td>The out-of-stock demand path does not remove bot sessions; Gold does</td>
+</tr>
+<tr>
+<td><strong>Failure-demo scope</strong></td>
+<td>The duplicate check covers Silver only</td>
+</tr>
+<tr>
+<td><strong>Free Edition limits</strong></td>
+<td>The Databricks workspace is a Free Edition SQL warehouse; the benchmark is one setup, not a capacity claim</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Open items on the day of the defense</strong></p>
+<ul>
+<li>One uninterrupted green run of the full smoke test with the Spark test stage (the stages passed in two parts, section 11.3).</li>
+<li><code>build_d1_marketing.py</code> against the real catalog after a finished Gold batch. It ran only on the scratch catalog.</li>
+<li>Re-checking in Power BI Desktop the three charts changed after the screenshots in section 9 (see Appendix B).</li>
+<li>Power BI credentials and a refresh on the presenting machine.</li>
+</ul>
+<hr />
+<h2 id="16-future-work">16. Future work</h2>
+<ol>
+<li>Stock intervals from Silver by event time, so the out-of-stock flag is replay-safe, with one function shared by the sink and the daily job.</li>
+<li>Stock reversal on cancellation, return and failed delivery.</li>
+<li>Publish the stock tables to the Databricks mirror and add a Gold table <code>agg_oos_demand_daily</code>.</li>
+<li>Delivery zones instead of one primary store per district, and a Store dimension in Gold.</li>
+<li>Reservations (stock held for a basket before payment).</li>
+<li>Co-view recommendations in <code>rec_product</code> (the table and the Gold step slot exist).</li>
+<li>Contribution margin after COD and cancellation cost from an assumptions table.</li>
+<li>Incrementality tests and view-through attribution.</li>
+<li>Overlapping simulator rounds so live traffic never goes quiet between rounds.</li>
+<li>Great Expectations or dbt on top of the SQL checks.</li>
+</ol>
+<hr />
+<h2 id="17-appendices">17. Appendices</h2>
+<h3 id="appendix-a-environment-variables-names-only">Appendix A. Environment variables (names only)</h3>
+<p><code>POSTGRES_USER</code>, <code>POSTGRES_PASSWORD</code>, <code>POSTGRES_DB</code>, <code>PG_DSN</code>, <code>GRAFANA_DB_PASSWORD</code>, <code>GRAFANA_ADMIN_PASSWORD</code>, <code>DATABRICKS_HOST</code>, <code>DATABRICKS_TOKEN</code>, <code>DATABRICKS_WAREHOUSE_ID</code>, <code>DATABRICKS_HTTP_PATH</code>, <code>DATABRICKS_CATALOG</code>, <code>DATABRICKS_VOLUME</code>, <code>GOLD_BACKEND</code>, <code>AD_API_URL</code>, <code>SIM_SEED</code>, <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_WORKSPACE_ID</code>, <code>FUNNELSTREAM_LLM_MODEL</code>. Values are never committed.</p>
+<h3 id="appendix-b-provenance-of-the-screenshots">Appendix B. Provenance of the screenshots</h3>
+<table>
+<thead>
+<tr>
+<th>Figures</th>
+<th>Source</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6, 7, 8, 9</td>
+<td>Grafana, live rehearsal of 13 October 2026, captured with headless Chrome</td>
+<td>Rehearsal data (simulated). The express section of Figures 7 and 8 shows breaches on purpose (2-minute promise, every 15th order late)</td>
+</tr>
+<tr>
+<td>10, 11</td>
+<td>Grafana, same day</td>
+<td>Daily dashboards over the 14-day range; Figure 10 was taken before the on-time colours were aligned to the 95% target</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Grafana alert rules page, 13 October 2026</td>
+<td>Four rules firing because the rehearsal pipeline was stopped</td>
+</tr>
+<tr>
+<td>15 to 21</td>
+<td>Power BI Desktop, owner's screenshots of 12 October 2026, 23:07</td>
+<td>Taken before three last chart fixes: Customers (average spend by favourite category replaces the chart with a <em>(Blank)</em> bar), Operations (a chart of oversold units replaces the empty "ended out of stock" chart) and Funnel (labels no longer abbreviated to "2K")</td>
+</tr>
+<tr>
+<td>5, 13, 22, 23, 24</td>
+<td>Terminal output, 12 and 13 October 2026</td>
+<td>Real captured output re-rendered as images</td>
+</tr>
+<tr>
+<td>1 to 4, 14, 25, 26</td>
+<td>Diagrams drawn for this document</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="appendix-c-command-reference">Appendix C. Command reference</h3>
+<table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Start the live demo</td>
+<td><code>.\scripts\watch_demo.ps1 -Inventory</code></td>
+</tr>
+<tr>
+<td>Stop the live demo</td>
+<td><code>.\scripts\stop_demo.ps1</code></td>
+</tr>
+<tr>
+<td>Failure demo</td>
+<td><code>.\scripts\failure_demo.ps1 status|kill|restart|verify</code></td>
+</tr>
+<tr>
+<td>Duplicate check</td>
+<td><code>docker compose run --rm spark python scripts/check_duplicates.py --lake data/lake</code></td>
+</tr>
+<tr>
+<td>Apply live DDL and role</td>
+<td><code>docker compose run --rm spark python scripts/apply_live_ddl.py</code></td>
+</tr>
+<tr>
+<td>Publish Silver to Databricks</td>
+<td><code>docker compose run --rm spark python scripts/publish_silver.py</code></td>
+</tr>
+<tr>
+<td>Gold build with checks</td>
+<td><code>docker compose run --rm spark python scripts/run_batch.py</code></td>
+</tr>
+<tr>
+<td>Regenerate Grafana JSON</td>
+<td><code>.venv\Scripts\python scripts/gen_dashboards.py</code></td>
+</tr>
+<tr>
+<td>Export sample CSVs</td>
+<td><code>.venv\Scripts\python scripts/export_samples.py</code></td>
+</tr>
+<tr>
+<td>Ask the assistant</td>
+<td><code>python src/llm/agent.py "Which campaign had the highest CTR?"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="appendix-d-glossary">Appendix D. Glossary</h3>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bronze, Silver, Gold</td>
+<td>Raw, validated and business-ready layers of the lakehouse</td>
+</tr>
+<tr>
+<td>COD</td>
+<td>Cash on delivery</td>
+</tr>
+<tr>
+<td>CPA, ROAS, CTR</td>
+<td>Cost per acquisition, return on ad spend, click-through rate</td>
+</tr>
+<tr>
+<td>D-1</td>
+<td>The report for the previous day</td>
+</tr>
+<tr>
+<td>Dark store</td>
+<td>A small warehouse that serves quick-commerce orders</td>
+</tr>
+<tr>
+<td>Express promise</td>
+<td>The delivery time (20 minutes) the shopper is promised</td>
+</tr>
+<tr>
+<td>Hero scenario</td>
+<td>The scripted stock-out, lost demand, alert and restock used in the demo</td>
+</tr>
+<tr>
+<td>MERGE</td>
+<td>The Delta operation that inserts a row only if its key is not already there</td>
+</tr>
+<tr>
+<td>Quarantine</td>
+<td>The table that holds rejected rows with an error code</td>
+</tr>
+<tr>
+<td>SCD2</td>
+<td>Slowly changing dimension type 2: a new row per change with validity dates</td>
+</tr>
+<tr>
+<td>Watermark</td>
+<td>The allowed lateness of events in stream processing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="appendix-e-container-layout">Appendix E. Container layout</h3>
+<p><img alt="Container layout" src="images/diagrams/docker.png" /></p>
+<p><em>Figure 26. Docker services and their memory limits on the laptop, and what connects to the cloud.</em></p>
+<h3 id="appendix-f-related-documents-in-the-repository">Appendix F. Related documents in the repository</h3>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>README.md</code></td>
+<td>Overview and quick start</td>
+</tr>
+<tr>
+<td><code>docs/RUNNING.md</code></td>
+<td>The full running guide with measured numbers</td>
+</tr>
+<tr>
+<td><code>docs/metrics.md</code></td>
+<td>The metric dictionary</td>
+</tr>
+<tr>
+<td><code>docs/superpowers/specs/2026-10-04-funnelstream-design.md</code></td>
+<td>The design specification</td>
+</tr>
+<tr>
+<td><code>docs/superpowers/specs/2026-10-10-inventory-two-users-design.md</code></td>
+<td>The inventory and two-user design</td>
+</tr>
+<tr>
+<td><code>docs/superpowers/specs/2026-10-12-powerbi-redesign-design.md</code></td>
+<td>The Power BI redesign</td>
+</tr>
+<tr>
+<td><code>docs/data-model-review.md</code></td>
+<td>The 25-finding model review and its resolution status</td>
+</tr>
+<tr>
+<td><code>docs/PRE-DEFENSE-CHECKLIST.md</code></td>
+<td>The step list before the defense</td>
+</tr>
+<tr>
+<td><code>docs/benchmark.md</code></td>
+<td>The benchmark</td>
+</tr>
+<tr>
+<td><code>dashboards/powerbi/MODEL.md</code></td>
+<td>The Power BI model guide</td>
+</tr>
+</tbody>
+</table></body></html>
