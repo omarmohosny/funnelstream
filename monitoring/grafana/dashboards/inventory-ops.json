@@ -72,8 +72,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -140,8 +152,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -208,8 +232,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -486,8 +522,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -550,8 +598,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -609,13 +669,29 @@
                 "value": null
               },
               {
+                "color": "orange",
+                "value": 90
+              },
+              {
                 "color": "green",
-                "value": 100
+                "value": 95
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 1,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -682,8 +758,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 1,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },

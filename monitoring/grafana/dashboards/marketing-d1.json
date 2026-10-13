@@ -51,7 +51,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "locale",
           "color": {
             "mode": "thresholds"
           },
@@ -64,8 +64,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -124,8 +136,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -184,8 +208,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 2,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -204,7 +240,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "ROAS delivered (provisional for recent days)",
+      "title": "ROAS delivered (provisional)",
       "description": "Delivered revenue divided by spend. Delivery matures one to three days after the order day, so recent days read low.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -244,8 +280,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 2,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -264,8 +312,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Estimated spend exposed to out-of-stock (EGP)",
-      "description": "Spend x out-of-stock landing clicks / served landing clicks. An estimate that assumes spend is spread evenly over served landing clicks.",
+      "title": "Exposed spend (EGP)",
+      "description": "Estimated spend sent to out-of-stock products: spend x out-of-stock landing clicks / served landing clicks. An estimate that assumes spend is spread evenly over served landing clicks.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "fs-postgres"
@@ -291,7 +339,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "locale",
           "color": {
             "mode": "thresholds"
           },
@@ -312,8 +360,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -380,8 +440,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 1,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -410,7 +482,7 @@
         "x": 0,
         "y": 5,
         "w": 24,
-        "h": 8
+        "h": 6
       },
       "targets": [
         {
@@ -427,7 +499,208 @@
       ],
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "campaign_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Campaign"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "utm_campaign"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "UTM campaign"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "spend"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Spend (EGP)"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "orders_placed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Orders placed"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cpa"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CPA (EGP)"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roas_placed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ROAS placed"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "roas_delivered"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ROAS delivered"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "served_clicks"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Served clicks"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "oos_clicks"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Out-of-stock clicks"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "oos_click_share"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Out-of-stock share"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "exposed_spend"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Exposed spend"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "provisional"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Provisional"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true
@@ -444,9 +717,9 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 11,
         "w": 24,
-        "h": 8
+        "h": 7
       },
       "targets": [
         {
@@ -463,7 +736,48 @@
       ],
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "oos_add_to_carts"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Out-of-stock add-to-carts"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "revenue_at_risk"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Revenue at risk (EGP)"
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true
@@ -475,7 +789,7 @@
       "title": "About this data",
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 18,
         "w": 24,
         "h": 4
       },

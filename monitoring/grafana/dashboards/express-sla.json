@@ -97,8 +97,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 1,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -161,8 +173,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -229,8 +253,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -271,7 +307,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE store_id IN ($store) AND delivered_at IS NULL AND NOT closed_without_delivery"
+          "rawSql": "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE created_at >= now() - interval '3 hours' AND store_id IN ($store) AND delivered_at IS NULL AND NOT closed_without_delivery"
         }
       ],
       "fieldConfig": {
@@ -289,8 +325,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 0,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -357,8 +405,20 @@
               }
             ]
           },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "–",
+                  "color": "text"
+                }
+              }
+            }
+          ],
           "decimals": 1,
-          "noValue": "no data"
+          "noValue": "–"
         },
         "overrides": []
       },
@@ -399,7 +459,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', 0), round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) GROUP BY 1 ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', NULL), round(100.0 * count(*) FILTER (WHERE delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') / nullif(count(*) FILTER (WHERE (delivered_at IS NOT NULL AND delivered_at - created_at <= promised_minutes * interval '1 minute') OR ((delivered_at IS NOT NULL AND delivered_at - created_at > promised_minutes * interval '1 minute') OR (delivered_at IS NULL AND NOT closed_without_delivery AND now() - created_at > promised_minutes * interval '1 minute' + interval '1 minute'))), 0), 1) AS \"on time %\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) GROUP BY 1 ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -526,7 +586,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', 0), percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p50\", percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p90\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) AND delivered_at IS NOT NULL GROUP BY 1 ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m', NULL), percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p50\", percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60.0) AS \"p90\" FROM live_express_orders WHERE $__timeFilter(created_at) AND store_id IN ($store) AND delivered_at IS NOT NULL GROUP BY 1 ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -617,7 +677,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT coalesce(s.store_name, o.store_id) AS \"store\", o.order_id AS \"order\", o.promised_minutes AS \"promise (min)\", round((EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"age (min)\", round((o.promised_minutes - EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"minutes left\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id WHERE o.store_id IN ($store) AND o.delivered_at IS NULL AND NOT o.closed_without_delivery ORDER BY 4 DESC LIMIT 15"
+          "rawSql": "SELECT coalesce(s.store_name, o.store_id) AS \"store\", o.order_id AS \"order\", o.promised_minutes AS \"promise (min)\", round((EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"age (min)\", round((o.promised_minutes - EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"minutes left\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id WHERE o.created_at >= now() - interval '3 hours' AND o.store_id IN ($store) AND o.delivered_at IS NULL AND NOT o.closed_without_delivery ORDER BY 4 DESC LIMIT 15"
         }
       ],
       "fieldConfig": {

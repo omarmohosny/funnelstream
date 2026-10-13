@@ -2,10 +2,11 @@
 
 Both read only Postgres live tables and share a multi-select `store` variable (all stores by default).
 """
-from monitoring.dashboards import (DS, _AT_RISK, _BREACHED, _EXPRESS_DEFINITIONS, _ON_TIME, _steps, dashboard, stat,
-                                   table, text, timeseries)
+from monitoring.dashboards import (DS, ON_TIME_STEPS, ON_TIME_TARGET, _AT_RISK, _BREACHED, _EXPRESS_DEFINITIONS, _ON_TIME,
+                                   _steps, dashboard, stat, table, text, timeseries)
 
-SLA_TARGET = 95  # percent of express orders delivered inside their promise
+SLA_TARGET = ON_TIME_TARGET  # percent of express orders delivered inside their promise
+KEPT = "created_at >= now() - interval '3 hours'"  # live_express_orders keeps three hours; older rows are leftovers
 STORE_FILTER = "store_id IN ($store)"
 _STORE_SQL = "SELECT store_id AS __value, store_name AS __text FROM dim_store ORDER BY 2"
 
@@ -37,8 +38,7 @@ def build_express_sla():
              "On-time orders divided by delivered or breached orders created in the last hour (target %d%%)." % SLA_TARGET,
              "SELECT %s AS \"on time %%\" FROM live_express_orders WHERE %s AND %s" % (rate, last_hour, f),
              (0, 0, 5, 5),
-             [{"color": "red", "value": None}, {"color": "orange", "value": SLA_TARGET - 5},
-              {"color": "green", "value": SLA_TARGET}], unit="percent", decimals=1),
+             ON_TIME_STEPS, unit="percent", decimals=1),
         stat(2, "Breaches, last hour", "Delivered late or overdue (promise plus 1 minute of grace).",
              "SELECT count(*) AS \"breaches\" FROM live_express_orders WHERE %s AND %s AND (%s)"
              % (last_hour, f, _BREACHED), (5, 0, 5, 5), [{"color": "green", "value": None}, {"color": "red", "value": 1}]),
@@ -46,8 +46,8 @@ def build_express_sla():
              "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE %s AND %s" % (f, _AT_RISK),
              (10, 0, 5, 5), _steps(None, 1, 3)),
         stat(4, "Open express orders", "Created, not delivered, not cancelled or returned.",
-             "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE %s AND delivered_at IS NULL "
-             "AND NOT closed_without_delivery" % f, (15, 0, 5, 5), [{"color": "blue", "value": None}]),
+             "SELECT count(*) AS \"orders\" FROM live_express_orders WHERE %s AND %s AND delivered_at IS NULL "
+             "AND NOT closed_without_delivery" % (KEPT, f), (15, 0, 5, 5), [{"color": "blue", "value": None}]),
         stat(5, "Median delivery time, last hour (min)", "p50 of delivered orders created in the last hour.",
              "SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY %s)::numeric, 1) AS \"minutes\" "
              "FROM live_express_orders WHERE %s AND %s AND delivered_at IS NOT NULL" % (minutes, last_hour, f),
@@ -55,7 +55,7 @@ def build_express_sla():
         timeseries(6, "On-time rate by order creation time (5-minute buckets)",
                    "Share of resolved orders delivered inside their promise. The dashed line is the %d%% target. "
                    "The live table keeps the last 3 hours of orders." % SLA_TARGET,
-                   "SELECT $__timeGroupAlias(created_at, '5m', 0), %s AS \"on time %%\" FROM live_express_orders "
+                   "SELECT $__timeGroupAlias(created_at, '5m', NULL), %s AS \"on time %%\" FROM live_express_orders "
                    "WHERE $__timeFilter(created_at) AND %s GROUP BY 1 ORDER BY 1" % (rate, f), (0, 5, 12, 8),
                    unit="percent"),
         timeseries(7, "On-time and breached orders per 5 minutes", "Orders by SLA outcome, by creation time.",
@@ -65,7 +65,7 @@ def build_express_sla():
                    (12, 5, 12, 8)),
         timeseries(8, "Delivery time p50 and p90 (minutes)",
                    "Delivery time of delivered orders by creation time. Compare with the 20-minute promise.",
-                   "SELECT $__timeGroupAlias(created_at, '5m', 0), "
+                   "SELECT $__timeGroupAlias(created_at, '5m', NULL), "
                    "percentile_cont(0.5) WITHIN GROUP (ORDER BY %s) AS \"p50\", "
                    "percentile_cont(0.9) WITHIN GROUP (ORDER BY %s) AS \"p90\" FROM live_express_orders "
                    "WHERE $__timeFilter(created_at) AND %s AND delivered_at IS NOT NULL GROUP BY 1 ORDER BY 1"
@@ -85,7 +85,8 @@ def build_express_sla():
               "round((EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) AS \"age (min)\", "
               "round((o.promised_minutes - EXTRACT(EPOCH FROM (now() - o.created_at)) / 60.0)::numeric, 1) "
               "AS \"minutes left\" FROM live_express_orders o LEFT JOIN dim_store s ON s.store_id = o.store_id "
-              "WHERE o.%s AND o.delivered_at IS NULL AND NOT o.closed_without_delivery ORDER BY 4 DESC LIMIT 15" % f,
+              "WHERE o.%s AND o.%s AND o.delivered_at IS NULL AND NOT o.closed_without_delivery ORDER BY 4 DESC LIMIT 15"
+              % (KEPT, f),
               (0, 21, 24, 8)),
         text(11, "Express definitions", _EXPRESS_DEFINITIONS + " The on-time target is %d%%." % SLA_TARGET,
              (0, 29, 24, 4)),
@@ -110,22 +111,24 @@ def build_live_stock():
              unit="percent", decimals=1),
         stat(4, "Units on hand", "Total on-hand units in the selected stores.",
              "SELECT coalesce(sum(on_hand), 0) AS \"units\" FROM live_stock_now WHERE %s" % f,
-             (15, 0, 5, 5), [{"color": "blue", "value": None}]),
+             (15, 0, 5, 5), [{"color": "blue", "value": None}], unit="locale"),
         stat(5, "Seconds since the last stock write", "Age of the newest stock row; about one Silver batch behind.",
              "SELECT coalesce(round(extract(epoch from (now() - max(updated_at))))::int, 0) AS \"seconds\" "
              "FROM live_stock_now", (20, 0, 4, 5), _steps(None, 30, 60), unit="s"),
         timeseries(6, "Out-of-stock products per store",
                    "Out-of-stock pairs at each minute, from the per-minute snapshots of live_stock_now (kept 24 hours).",
-                   "SELECT $__timeGroupAlias(h.minute_start, '1m', 0), s.store_name AS metric, "
+                   "SELECT $__timeGroupAlias(h.minute_start, '1m', NULL), s.store_name AS metric, "
                    "max(h.out_of_stock) AS \"out of stock\" FROM live_stock_store_minute h "
                    "JOIN dim_store s ON s.store_id = h.store_id "
-                   "WHERE $__timeFilter(h.minute_start) AND h.%s GROUP BY 1, 2 ORDER BY 1" % f, (0, 5, 12, 8)),
+                   "WHERE $__timeFilter(h.minute_start) AND h.%s GROUP BY 1, 2 ORDER BY 1" % f, (0, 5, 12, 8),
+                   span=True),
         timeseries(7, "Units on hand per store",
                    "On-hand units at each minute: they fall with sales and jump with restocks.",
-                   "SELECT $__timeGroupAlias(h.minute_start, '1m', 0), s.store_name AS metric, "
+                   "SELECT $__timeGroupAlias(h.minute_start, '1m', NULL), s.store_name AS metric, "
                    "max(h.units_on_hand) AS \"units\" FROM live_stock_store_minute h "
                    "JOIN dim_store s ON s.store_id = h.store_id "
-                   "WHERE $__timeFilter(h.minute_start) AND h.%s GROUP BY 1, 2 ORDER BY 1" % f, (12, 5, 12, 8)),
+                   "WHERE $__timeFilter(h.minute_start) AND h.%s GROUP BY 1, 2 ORDER BY 1" % f, (12, 5, 12, 8),
+                   span=True, zero_based=False),
         timeseries(8, "Units added and removed per minute",
                    "Change in on-hand units between minute snapshots across the selected stores: added is restock, "
                    "removed is sales and shrinkage.",

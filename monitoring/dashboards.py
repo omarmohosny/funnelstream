@@ -2,6 +2,8 @@
 (scripts/gen_dashboards.py) and a test fails when a file drifts from its builder."""
 
 DS = {"type": "grafana-postgresql-datasource", "uid": "fs-postgres"}
+ON_TIME_TARGET = 95  # percent of express orders delivered inside their promise
+NO_DATA = "\u2013"  # an en dash: a neutral "nothing yet", not a red "no data"
 
 
 def _target(sql, fmt):
@@ -13,28 +15,46 @@ def _pos(x, y, w, h):
 
 
 def stat(pid, title, desc, sql, pos, steps, unit="short", decimals=0):
+    no_data = {"type": "special", "options": {"match": "null+nan", "result": {"text": NO_DATA, "color": "text"}}}
     return {"id": pid, "type": "stat", "title": title, "description": desc, "datasource": DS, "gridPos": _pos(*pos),
             "targets": _target(sql, "table"),
             "fieldConfig": {"defaults": {"unit": unit, "color": {"mode": "thresholds"},
                                          "thresholds": {"mode": "absolute", "steps": steps},
-                                         "decimals": decimals, "noValue": "no data"}, "overrides": []},
+                                         "mappings": [no_data], "decimals": decimals, "noValue": NO_DATA},
+                            "overrides": []},
             "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
                         "colorMode": "background", "graphMode": "none"}}
 
 
-def timeseries(pid, title, desc, sql, pos, unit="short"):
-    return {"id": pid, "type": "timeseries", "title": title, "description": desc, "datasource": DS,
+def timeseries(pid, title, desc, sql, pos, unit="short", span=False, zero_based=True):
+    """span=True joins the points across a gap: right for a level (stock), wrong for a rate.
+    zero_based=False lets the axis follow the data: a level that barely moves would be a flat line from zero."""
+    panel = {"id": pid, "type": "timeseries", "title": title, "description": desc, "datasource": DS,
             "gridPos": _pos(*pos), "targets": _target(sql, "time_series"),
             "fieldConfig": {"defaults": {"unit": unit, "color": {"mode": "palette-classic"},
                                          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10,
-                                                    "showPoints": "never", "spanNulls": False}, "min": 0},
+                                                    "showPoints": "never", "spanNulls": span}},
                             "overrides": []},
             "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}}
+    if zero_based:
+        panel["fieldConfig"]["defaults"]["min"] = 0
+    return panel
 
 
-def table(pid, title, desc, sql, pos):
+def _column(name, display, unit=None, decimals=None):
+    props = [{"id": "displayName", "value": display}]
+    if unit:
+        props.append({"id": "unit", "value": unit})
+    if decimals is not None:
+        props.append({"id": "decimals", "value": decimals})
+    return {"matcher": {"id": "byName", "options": name}, "properties": props}
+
+
+def table(pid, title, desc, sql, pos, columns=()):
+    """columns: (sql column, header, unit, decimals) tuples for a column whose raw name or format is not presentable."""
     return {"id": pid, "type": "table", "title": title, "description": desc, "datasource": DS, "gridPos": _pos(*pos),
-            "targets": _target(sql, "table"), "fieldConfig": {"defaults": {}, "overrides": []},
+            "targets": _target(sql, "table"),
+            "fieldConfig": {"defaults": {}, "overrides": [_column(*c) for c in columns]},
             "options": {"showHeader": True}}
 
 
@@ -47,6 +67,10 @@ def dashboard(uid, title, panels, variables=None, time_from="now-30m"):
     return {"uid": uid, "title": title, "tags": ["funnelstream"], "timezone": "Africa/Cairo", "refresh": "5s",
             "time": {"from": time_from, "to": "now"}, "schemaVersion": 39, "editable": True, "graphTooltip": 1,
             "templating": {"list": variables or []}, "annotations": {"list": []}, "links": [], "panels": panels}
+
+
+ON_TIME_STEPS = [{"color": "red", "value": None}, {"color": "orange", "value": ON_TIME_TARGET - 5},
+                 {"color": "green", "value": ON_TIME_TARGET}]
 
 
 def _steps(*pairs):
@@ -139,8 +163,7 @@ def build_inventory_ops():
              "SELECT round(100.0 * count(*) FILTER (WHERE %s) / nullif(count(*) FILTER (WHERE (%s) OR (%s)), 0), 1) "
              "AS \"on time %%\" FROM live_express_orders WHERE created_at >= now() - interval '1 hour'"
              % (_ON_TIME, _ON_TIME, _BREACHED),
-             (12, 23, 6, 4), [{"color": "red", "value": None}, {"color": "green", "value": 100}],
-             unit="percent", decimals=1),
+             (12, 23, 6, 4), ON_TIME_STEPS, unit="percent", decimals=1),
         stat(13, "Slowest express delivery, last hour (minutes)",
              "Longest elapsed time: the delivery time of delivered orders, the age of open orders that are not closed.",
              "SELECT round(max(%s)::numeric, 1) AS \"minutes\" FROM live_express_orders "
@@ -173,7 +196,7 @@ def build_inventory_daily():
         stat(1, "Closing stock, latest day (units)",
              "Units on hand at the end of the latest Cairo day in the mart (simulated stock, never below zero).",
              "SELECT coalesce(sum(closing_on_hand), 0) AS \"units\" FROM inventory_daily WHERE report_date = %s" % latest,
-             (0, 0, 6, 5), [{"color": "blue", "value": None}]),
+             (0, 0, 6, 5), [{"color": "blue", "value": None}], unit="locale"),
         stat(2, "Products out of stock at day end",
              "Store and product pairs whose stock minus reservations was zero or less at the end of the latest day.",
              "SELECT count(*) AS \"products\" FROM inventory_daily WHERE ended_out_of_stock AND report_date = %s" % latest,
@@ -221,8 +244,7 @@ def build_inventory_daily():
              "there is nothing to measure.",
              "SELECT coalesce(round(100.0 * sum(on_time) / nullif(sum(on_time) + sum(breached), 0), 1), 100) "
              "AS \"percent\" FROM express_daily WHERE report_date = (SELECT max(report_date) FROM express_daily)",
-             (0, 23, 6, 8), [{"color": "red", "value": None}, {"color": "green", "value": 100}],
-             unit="percent", decimals=1),
+             (0, 23, 6, 8), ON_TIME_STEPS, unit="percent", decimals=1),
         timeseries(11, "Slowest express delivery per day (minutes)",
                    "The longest delivery time of each Cairo day against the 20-minute promise.",
                    "SELECT report_date::timestamp AS \"time\", max(max_delivery_minutes) AS \"slowest\", "
@@ -247,21 +269,22 @@ def build_marketing_d1():
     blue = [{"color": "blue", "value": None}]
     panels = [
         stat(1, "Spend (EGP)", "Ad spend of the latest D-1 day (the ad platform's UTC day), all campaigns.",
-             card("coalesce(sum(spend), 0)", "spend"), (0, 0, 4, 5), blue, unit="short"),
+             card("coalesce(sum(spend), 0)", "spend"), (0, 0, 4, 5), blue, unit="locale"),
         stat(2, "Orders placed", "Orders attributed to the campaigns (last touch) on the latest D-1 day.",
              card("coalesce(sum(orders_placed), 0)", "orders"), (4, 0, 4, 5), blue),
         stat(3, "ROAS placed", "Placed revenue divided by spend on the latest D-1 day.",
              card("coalesce(sum(revenue_placed) / nullif(sum(spend), 0), 0)", "roas placed"),
              (8, 0, 4, 5), blue, decimals=2),
-        stat(4, "ROAS delivered (provisional for recent days)",
+        stat(4, "ROAS delivered (provisional)",
              "Delivered revenue divided by spend. Delivery matures one to three days after the order day, so recent "
              "days read low.",
              card("coalesce(sum(revenue_delivered) / nullif(sum(spend), 0), 0)", "roas delivered"),
              (12, 0, 4, 5), blue, decimals=2),
-        stat(5, "Estimated spend exposed to out-of-stock (EGP)",
-             "Spend x out-of-stock landing clicks / served landing clicks. An estimate that assumes spend is spread "
+        stat(5, "Exposed spend (EGP)",
+             "Estimated spend sent to out-of-stock products: spend x out-of-stock landing clicks / served landing clicks. An estimate that assumes spend is spread "
              "evenly over served landing clicks.",
-             card("coalesce(sum(exposed_spend), 0)", "exposed spend"), (16, 0, 4, 5), _steps(None, 1, 1000)),
+             card("coalesce(sum(exposed_spend), 0)", "exposed spend"), (16, 0, 4, 5), _steps(None, 1, 1000),
+             unit="locale"),
         stat(6, "Out-of-stock click share",
              "Landing clicks in minutes flagged out of stock, divided by all landing clicks in served districts.",
              card("coalesce(sum(oos_clicks)::numeric / nullif(sum(served_clicks), 0), 0)", "share"),
@@ -271,7 +294,13 @@ def build_marketing_d1():
               "can still grow.",
               "SELECT campaign_id, utm_campaign, spend, orders_placed, cpa, roas_placed, roas_delivered, "
               "served_clicks, oos_clicks, oos_click_share, exposed_spend, provisional FROM marketing_d1_campaign "
-              "WHERE report_date = %s ORDER BY exposed_spend DESC NULLS LAST" % latest, (0, 5, 24, 8)),
+              "WHERE report_date = %s ORDER BY exposed_spend DESC NULLS LAST" % latest, (0, 5, 24, 6),
+              columns=[("campaign_id", "Campaign"), ("utm_campaign", "UTM campaign"), ("spend", "Spend (EGP)", "locale", 0),
+                       ("orders_placed", "Orders placed"), ("cpa", "CPA (EGP)", "locale", 1),
+                       ("roas_placed", "ROAS placed", None, 2), ("roas_delivered", "ROAS delivered", None, 2),
+                       ("served_clicks", "Served clicks", "locale", 0), ("oos_clicks", "Out-of-stock clicks", "locale", 0),
+                       ("oos_click_share", "Out-of-stock share", "percentunit", 1),
+                       ("exposed_spend", "Exposed spend", "locale", 0), ("provisional", "Provisional")]),
         table(8, "Top 5 products by revenue at risk",
               "Out-of-stock add-to-carts times price on the latest D-1 day. The mart keeps every out-of-stock "
               "product; the limit is this panel's.",
@@ -279,13 +308,15 @@ def build_marketing_d1():
               "m.revenue_at_risk FROM marketing_d1_product m JOIN dim_store s ON s.store_id = m.store_id "
               "LEFT JOIN dim_product_current p ON p.product_id = m.product_id "
               "WHERE m.report_date = (SELECT max(report_date) FROM marketing_d1_product) "
-              "ORDER BY m.revenue_at_risk DESC NULLS LAST LIMIT 5", (0, 13, 24, 8)),
+              "ORDER BY m.revenue_at_risk DESC NULLS LAST LIMIT 5", (0, 11, 24, 7),
+              columns=[("oos_add_to_carts", "Out-of-stock add-to-carts", "locale", 0),
+                       ("revenue_at_risk", "Revenue at risk (EGP)", "locale", 0)]),
         text(9, "About this data",
              "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted "
              "in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. "
              "The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend is the "
              "ad platform's UTC day, orders and demand are the Cairo day: they differ by at most 3 hours. Recent days "
-             "are provisional: ROAS delivered matures after 1 to 3 days.", (0, 21, 24, 4)),
+             "are provisional: ROAS delivered matures after 1 to 3 days.", (0, 18, 24, 4)),
     ]
     d = dashboard("fs-marketing-d1", "FunnelStream: Marketing, D-1", panels)
     d["time"] = {"from": "now-14d", "to": "now"}

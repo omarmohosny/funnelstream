@@ -48,13 +48,13 @@ def test_the_stat_thresholds_follow_the_design():
     assert steps["Seconds since the last stock change"] == [None, 30, 60]
     assert steps["Express orders at risk now"] == [None, 1, 3]
     assert steps["Express breaches, last hour"] == [None, 1]
-    assert steps["On-time rate, last hour"] == [None, 100]
+    assert steps["On-time rate, last hour"] == [None, 90, 95]
     assert steps["Slowest express delivery, last hour (minutes)"] == [None, 15, 20]
     colors = {p["title"]: [s["color"] for s in p["fieldConfig"]["defaults"]["thresholds"]["steps"]]
               for p in d["panels"] if p["type"] == "stat"}
     assert colors["Express orders at risk now"] == ["green", "orange", "red"]
     assert colors["Express breaches, last hour"] == ["green", "red"]  # any breach is red
-    assert colors["On-time rate, last hour"] == ["red", "green"]  # red below 100
+    assert colors["On-time rate, last hour"] == ["red", "orange", "green"]  # the 95% target, as on the SLA board
     assert next(p for p in d["panels"] if p["title"] == "On-time rate, last hour")["fieldConfig"]["defaults"]["unit"]         == "percent"
 
 
@@ -161,8 +161,8 @@ def test_the_daily_stats_and_their_thresholds():
     assert steps("Shrinkage share of units out, latest day") == [None, 3, 6]
     assert stats["Shrinkage share of units out, latest day"]["fieldConfig"]["defaults"]["unit"] == "percent"
     rate = stats["Express on-time rate, latest day"]["fieldConfig"]["defaults"]
-    assert rate["unit"] == "percent" and [s["value"] for s in rate["thresholds"]["steps"]] == [None, 100]
-    assert [s["color"] for s in rate["thresholds"]["steps"]] == ["red", "green"]  # red below 100
+    assert rate["unit"] == "percent" and [s["value"] for s in rate["thresholds"]["steps"]] == [None, 90, 95]
+    assert [s["color"] for s in rate["thresholds"]["steps"]] == ["red", "orange", "green"]  # the 95% target
     for p in stats.values():
         assert "(SELECT max(report_date) FROM" in p["targets"][0]["rawSql"]  # always the latest day
 
@@ -233,12 +233,12 @@ def test_the_marketing_cards_read_the_latest_day_and_the_exposed_spend_definitio
     for p in build_marketing_d1()["panels"]:
         if p["type"] != "text":
             assert "(SELECT max(report_date) FROM marketing_d1_" in p["targets"][0]["rawSql"], p["title"]
-    exposed = marketing_panel("Estimated spend exposed to out-of-stock (EGP)")["targets"][0]["rawSql"]
+    exposed = marketing_panel("Exposed spend (EGP)")["targets"][0]["rawSql"]
     assert "sum(exposed_spend)" in exposed
     share = marketing_panel("Out-of-stock click share")
     assert share["fieldConfig"]["defaults"]["unit"] == "percentunit"
     assert "sum(oos_clicks)::numeric / nullif(sum(served_clicks), 0)" in share["targets"][0]["rawSql"]
-    assert "sum(revenue_delivered)" in marketing_panel("ROAS delivered (provisional for recent days)")["targets"][0]["rawSql"]
+    assert "sum(revenue_delivered)" in marketing_panel("ROAS delivered (provisional)")["targets"][0]["rawSql"]
 
 
 def test_the_marketing_tables_sort_and_limit_as_agreed():
