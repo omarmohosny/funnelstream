@@ -276,29 +276,38 @@ RELS = [
 ]
 
 
-# ---- design (version 3): theme, page backgrounds, header bands and styled visuals on a 1280 x 720 canvas -------------
+# ---- design (version 4): the "Accessible Tidal" theme and a left rail + title banner layout on a 1280 x 720 canvas -----
 import hashlib
 
-PAGE_W, PAGE_H, MARGIN, GAP = 1280, 720, 16, 8
-HEADER_H = 64
-SLICER_Y, SLICER_H = 72, 64
-CARD_Y, CARD_H = 144, 84
-BODY_Y = 236
-BODY_H = PAGE_H - BODY_Y - MARGIN
-ROW_H = (BODY_H - GAP) // 2          # two body rows of 230 px with an 8 px gap
+PAGE_W, PAGE_H, GAP = 1280, 720, 8
+RAIL_W = 200                                   # navy rail on the left: title, page navigator, slicers
+MARGIN = 16
+CX = RAIL_W + MARGIN                           # content starts here
+CW = PAGE_W - CX - MARGIN                      # content width
+BANNER_Y, BANNER_H = MARGIN, 64
+CARD_Y, CARD_H = BANNER_Y + BANNER_H + GAP, 84
+BODY_Y = CARD_Y + CARD_H + GAP
 BODY_BOTTOM = PAGE_H - MARGIN
+BODY_H = BODY_BOTTOM - BODY_Y
+ROW_H = (BODY_H - GAP) // 2                    # two body rows with an 8 px gap
+NAV_Y, NAV_H = 92, 236                         # page navigator in the rail
+RAIL_SLICER_X, RAIL_SLICER_W = 12, RAIL_W - 24
 
-# Colours. The categorical order and the white surface were run through the dataviz skill's validate_palette.js:
-# every hard check passes; aqua, yellow and magenta are under 3:1 on white, so bar and column charts show data labels.
-CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-FUNNEL_RAMP = ["#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281"]  # blue steps 250 to 650, validated as an ordinal ramp
-NAVY, NAVY_SOFT = "#0d366b", "#cde2fb"                               # blue step 700 (header, callouts) and step 100
-PLANE, SURFACE = "#f1f4f9", "#ffffff"
-INK, INK2, MUTED, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
-GOOD, WARNING, SERIOUS, CRITICAL = "#0ca30c", "#fab219", "#ec835a", "#d03b3b"
+# Colours: the palette of the "Accessible Tidal" Power BI theme (navy, blues, greens) with its own data colour order.
+TIDAL_COLORS = ["#0F3D6E", "#1F84FF", "#19423F", "#59A472", "#0F3A69", "#0E94FF", "#0B2623", "#59A472", "#3599B8", "#DFBFBF",
+                "#4AC5BB", "#5F6B6D", "#FB8281", "#F4D25A", "#7F898A", "#A4DDEE", "#FDAB89", "#B687AC", "#28738A", "#A78F8F",
+                "#168980", "#293537", "#BB4A4A", "#B59525", "#475052", "#6A9FB0", "#BD7150", "#7B4F71", "#1B4D5C", "#706060",
+                "#0F5C55", "#1C2325"]
+CATEGORICAL = TIDAL_COLORS
+FUNNEL_RAMP = ["#A9CFFB", "#6FB0FA", "#1F84FF", "#186DD5", "#0F3D6E"]   # one hue, light to dark, for the five funnel stages
+NAVY, NAVY_SOFT, RAIL_ITEM = "#0F3D6E", "#D8E1EC", "#1B5493"
+TIDAL_GREEN = "#59A472"
+PLANE, SURFACE, OUTSPACE = "#EEF2F7", "#ffffff", "#D8E1EC"
+INK, INK2, MUTED, GRID = "#121212", "#4A4F57", "#6C6966", "#DCE2EA"
+GOOD, WARNING, SERIOUS, CRITICAL = "#46835A", "#F4D25A", "#FDAB89", "#BB4A4A"
 FONT, FONT_BOLD = "Segoe UI", "Segoe UI Semibold"
 
-ROLES = {"card": ("Values",), "slicer": ("Values",), "tableEx": ("Values",), "funnel": ("Category", "Y"),
+ROLES = {"pageNavigator": (), "card": ("Values",), "slicer": ("Values",), "tableEx": ("Values",), "funnel": ("Category", "Y"),
          "lineChart": ("Category", "Y", "Series"), "clusteredBarChart": ("Category", "Y", "Series"),
          "clusteredColumnChart": ("Category", "Y", "Series"), "treemap": ("Group", "Values"),
          "donutChart": ("Category", "Y"), "textbox": ()}
@@ -345,27 +354,47 @@ def solid(hex_color):
     return {"solid": {"color": text(hex_color)}}
 
 
-def vis(kind, title, box, roles, sort=None, dropdown=False, header=None):
+def vis(kind, title, box, roles, sort=None, dropdown=False, header=None, variant=None):
     """box = (x, y, w, h); roles = {role: [fields]}; sort = a field to sort descending by."""
-    return {"kind": kind, "title": title, "box": box, "roles": roles, "sort": sort, "dropdown": dropdown, "header": header}
+    return {"kind": kind, "title": title, "box": box, "roles": roles, "sort": sort, "dropdown": dropdown, "header": header,
+            "variant": variant}
 
 
-def row(n, y, h, x0=MARGIN, width=PAGE_W - 2 * MARGIN):
+def row(n, y, h, x0=CX, width=CW):
     """n equal boxes in a row."""
     w = (width - GAP * (n - 1)) / n
     return [(round(x0 + i * (w + GAP), 1), y, round(w, 1), h) for i in range(n)]
 
 
+def cols(weights, y, h):
+    """Boxes side by side across the content area, widths in proportion to the weights."""
+    usable = CW - GAP * (len(weights) - 1)
+    out, x = [], CX
+    for weight in weights:
+        w = round(usable * weight / sum(weights), 1)
+        out.append((round(x, 1), y, w, h))
+        x += w + GAP
+    return out
+
+
 def header(title, subtitle):
-    return vis("textbox", None, (0, 0, PAGE_W, HEADER_H), {}, header=(title, subtitle))
+    """The rail (navy, with the product name), the page navigator inside it, and the title banner of the page."""
+    return [vis("textbox", None, (0, 0, RAIL_W, PAGE_H), {}, header=("FunnelStream", "Real-time e-commerce analytics"), variant="rail"),
+            vis("pageNavigator", None, (RAIL_SLICER_X, NAV_Y, RAIL_SLICER_W, NAV_H), {}),
+            vis("textbox", None, (CX, BANNER_Y, CW, BANNER_H), {}, header=(title, subtitle), variant="banner")]
 
 
 def slicer_row(fields):
-    return [vis("slicer", None, box, {"Values": [f]}, dropdown=f != C("Date", "date"))
-            for box, f in zip(row(len(fields), SLICER_Y, SLICER_H), fields)]
+    """The slicers stack in the rail, under the page navigator: the date range first, then dropdowns."""
+    out, y = [], NAV_Y + NAV_H + 16
+    for f in fields:
+        h = 80 if f == C("Date", "date") else 64
+        out.append(vis("slicer", None, (RAIL_SLICER_X, y, RAIL_SLICER_W, h), {"Values": [f]}, dropdown=f != C("Date", "date")))
+        y += h + GAP
+    return out
 
 
-def card_row(measures, y=CARD_Y, h=CARD_H, x0=MARGIN, width=PAGE_W - 2 * MARGIN):
+def card_row(measures, y=CARD_Y, h=CARD_H, x0=CX, width=CW):
     return [vis("card", name, box, {"Values": [M(name)]}) for box, name in zip(row(len(measures), y, h, x0, width), measures)]
 
 
@@ -389,101 +418,107 @@ DISPLAY = {
 
 
 def page_layouts():
-    """page id -> (tab name, visuals), in tab order. The first visual of every page is the header band. Stage 2: seven pages,
-    one question each; no pie, donut or treemap; every chart title says what is shown."""
+    """page id -> (tab name, visuals), in tab order. Each page starts with the rail, the page navigator and the title banner
+    (header), then the slicers in the rail, the cards and the charts. Seven pages, one question each; no pie, donut or
+    treemap; every chart title says what is shown."""
     date = C("Date", "date")
     top, mid = BODY_Y, BODY_Y + ROW_H + GAP          # two rows of the body, ROW_H high each
     pages = {}
     channel, platform, payment = C("Orders Daily", "channel"), C("Orders Daily", "platform"), C("Orders Daily", "payment_method")
-    pages["executive"] = ("Executive", [header("FunnelStream  |  Executive", "Is revenue on track, and where do orders leak? The simulated data has a one-day volume peak on 9 October")]
+    t1, t2 = cols([3, 2], top, ROW_H), cols([3, 2], mid, ROW_H)
+    pages["executive"] = ("Executive", header("FunnelStream  |  Executive", "Is revenue on track, and where do orders leak? The simulated data has a one-day volume peak on 9 October")
         + slicer_row([date, channel, platform])
         + card_row(["Revenue Placed", "Revenue Delivered", "Orders Placed", "AOV", "Delivered Share", "Cancel Rate"])
-        + [vis("lineChart", "Revenue by day (one-day volume peak on 9 Oct)", (16, top, 760, ROW_H),
+        + [vis("lineChart", "Revenue by day (one-day volume peak on 9 Oct)", t1[0],
                {"Category": [date], "Y": [M("Revenue Placed"), M("Revenue Delivered")]}),
-           vis("clusteredBarChart", "Orders by channel", (784, top, 480, ROW_H),
+           vis("clusteredBarChart", "Orders by channel", t1[1],
                {"Category": [channel], "Y": [M("Orders Placed")]}, sort=M("Orders Placed")),
-           vis("clusteredBarChart", "Where orders leak: cancelled, returned and failed-attempt rate by payment method", (16, mid, 760, ROW_H),
+           vis("clusteredBarChart", "Where orders leak, by payment method", t2[0],
                {"Category": [payment], "Y": [M("Cancel Rate"), M("Return Rate"), M("Failed Attempt Rate")]}),
-           vis("clusteredBarChart", "Orders by payment method", (784, mid, 480, ROW_H),
+           vis("clusteredBarChart", "Orders by payment method", t2[1],
                {"Category": [payment], "Y": [M("Orders Placed")]}, sort=M("Orders Placed"))])
     camp, camp_platform = C("Campaign", "name"), C("Campaign", "platform")
-    pages["campaign"] = ("Campaign", [header("FunnelStream  |  Campaigns", "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling")]
+    left, right_top, right_low = cols([1, 1], top, BODY_H), cols([1, 1], top, ROW_H), cols([1, 1], mid, ROW_H)
+    pages["campaign"] = ("Campaign", header("FunnelStream  |  Campaigns", "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling")
         + slicer_row([date, camp, camp_platform])
         + card_row(["Spend", "CPA", "CTR", "Conversion Rate", "ROAS Delivered"])
-        + [vis("clusteredBarChart", "Return on ad spend by campaign: delivered against placed", (16, top, 620, BODY_H),
+        + [vis("clusteredBarChart", "Return on ad spend by campaign: delivered and placed", left[0],
                {"Category": [camp], "Y": [M("ROAS Delivered"), M("ROAS Placed")]}, sort=M("ROAS Delivered")),
-           vis("clusteredBarChart", "Cost per delivered order by campaign", (644, top, 620, ROW_H),
+           vis("clusteredBarChart", "Cost per delivered order by campaign", right_top[1],
                {"Category": [camp], "Y": [M("Cost per Delivered Order")]}, sort=M("Cost per Delivered Order")),
-           vis("tableEx", "Campaign scorecard", (644, mid, 620, ROW_H),
+           vis("tableEx", "Campaign scorecard", right_low[1],
                {"Values": [camp, M("Spend"), M("Orders on Spend Days"), M("CPA"), M("ROAS Delivered"), M("CTR")]},
                sort=M("Spend"))])
     store, category, product = C("Store", "store_name"), C("Product", "category"), C("Product", "name")
-    pages["marketing_inventory"] = ("Marketing and stock", [header("FunnelStream  |  Marketing and stock", "Which campaign sent shoppers to empty shelves? An estimate: spend is the ad UTC day and demand the Cairo day")]
+    pages["marketing_inventory"] = ("Marketing and stock", header("FunnelStream  |  Marketing and stock", "Which campaign sent shoppers to empty shelves? An estimate: spend is the ad UTC day and demand the Cairo day")
         + slicer_row([date, camp])
         + card_row(["Exposed Spend", "OOS Click Share", "Exposed Share of Spend", "Revenue at Risk", "OOS Add to Cart"])
-        + [vis("clusteredBarChart", "Exposed spend next to campaign spend (D-1, estimate)", (16, top, 760, ROW_H),
+        + [vis("clusteredBarChart", "Exposed spend and campaign spend (D-1)", t1[0],
                {"Category": [camp], "Y": [M("Exposed Spend"), M("Campaign Spend D1")]}),
-           vis("clusteredColumnChart", "Out-of-stock add to cart by product category", (784, top, 480, ROW_H),
+           vis("clusteredColumnChart", "Out-of-stock add to cart by category", t1[1],
                {"Category": [category], "Y": [M("OOS Add to Cart")]}, sort=M("OOS Add to Cart")),
-           vis("tableEx", "Products by revenue at risk (all campaigns)", (16, mid, 760, ROW_H),
+           vis("tableEx", "Products by revenue at risk (all campaigns)", t2[0],
                {"Values": [product, store, M("Revenue at Risk")]}, sort=M("Revenue at Risk")),
-           vis("clusteredBarChart", "Revenue at risk by category (all campaigns)", (784, mid, 480, ROW_H),
+           vis("clusteredBarChart", "Revenue at risk by category", t2[1],
                {"Category": [category], "Y": [M("Revenue at Risk")]}, sort=M("Revenue at Risk"))])
-    pages["inventory"] = ("Operations", [header("FunnelStream  |  Operations", "What to restock today, and is the 20-minute express promise holding? The stock cards are the current snapshot of 8 dark stores")]
+    th, tm = cols([1, 1, 1], top, ROW_H), cols([1, 1, 1], mid, ROW_H)
+    pages["inventory"] = ("Operations", header("FunnelStream  |  Operations", "What to restock today, and is the 20-minute express promise holding? The stock cards are the current snapshot of 8 dark stores")
         + slicer_row([date, store, category])
         + card_row(["Out of Stock Lines", "Low Stock Lines", "Out of Stock Rate", "Express Orders", "Express On-time Rate",
                     "Express Breaches"])
-        + [vis("clusteredBarChart", "Oversold units by store", (16, top, 400, ROW_H),
+        + [vis("clusteredBarChart", "Oversold units by store", th[0],
                {"Category": [store], "Y": [M("Oversold Units")]}, sort=M("Oversold Units")),
-           vis("clusteredColumnChart", "Units sold and received by day", (424, top, 420, ROW_H),
+           vis("clusteredColumnChart", "Units sold and received by day", th[1],
                {"Category": [date], "Y": [M("Units Sold"), M("Units Received")]}),
-           vis("clusteredColumnChart", "Shrinkage rate by store", (852, top, 412, ROW_H),
+           vis("clusteredColumnChart", "Shrinkage rate by store", th[2],
                {"Category": [store], "Y": [M("Shrinkage Rate")]}),
-           vis("tableEx", "Products with oversold units", (16, mid, 420, ROW_H),
+           vis("tableEx", "Products with oversold units", tm[0],
                {"Values": [product, M("Oversold Units"), M("Days of Cover (max 90)")]}, sort=M("Oversold Units")),
-           vis("clusteredColumnChart", "Express breaches by store", (444, mid, 420, ROW_H),
+           vis("clusteredColumnChart", "Express breaches by store", tm[1],
                {"Category": [store], "Y": [M("Express Breaches")]}),
-           vis("clusteredBarChart", "Average delivery hours by carrier (all orders)", (872, mid, 392, ROW_H),
+           vis("clusteredBarChart", "Delivery hours by carrier (all orders)", tm[2],
                {"Category": [C("Orders", "carrier")], "Y": [M("Average Delivery Hours")]})])
     fchannel = C("Funnel Daily", "channel")
-    pages["funnel"] = ("Funnel", [header("FunnelStream  |  Funnel", "Which step and which channel should we fix first? From session to order, by channel")]
+    fl, fr_top, fr_low = cols([2, 3], top, BODY_H), cols([2, 3], top, ROW_H), cols([2, 3], mid, ROW_H)
+    pages["funnel"] = ("Funnel", header("FunnelStream  |  Funnel", "Which step and which channel should we fix first? From session to order, by channel")
         + slicer_row([date, fchannel, C("Funnel Daily", "platform")])
         + card_row(["Cart Abandon Rate", "Checkout Abandon Rate", "Session Conversion"])
-        + [vis("funnel", "Funnel stages", (16, top, 480, BODY_H),
+        + [vis("funnel", "Funnel stages", fl[0],
                {"Y": [M("Sessions"), M("Product View Sessions"), M("Cart Sessions"), M("Checkout Sessions"),
                       M("Funnel Orders")]}),
-           vis("clusteredBarChart", "Cart and checkout abandon rate by channel", (504, top, 760, ROW_H),
+           vis("clusteredBarChart", "Cart and checkout abandon rate by channel", fr_top[1],
                {"Category": [fchannel], "Y": [M("Cart Abandon Rate"), M("Checkout Abandon Rate")]}),
-           vis("clusteredBarChart", "Sessions by channel", (504, mid, 760, ROW_H),
+           vis("clusteredBarChart", "Sessions by channel", fr_low[1],
                {"Category": [fchannel], "Y": [M("Sessions")]}, sort=M("Sessions"))])
     pcategory, city = C("Product", "category"), C("City Product Daily", "city")
-    pages["products"] = ("Products and cities", [header("FunnelStream  |  Products and cities", "What should we stock and promote, and where? Revenue, add-to-cart and cart rate by category and city")]
+    pages["products"] = ("Products and cities", header("FunnelStream  |  Products and cities", "What should we stock and promote, and where? Revenue, add-to-cart and cart rate by category and city")
         + slicer_row([date, pcategory, city])
         + card_row(["Product Revenue", "Product Units", "Product Page Views", "Product Add to Carts", "Product Cart Rate"])
-        + [vis("clusteredBarChart", "Revenue by product category", (16, top, 400, ROW_H),
+        + [vis("clusteredBarChart", "Revenue by product category", th[0],
                {"Category": [pcategory], "Y": [M("Product Revenue")]}, sort=M("Product Revenue")),
-           vis("clusteredBarChart", "Revenue by city", (424, top, 420, ROW_H),
+           vis("clusteredBarChart", "Revenue by city", th[1],
                {"Category": [city], "Y": [M("Product Revenue")]}, sort=M("Product Revenue")),
-           vis("clusteredColumnChart", "Add to cart by product category", (852, top, 412, ROW_H),
+           vis("clusteredColumnChart", "Add to cart by category", th[2],
                {"Category": [pcategory], "Y": [M("Product Add to Carts")]}),
-           vis("tableEx", "Top products", (16, mid, 1248, ROW_H),
+           vis("tableEx", "Top products", (CX, mid, CW, ROW_H),
                {"Values": [C("Product", "name"), pcategory, M("Product Units"), M("Product Revenue"),
                            M("Product Page Views"), M("Product Cart Rate")]},
                sort=M("Product Revenue"))])
     c360 = lambda col: C("Customer 360", col)
-    pages["customers"] = ("Customers", [header("FunnelStream  |  Customers", "Who buys again, and who should we win back? One row per customer, the current state, no date filter")]
+    cm = cols([1, 2], mid, ROW_H)
+    pages["customers"] = ("Customers", header("FunnelStream  |  Customers", "Who buys again, and who should we win back? One row per customer, the current state, no date filter")
         + slicer_row([c360("city"), c360("top_category"), c360("preferred_payment_method")])
         + card_row(["Customers on File", "Buyers", "Repeat Buyer Rate", "Lifetime Spend", "Average Spend per Buyer",
                     "Quiet Buyers (7+ days)"])
-        + [vis("clusteredBarChart", "Buyers by favourite category", (16, top, 400, ROW_H),
+        + [vis("clusteredBarChart", "Buyers by favourite category", th[0],
                {"Category": [c360("top_category")], "Y": [M("Buyers")]}, sort=M("Buyers")),
-           vis("clusteredBarChart", "Buyers by preferred payment method", (424, top, 420, ROW_H),
+           vis("clusteredBarChart", "Buyers by preferred payment", th[1],
                {"Category": [c360("preferred_payment_method")], "Y": [M("Buyers")]}, sort=M("Buyers")),
-           vis("clusteredColumnChart", "Average spend per buyer by favourite category", (852, top, 412, ROW_H),
+           vis("clusteredColumnChart", "Average spend per buyer by category", th[2],
                {"Category": [c360("top_category")], "Y": [M("Average Spend per Buyer")]}),
-           vis("clusteredBarChart", "Lifetime spend by city", (16, mid, 400, ROW_H),
+           vis("clusteredBarChart", "Lifetime spend by city", cm[0],
                {"Category": [c360("city")], "Y": [M("Lifetime Spend")]}, sort=M("Lifetime Spend")),
-           vis("tableEx", "Top customers by lifetime spend, with days since their last order", (424, mid, 840, ROW_H),
+           vis("tableEx", "Top customers by lifetime spend", cm[1],
                {"Values": [c360("customer_id"), c360("city"), c360("top_category"), c360("orders_count"),
                            c360("total_spend"), c360("days_since_last_order")]},
                sort=c360("total_spend"))])
@@ -491,14 +526,15 @@ def page_layouts():
 
 
 def theme():
-    """The report theme: validated palette, status colours, fonts and quiet axes and gridlines."""
+    """The report theme: the Accessible Tidal palette and status colours, our fonts, and quiet axes and gridlines."""
     def ink(hex_color):
         return {"solid": {"color": hex_color}}
     return {
-        "name": "FunnelStream", "dataColors": CATEGORICAL,
-        "background": SURFACE, "foreground": INK, "tableAccent": CATEGORICAL[0],
-        "good": GOOD, "neutral": WARNING, "bad": CRITICAL,
-        "maximum": CATEGORICAL[0], "center": "#f0efec", "minimum": CATEGORICAL[7],
+        "name": "Accessible Tidal", "dataColors": CATEGORICAL,
+        "foreground": INK, "background": SURFACE, "foregroundNeutralSecondary": "#6C6966", "backgroundLight": "#E5E0DA",
+        "foregroundNeutralTertiary": "#ABA7A2", "backgroundNeutral": "#C6C2BE", "tableAccent": "#4E9466",
+        "maximum": "#0B2F54", "center": TIDAL_GREEN, "minimum": "#0E94FF",
+        "bad": NAVY, "neutral": "#186DD5", "good": "#46835A",
         "textClasses": {
             "callout": {"fontSize": 24, "fontFace": FONT_BOLD, "color": NAVY},
             "title": {"fontSize": 12, "fontFace": FONT_BOLD, "color": INK},
@@ -514,15 +550,33 @@ def theme():
 
 def container_objects(spec):
     """Formatting of the visual's container: white rounded card with a hairline border, or the navy header band."""
-    if spec["kind"] == "textbox":
+    if spec["kind"] == "textbox" and spec["variant"] == "rail":
         return {"background": [{"properties": {"show": flag(True), "color": solid(NAVY), "transparency": number(0)}}],
                 "border": [{"properties": {"show": flag(False)}}]}
+    if spec["kind"] == "textbox":      # the title banner: a white card with a navy accent in the text
+        return {"background": [{"properties": {"show": flag(True), "color": solid(SURFACE), "transparency": number(0)}}],
+                "border": [{"properties": {"show": flag(True), "color": solid(GRID), "radius": number(8)}}]}
+    if spec["kind"] == "pageNavigator":
+        return {"background": [{"properties": {"show": flag(False)}}], "border": [{"properties": {"show": flag(False)}}]}
     obj = {"background": [{"properties": {"show": flag(True), "color": solid(SURFACE), "transparency": number(0)}}],
            "border": [{"properties": {"show": flag(True), "color": solid(GRID), "radius": number(8)}}]}
     if spec["title"] and spec["kind"] not in ("slicer", "card"):
         obj["title"] = [{"properties": {"show": flag(True), "text": text(spec["title"]), "fontColor": solid(INK),
                                         "fontSize": number(12), "bold": flag(True), "fontFamily": text(FONT_BOLD)}}]
     return obj
+
+
+def table_column_widths(spec):
+    """Explicit column widths that add up to the table's inner width, so the table fills its box: a text column weighs
+    1.6 and a measure column 1. The selector names the column by its queryRef."""
+    fields = spec["roles"]["Values"]
+    weights = [1 if f[0] == "m" else 1.6 for f in fields]
+    inner = spec["box"][2] - 28                     # card padding and the scroll bar
+    out = []
+    for f, weight in zip(fields, weights):
+        ref = field_json(f)["queryRef"]
+        out.append({"properties": {"value": number(round(inner * weight / sum(weights)))}, "selector": {"metadata": ref}})
+    return out
 
 
 def visual_objects(spec):
@@ -538,25 +592,45 @@ def visual_objects(spec):
     if kind == "lineChart":
         return {"lineStyles": [{"properties": {"strokeWidth": number(3, "L")}}]}
     if kind == "tableEx":
-        return {"columnHeaders": [{"properties": {"fontColor": solid("#ffffff"), "backColor": solid(NAVY), "fontSize": number(10),
+        return {"columnHeaders": [{"properties": {"fontColor": solid("#ffffff"), "backColor": solid(NAVY), "fontSize": number(11),
                                                   "bold": flag(True)}}],
-                "values": [{"properties": {"fontColor": solid(INK), "fontSize": number(10), "backColorPrimary": solid(SURFACE),
+                "values": [{"properties": {"fontColor": solid(INK), "fontSize": number(11), "backColorPrimary": solid(SURFACE),
                                            "backColorSecondary": solid(PLANE)}}],
                 "grid": [{"properties": {"gridHorizontal": flag(True), "gridHorizontalColor": solid(GRID),
-                                         "gridVertical": flag(False)}}]}
+                                         "gridVertical": flag(False), "rowPadding": number(3)}}],
+                "columnWidth": table_column_widths(spec)}
     if kind == "funnel":
         return {"labels": [{"properties": {"labelDisplayUnits": number(1)}}],
                 "dataPoint": [{"properties": {"fill": solid(color)}, "selector": {"metadata": "_Measures." + f[1]}}
                               for f, color in zip(spec["roles"]["Y"], FUNNEL_RAMP)]}
     if kind == "slicer" and spec["dropdown"]:
         return {"data": [{"properties": {"mode": text("Dropdown")}}]}
+    if kind == "textbox" and spec["variant"] == "rail":
+        title, subtitle = spec["header"]
+        return {"general": [{"properties": {"paragraphs": [
+            {"textRuns": [{"value": title, "textStyle": {"fontFamily": FONT_BOLD, "fontSize": "18pt", "fontWeight": "bold",
+                                                         "color": "#ffffff"}}], "horizontalTextAlignment": "left"},
+            {"textRuns": [{"value": subtitle, "textStyle": {"fontFamily": FONT, "fontSize": "9pt", "color": NAVY_SOFT}}],
+             "horizontalTextAlignment": "left"}]}}]}
     if kind == "textbox":
         title, subtitle = spec["header"]
         return {"general": [{"properties": {"paragraphs": [
-            {"textRuns": [{"value": title, "textStyle": {"fontFamily": FONT_BOLD, "fontSize": "20pt", "fontWeight": "bold",
-                                                         "color": "#ffffff"}}], "horizontalTextAlignment": "left"},
-            {"textRuns": [{"value": subtitle, "textStyle": {"fontFamily": FONT, "fontSize": "10pt", "color": NAVY_SOFT}}],
+            {"textRuns": [{"value": title, "textStyle": {"fontFamily": FONT_BOLD, "fontSize": "18pt", "fontWeight": "bold",
+                                                         "color": NAVY}}], "horizontalTextAlignment": "left"},
+            {"textRuns": [{"value": subtitle, "textStyle": {"fontFamily": FONT, "fontSize": "9pt", "color": INK2}}],
              "horizontalTextAlignment": "left"}]}}]}
+    if kind == "pageNavigator":
+        def sel(name):
+            return {"id": name}
+        return {"layout": [{"properties": {"orientation": lit("1D"), "cellPadding": number(6, "L")}}],
+                "shape": [{"properties": {"tileShape": text("rectangleRounded"), "rectangleRoundedCurve": number(8, "L")},
+                           "selector": sel("default")}],
+                "text": [{"properties": {"fontColor": solid("#ffffff"), "fontSize": number(10), "fontFamily": text(FONT)},
+                          "selector": sel("default")}],
+                "fill": [{"properties": {"fillColor": solid(RAIL_ITEM), "transparency": number(0)}, "selector": sel("default")},
+                         {"properties": {"fillColor": solid(TIDAL_GREEN), "transparency": number(0)}, "selector": sel("selected")}],
+                "outline": [{"properties": {"show": flag(False)}}],
+                "shadow": [{"properties": {"show": flag(False)}}]}
     return None
 
 
@@ -577,7 +651,7 @@ def visual_json(page, index, spec):
         visual["objects"] = objects
     visual["visualContainerObjects"] = container_objects(spec)
     visual["drillFilterOtherVisuals"] = True
-    label = spec["title"] or (spec["header"][0] if spec["header"] else json.dumps(spec["roles"]))
+    label = spec["title"] or ((spec["variant"] or "") + (spec["header"][0] if spec["header"] else json.dumps(spec["roles"])))
     name = hashlib.sha1(("%s/%d/%s" % (page, index, label)).encode()).hexdigest()[:20]
     return {"$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
             "name": name, "position": {"x": x, "y": y, "z": index, "height": h, "width": w, "tabOrder": index},
@@ -585,9 +659,9 @@ def visual_json(page, index, spec):
 
 
 def page_objects():
-    """The page canvas and the area around it share one light plane."""
+    """A light plane for the page; the area around the canvas is the theme's blue-grey."""
     return {"background": [{"properties": {"color": solid(PLANE), "transparency": number(0)}}],
-            "outspace": [{"properties": {"color": solid(PLANE), "transparency": number(0)}}]}
+            "outspace": [{"properties": {"color": solid(OUTSPACE), "transparency": number(0)}}]}
 
 
 def main():

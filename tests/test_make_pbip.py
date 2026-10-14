@@ -162,6 +162,11 @@ def test_regenerating_gives_the_same_relationship_ids(project, tmp_path):
     assert (project / name).read_text(encoding="utf-8") == (tmp_path / name).read_text(encoding="utf-8")
 
 
+def is_rail(visual):
+    pos = visual["position"]
+    return visual["visual"]["visualType"] == "textbox" and (pos["x"], pos["y"], pos["width"], pos["height"]) == (0, 0, 200, 720)
+
+
 def visuals(project):
     import json
     out = {}
@@ -211,8 +216,9 @@ def test_visuals_fit_the_page_and_have_unique_names(project):
             assert pos["x"] >= 0 and pos["y"] >= 0 and pos["x"] + pos["width"] <= 1280 and pos["y"] + pos["height"] <= 720, (page, v["name"])
             assert v["name"] not in names
             names.add(v["name"])
-        # no two visuals overlap
-        boxes = [(v["position"]["x"], v["position"]["y"], v["position"]["x"] + v["position"]["width"], v["position"]["y"] + v["position"]["height"]) for v in items]
+        # no two visuals overlap, except that the rail is the navy background behind the navigator and the slicers
+        boxes = [(v["position"]["x"], v["position"]["y"], v["position"]["x"] + v["position"]["width"], v["position"]["y"] + v["position"]["height"])
+                 for v in items if not is_rail(v)]
         for i, a in enumerate(boxes):
             for b in boxes[i + 1:]:
                 assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (page, a, b)
@@ -221,7 +227,7 @@ def test_visuals_fit_the_page_and_have_unique_names(project):
 def test_every_visual_has_a_title_except_slicers(project):
     for page, items in visuals(project).items():
         for v in items:
-            if v["visual"]["visualType"] not in ("slicer", "card", "textbox"):
+            if v["visual"]["visualType"] not in ("slicer", "card", "textbox", "pageNavigator"):
                 title = v["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"]
                 assert title.startswith("'") and len(title) > 3, (page, v["name"])
 
@@ -240,17 +246,25 @@ def test_the_model_uses_the_demand_order_line_and_customer_tables(project):
         assert measure in tables["_Measures"], measure
 
 
-PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+PALETTE_HEAD = ["#0F3D6E", "#1F84FF", "#19423F", "#59A472"]   # the first data colours of the Accessible Tidal theme
 
 
-def test_every_page_has_a_header_band_with_its_title(project):
+def test_every_page_has_a_rail_a_page_navigator_and_a_title_banner(project):
     for page, items in visuals(project).items():
-        headers = [v for v in items if v["visual"]["visualType"] == "textbox"]
-        assert len(headers) == 1, page
-        pos = headers[0]["position"]
-        assert (pos["x"], pos["y"], pos["width"]) == (0, 0, 1280), page
-        text = json_dumps(headers[0])
-        assert "FunnelStream" in text, page
+        textboxes = [v for v in items if v["visual"]["visualType"] == "textbox"]
+        assert len(textboxes) == 2, page
+        rails = [v for v in textboxes if is_rail(v)]
+        banners = [v for v in textboxes if not is_rail(v)]
+        assert len(rails) == 1 and len(banners) == 1, page
+        pos = banners[0]["position"]
+        assert (pos["x"], pos["y"], pos["width"], pos["height"]) == (216, 16, 1048, 64), page
+        assert "FunnelStream" in json_dumps(banners[0]), page
+        navigators = [v for v in items if v["visual"]["visualType"] == "pageNavigator"]
+        assert len(navigators) == 1, page
+        # the slicers sit inside the rail
+        for v in items:
+            if v["visual"]["visualType"] == "slicer":
+                assert v["position"]["x"] + v["position"]["width"] <= 200, page
 
 
 def json_dumps(obj):
@@ -258,12 +272,13 @@ def json_dumps(obj):
     return json.dumps(obj)
 
 
-def test_the_theme_carries_the_validated_palette_and_is_registered(project):
+def test_the_theme_is_accessible_tidal_and_is_registered(project):
     import json
     theme_file = project / "FunnelStream.Report" / "StaticResources" / "RegisteredResources" / "FunnelStreamTheme.json"
     theme = json.loads(theme_file.read_text(encoding="utf-8"))
-    assert theme["dataColors"] == PALETTE, "scripts/validate_palette.js of the dataviz skill was run on exactly this order"
-    assert theme["good"] == "#0ca30c" and theme["bad"] == "#d03b3b"
+    assert theme["name"] == "Accessible Tidal"
+    assert theme["dataColors"][:4] == PALETTE_HEAD and len(theme["dataColors"]) == 32
+    assert theme["good"] == "#46835A" and theme["bad"] == "#0F3D6E"
     report = json.loads((project / "FunnelStream.Report" / "definition" / "report.json").read_text(encoding="utf-8"))
     assert report["themeCollection"]["customTheme"]["name"] == "FunnelStreamTheme.json"
     package, = report["resourcePackages"]
@@ -286,8 +301,8 @@ def test_every_page_has_a_background_and_cards_are_styled(project):
                 assert "labels" in v["visual"]["objects"], (page, v["name"])
 
 
-def test_bar_and_column_charts_show_data_labels_because_three_palette_colours_are_light(project):
-    """The palette check warns that aqua, yellow and magenta are under 3:1 on white; visible labels are the relief."""
+def test_bar_and_column_charts_show_data_labels_because_some_palette_colours_are_light(project):
+    """Several colours of the palette (aqua, yellow, pale blue) are under 3:1 on white; visible labels are the relief."""
     for page, items in visuals(project).items():
         for v in items:
             if v["visual"]["visualType"] in ("clusteredBarChart", "clusteredColumnChart"):
@@ -320,7 +335,7 @@ def test_slicers_are_tall_enough_and_every_page_fits(project):
         assert len(slicers) <= 3, page
         for s in slicers:
             assert s["position"]["height"] >= 64, (page, s["name"])
-        bottom = max(v["position"]["y"] + v["position"]["height"] for v in items)
+        bottom = max(v["position"]["y"] + v["position"]["height"] for v in items if not is_rail(v))
         assert bottom <= 704, (page, bottom)
 
 
@@ -383,7 +398,7 @@ def test_chart_titles_fit_their_box_and_the_carrier_chart_says_all_orders(projec
     titles = {}
     for page, items in visuals(project).items():
         for v in items:
-            if v["visual"]["visualType"] in ("slicer", "card", "textbox"):
+            if v["visual"]["visualType"] in ("slicer", "card", "textbox", "pageNavigator"):
                 continue
             title = v["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"].strip("'")
             width = v["position"]["width"]
@@ -421,3 +436,15 @@ def test_charts_do_not_show_a_blank_category_or_two_funnel_stages_as_2k(project)
     ops_titles = [t for page in ("inventory",) for v in found[page] if v["visual"]["visualType"] == "tableEx"
                   for t in [v["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"]]]
     assert any("oversold" in t.lower() for t in ops_titles), ops_titles
+
+
+def test_table_columns_have_explicit_widths_that_fill_the_box(project):
+    """A table with automatic widths hugged the left of its box; the generator sets one width per column."""
+    found = [v for items in visuals(project).values() for v in items if v["visual"]["visualType"] == "tableEx"]
+    assert found
+    for v in found:
+        widths = v["visual"]["objects"]["columnWidth"]
+        refs = [proj["queryRef"] for _, _, _, proj in fields_of(v)]
+        assert [w["selector"]["metadata"] for w in widths] == refs
+        total = sum(float(w["properties"]["value"]["expr"]["Literal"]["Value"].rstrip("D")) for w in widths)
+        assert abs(total - (v["position"]["width"] - 28)) <= len(refs), (v["name"], total)

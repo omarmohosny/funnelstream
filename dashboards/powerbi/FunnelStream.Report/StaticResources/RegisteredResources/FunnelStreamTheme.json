@@ -1,44 +1,72 @@
 {
-  "name": "FunnelStream",
+  "name": "Accessible Tidal",
   "dataColors": [
-    "#2a78d6",
-    "#eb6834",
-    "#1baf7a",
-    "#eda100",
-    "#e87ba4",
-    "#008300",
-    "#6250d6",
-    "#e34948"
+    "#0F3D6E",
+    "#1F84FF",
+    "#19423F",
+    "#59A472",
+    "#0F3A69",
+    "#0E94FF",
+    "#0B2623",
+    "#59A472",
+    "#3599B8",
+    "#DFBFBF",
+    "#4AC5BB",
+    "#5F6B6D",
+    "#FB8281",
+    "#F4D25A",
+    "#7F898A",
+    "#A4DDEE",
+    "#FDAB89",
+    "#B687AC",
+    "#28738A",
+    "#A78F8F",
+    "#168980",
+    "#293537",
+    "#BB4A4A",
+    "#B59525",
+    "#475052",
+    "#6A9FB0",
+    "#BD7150",
+    "#7B4F71",
+    "#1B4D5C",
+    "#706060",
+    "#0F5C55",
+    "#1C2325"
   ],
+  "foreground": "#121212",
   "background": "#ffffff",
-  "foreground": "#0b0b0b",
-  "tableAccent": "#2a78d6",
-  "good": "#0ca30c",
-  "neutral": "#fab219",
-  "bad": "#d03b3b",
-  "maximum": "#2a78d6",
-  "center": "#f0efec",
-  "minimum": "#e34948",
+  "foregroundNeutralSecondary": "#6C6966",
+  "backgroundLight": "#E5E0DA",
+  "foregroundNeutralTertiary": "#ABA7A2",
+  "backgroundNeutral": "#C6C2BE",
+  "tableAccent": "#4E9466",
+  "maximum": "#0B2F54",
+  "center": "#59A472",
+  "minimum": "#0E94FF",
+  "bad": "#0F3D6E",
+  "neutral": "#186DD5",
+  "good": "#46835A",
   "textClasses": {
     "callout": {
       "fontSize": 24,
       "fontFace": "Segoe UI Semibold",
-      "color": "#0d366b"
+      "color": "#0F3D6E"
     },
     "title": {
       "fontSize": 12,
       "fontFace": "Segoe UI Semibold",
-      "color": "#0b0b0b"
+      "color": "#121212"
     },
     "header": {
       "fontSize": 11,
       "fontFace": "Segoe UI Semibold",
-      "color": "#0b0b0b"
+      "color": "#121212"
     },
     "label": {
       "fontSize": 10,
       "fontFace": "Segoe UI",
-      "color": "#52514e"
+      "color": "#4A4F57"
     }
   },
   "visualStyles": {
@@ -48,7 +76,7 @@
           {
             "labelColor": {
               "solid": {
-                "color": "#898781"
+                "color": "#6C6966"
               }
             },
             "fontSize": 9,
@@ -61,7 +89,7 @@
           {
             "labelColor": {
               "solid": {
-                "color": "#898781"
+                "color": "#6C6966"
               }
             },
             "fontSize": 9,
@@ -70,7 +98,7 @@
             "showAxisTitle": false,
             "gridlineColor": {
               "solid": {
-                "color": "#e1e0d9"
+                "color": "#DCE2EA"
               }
             }
           }
@@ -79,7 +107,7 @@
           {
             "labelColor": {
               "solid": {
-                "color": "#52514e"
+                "color": "#4A4F57"
               }
             },
             "fontSize": 10,
