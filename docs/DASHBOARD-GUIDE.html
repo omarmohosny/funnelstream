@@ -1,0 +1,1089 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>FunnelStream dashboard guide</title><style>
+:root{--navy:#0d366b;--blue:#2a78d6;--ink:#1c2433;--muted:#5b6578;--line:#d6dce8;--bg:#fff;--soft:#f3f6fb}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;
+  @bottom-center{content:"FunnelStream project documentation   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+*{box-sizing:border-box}
+body{font:10.5pt/1.55 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0 auto;max-width:980px;padding:0 28px}
+h1{font-size:30pt;color:var(--navy);margin:34px 0 4px;letter-spacing:-.5px}
+h2{font-size:17pt;color:var(--navy);margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue);break-after:avoid}
+h3{font-size:13pt;color:var(--navy);margin:24px 0 6px;break-after:avoid}
+h4{font-size:11.5pt;color:var(--blue);margin:20px 0 4px;break-after:avoid}
+p{margin:8px 0}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:9.4pt;break-inside:auto}
+th{background:var(--navy);color:#fff;text-align:left;padding:6px 9px;font-weight:600}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:var(--soft)}
+tr{break-inside:avoid}
+code{font:9.2pt Consolas,"Cascadia Mono",monospace;background:#eef2f9;padding:1px 4px;border-radius:3px}
+pre{background:#0c0e14;color:#d7dae0;padding:12px 14px;border-radius:6px;overflow:auto;font-size:8.8pt;line-height:1.45;break-inside:avoid}
+pre code{background:none;color:inherit;padding:0;font-size:inherit}
+img{max-width:100%;max-height:228mm;width:auto;height:auto;display:block;margin:14px auto 4px;border:1px solid var(--line);border-radius:4px;break-inside:avoid}
+p>em:only-child{display:block;text-align:center;color:var(--muted);font-size:9pt;margin:0 0 16px}
+h2{break-before:page}
+h1+p,h1+h2{break-before:auto}
+.cover{padding:60px 0 20px}
+@media print{body{max-width:none;padding:0}a{color:inherit;text-decoration:none}}
+
+h2{break-before:auto;font-size:15pt;margin-top:26px}
+h1{font-size:24pt}
+h3{break-before:auto;margin-top:22px}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;@bottom-center{content:"FunnelStream dashboard guide   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+</style></head><body><h1>FunnelStream dashboard guide: every Grafana panel and every Power BI visual</h1>
+<p>This guide explains each chart, number and table on the six Grafana dashboards and the seven Power BI pages. For each one it says what it shows, how it is calculated, and how to read it. It is based on the dashboard definitions in the repository (<code>monitoring/grafana/dashboards/*.json</code>, <code>scripts/make_pbip.py</code>, <code>dashboards/powerbi/measures.dax</code>) and on the screenshots in <code>docs/images</code>.</p>
+<p>All numbers in the screenshots come from simulated data. The Grafana screenshots were taken during the rehearsal of 13 October 2026; the Power BI screenshots are from the redesigned report.</p>
+<hr />
+<h2>1. How the two tools fit together</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Grafana</th>
+<th>Power BI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Audience</td>
+<td>Engineers and the operations user</td>
+<td>The marketing user and managers</td>
+</tr>
+<tr>
+<td>Question</td>
+<td>Is the platform healthy, and what needs action now?</td>
+<td>What happened, and what should we decide?</td>
+</tr>
+<tr>
+<td>Data source</td>
+<td>Small Postgres tables written by the live sink after each Silver batch, and the daily marts</td>
+<td>Gold tables in Databricks (11) and Postgres marts (7), imported</td>
+</tr>
+<tr>
+<td>Freshness</td>
+<td>Refreshes every 5 seconds (live dashboards) or every minute (daily dashboards)</td>
+<td>Refreshed by hand after a Gold batch</td>
+</tr>
+<tr>
+<td>Alerts</td>
+<td>8 alert rules</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Colour conventions in Grafana.</strong> Stat tiles and gauges change colour by thresholds. Green means healthy, orange means watch, red means act. Blue tiles are plain counts with no good or bad. A neutral dash means there is no data. On rate charts, a gap means no data in that minute, not zero.</p>
+<p><strong>Two day definitions.</strong> Ad spend and ad clicks belong to the ad platform's UTC day. Orders, stock and demand belong to the Cairo day. They differ by at most three hours, and this is accepted.</p>
+<p><strong>What "out of stock when the minute was written" means.</strong> Demand on empty shelves is flagged with the stock level at the moment the live sink wrote that minute, not at the event time. A replay or a late event can flag it differently. It is an estimate.</p>
+<hr />
+<h2>2. Grafana</h2>
+<p>Six dashboards are provisioned as code. Each panel below is listed in the order it appears on screen.</p>
+<h3>2.1 FunnelStream: live pipeline (<code>fs-live</code>)</h3>
+<p><strong>Purpose.</strong> Shows whether the streaming pipeline is alive and clean. Refresh 5 seconds, last 30 minutes.</p>
+<p><img alt="Live pipeline" src="images/grafana/pipeline_live.png" /></p>
+<p><em>Captured at the end of the 13 October rehearsal. The generator had just stopped, so events per minute is 0.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Events, last full minute (stat)</td>
+<td>Non-late, non-bot events in the last completed minute, all countries.</td>
+<td>Red at 0, green at 1 or more. Zero means the live line is flat: the stream stopped or the Silver job is not writing.</td>
+</tr>
+<tr>
+<td>Events per minute, all countries (time series)</td>
+<td>The same events per minute from <code>live_metrics_minute</code>, summed over countries.</td>
+<td>The stream's heartbeat. A smooth plateau is healthy traffic. A drop to zero means the stream stopped. In the screenshot the line climbs to about 3,000 per minute and falls to zero when the generator ended.</td>
+</tr>
+<tr>
+<td>Active sessions per minute</td>
+<td>Distinct sessions that had an event in the minute.</td>
+<td>How many shoppers are present. It should follow the events line.</td>
+</tr>
+<tr>
+<td>Orders placed per minute</td>
+<td><code>order_created</code> rows per minute.</td>
+<td>Conversion made visible: orders are far fewer than sessions and rise and fall with traffic.</td>
+</tr>
+<tr>
+<td>Product views and add-to-cart per minute</td>
+<td>Two lines: product view events and add-to-cart events per minute.</td>
+<td>The top of the funnel in real time. The gap between the lines is shoppers who looked but did not add to the cart.</td>
+</tr>
+<tr>
+<td>Late-event rate, last 5 min (gauge)</td>
+<td>Late events divided by all events over the last 5 minutes, as a percentage.</td>
+<td>Green below 5%, red at 5% or more. An event is late when it reaches Kafka more than 10 minutes after its event time. The alert fires above 5%. In the screenshot it reads 2.5%.</td>
+</tr>
+<tr>
+<td>Late-event rate %, 5 min window (time series)</td>
+<td>The same late rate on a sliding 5-minute window over time, with a red line at the 5% threshold.</td>
+<td>Shows whether late data is a spike or a steady level. Read it only in live runs: history replays are late by rule.</td>
+</tr>
+<tr>
+<td>Quarantine share, last 5 min (gauge)</td>
+<td>Quarantined rows divided by events plus quarantined rows over the last 5 minutes.</td>
+<td>Green below 2%, red at 2% or more. This is the share of messages the validator rejected. The alert fires above 2%. It reads 1.4% in the screenshot. The simulator injects bad rows on purpose, so a small steady share is expected.</td>
+</tr>
+<tr>
+<td>Quarantine share %, 5 min window (time series)</td>
+<td>The same share on a sliding window, with a red line at 2%.</td>
+<td>A jump above the injected noise level means a producer started sending bad data.</td>
+</tr>
+<tr>
+<td>Quarantine rows per hour, rolling 60 min</td>
+<td>Rows written to <code>silver_quarantine</code> in the trailing 60 minutes, evaluated every minute.</td>
+<td>The volume of rejected rows. It climbs steadily during a run because the noise is constant. Group <code>silver_quarantine</code> by reason to see what is being rejected.</td>
+</tr>
+<tr>
+<td>Seconds since Silver job last reported (stat)</td>
+<td>Now minus the <code>silver_job</code> heartbeat. The job reports every 15 seconds while alive and after each batch.</td>
+<td>Green under 30 s, orange 30 to 120 s, red above 120 s. This is time since the job last reported, not since data arrived. It is the number that drives the "Silver job silent" alert. In the screenshot it is 7 s.</td>
+</tr>
+<tr>
+<td>Seconds since last Gold update</td>
+<td>Now minus the <code>gold_build</code> heartbeat.</td>
+<td>Green under 24 hours, orange 24 to 48 hours, red above 48 hours. The batch lane runs on demand, so this ages between runs. It shows "1 days" in the screenshot.</td>
+</tr>
+<tr>
+<td>Seconds since last publish</td>
+<td>Now minus the <code>publish</code> heartbeat (the Silver upload to Databricks).</td>
+<td>The same thresholds. It tells you how stale the Databricks mirror, and therefore Power BI, is.</td>
+</tr>
+<tr>
+<td>Alert rules and what to do (text)</td>
+<td>A table of the eight alert rules, when each fires and what to do.</td>
+<td>The runbook, on the same screen as the numbers.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.2 FunnelStream: Operations, live inventory (<code>fs-inventory-ops</code>)</h3>
+<p><strong>Purpose.</strong> The operations user's page: stock now, demand that met an empty shelf, and the express delivery promise. Refresh 5 seconds, last 30 minutes.</p>
+<p><img alt="Operations live inventory" src="images/grafana/operations_live_inventory.png" /></p>
+<p><em>The express section shows breaches because the rehearsal used a 2-minute promise and delivered some orders late on purpose.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Out-of-stock products now (stat)</td>
+<td>Number of store and product pairs in <code>live_stock_now</code> with <code>available &lt;= 0</code>.</td>
+<td>Green at 0, orange from 1, red from 5. Each one is a shelf with nothing to sell.</td>
+</tr>
+<tr>
+<td>Low-stock products now</td>
+<td>Pairs with stock above zero but below their reorder point.</td>
+<td>Green below 10, orange from 10, red from 30. The warning before a stock-out.</td>
+</tr>
+<tr>
+<td>Seconds since the last stock change</td>
+<td>Age of the newest row in <code>live_stock_now</code>. Stock is recomputed after each Silver batch, so it is about one batch behind.</td>
+<td>Green under 30 s, orange to 60 s, red above. A high number means stock is no longer updating.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>States that all stock numbers are simulated and that demand flags are estimates.</td>
+<td>Read before quoting numbers.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products per minute (time series)</td>
+<td>Product views and add-to-carts that arrived for a store and product with zero stock when the minute was written.</td>
+<td>This is the bridge panel. A spike means shoppers are asking for something the shelf cannot serve. The "Demand on out-of-stock products" alert is built on it.</td>
+</tr>
+<tr>
+<td>App traffic: events per minute</td>
+<td>Non-late, non-bot events per minute, all countries.</td>
+<td>Context: demand on empty shelves matters more when traffic is high.</td>
+</tr>
+<tr>
+<td>Lowest stock now, 20 products (table)</td>
+<td>The twenty store and product pairs with the least available stock, with their reorder point.</td>
+<td>Where to restock first. A row at 0 is out of stock.</td>
+</tr>
+<tr>
+<td>Lost demand now, last 15 minutes (table)</td>
+<td>Products with the most add-to-carts while out of stock in the last 15 minutes, with views.</td>
+<td>Which empty shelf is costing the most shoppers right now.</td>
+</tr>
+<tr>
+<td>Express orders at risk now (stat)</td>
+<td>Undelivered express orders that used 75% of their promise and are not yet breached.</td>
+<td>Green at 0, orange from 1, red from 3. Act on these orders before they breach.</td>
+</tr>
+<tr>
+<td>Express breaches, last hour</td>
+<td>Orders created in the last hour that were delivered late, or are overdue by the promise plus 1 minute of grace.</td>
+<td>Green at 0, red from 1. Any breach is a missed promise.</td>
+</tr>
+<tr>
+<td>On-time rate, last hour</td>
+<td>On-time orders divided by delivered or breached orders created in the last hour. Cancelled or returned orders with no delivery are in neither count.</td>
+<td>Red below 90%, orange 90 to 95%, green at 95% or more. The target is 95%.</td>
+</tr>
+<tr>
+<td>Slowest express delivery, last hour (minutes)</td>
+<td>The longest elapsed time: delivery time for delivered orders, age for open orders.</td>
+<td>Green under 15 min, orange 15 to 20, red above 20 against a 20-minute promise.</td>
+</tr>
+<tr>
+<td>Slowest express orders, last hour (table)</td>
+<td>The ten express orders with the longest elapsed time, with promise, elapsed minutes and a status.</td>
+<td>Names the exact orders that are late or closest to late. Closed orders sort last.</td>
+</tr>
+<tr>
+<td>Express definitions (text)</td>
+<td>Defines on time, breached, at risk and closed without delivery.</td>
+<td>The meaning of every express number on the page.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.3 FunnelStream: Express delivery SLA (<code>fs-express-sla</code>)</h3>
+<p><strong>Purpose.</strong> Dedicated to the 20-minute promise. It has a Store filter. Refresh 5 seconds, last 3 hours.</p>
+<p><img alt="Express SLA" src="images/grafana/express_sla.png" /></p>
+<p><em>Rehearsal of 13 October 2026 with the promise shortened to 2 minutes. The dashed line in the first chart is the 95% target.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>On-time rate, last hour (stat)</td>
+<td>On-time orders divided by delivered or breached orders created in the last hour.</td>
+<td>Red below 90%, orange 90 to 95%, green at 95% or more. The screenshot shows 94.0%, just under target, so it is orange.</td>
+</tr>
+<tr>
+<td>Breaches, last hour</td>
+<td>Orders delivered late or overdue (promise plus 1 minute of grace).</td>
+<td>Green at 0, red from 1. The screenshot shows 6.</td>
+</tr>
+<tr>
+<td>At risk now</td>
+<td>Undelivered orders that used 75% of their promise and are not yet breached.</td>
+<td>Green at 0, orange from 1, red from 3.</td>
+</tr>
+<tr>
+<td>Open express orders</td>
+<td>Created, not delivered, not cancelled or returned, in the last 3 hours.</td>
+<td>Blue, no good or bad. The current queue.</td>
+</tr>
+<tr>
+<td>Median delivery time, last hour (min)</td>
+<td>The p50 of delivered orders created in the last hour.</td>
+<td>Green under 15 min, orange to 20, red above. Half the orders were faster than this.</td>
+</tr>
+<tr>
+<td>On-time rate by order creation time, 5-minute buckets (time series)</td>
+<td>The share of resolved orders delivered inside their promise, by the time the order was created, with a dashed 95% target line.</td>
+<td>Shows when service dipped. Buckets with no orders are gaps, not 0%.</td>
+</tr>
+<tr>
+<td>On-time and breached orders per 5 minutes</td>
+<td>Two lines: orders delivered on time and orders breached, by creation time.</td>
+<td>Shows the volume behind the rate: a low rate on 2 orders means little, on 30 means a lot.</td>
+</tr>
+<tr>
+<td>Delivery time p50 and p90 (minutes)</td>
+<td>Median and 90th percentile delivery time of delivered orders by creation time.</td>
+<td>Compare both lines with the promise. The p90 is what the slowest tenth of customers experienced.</td>
+</tr>
+<tr>
+<td>SLA by store, last hour (table)</td>
+<td>Per dark store: orders, on-time rate, breaches, at risk and p90 delivery time, worst first.</td>
+<td>Finds the store that is failing. In the screenshot Nasr City has 88 orders and 6 breaches, and the other stores have none.</td>
+</tr>
+<tr>
+<td>Open orders closest to their promise (table)</td>
+<td>Undelivered orders, oldest first, with promise, age and minutes left.</td>
+<td>A negative "minutes left" means the order is already overdue. Chase these first.</td>
+</tr>
+<tr>
+<td>Express definitions (text)</td>
+<td>On time, breached, at risk and closed without delivery.</td>
+<td>Defines every number on the page.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.4 FunnelStream: Live stock monitor (<code>fs-live-stock</code>)</h3>
+<p><strong>Purpose.</strong> Stock health of the eight dark stores, live. It has a Store filter. Refresh 5 seconds, last hour.</p>
+<p><img alt="Live stock monitor" src="images/grafana/live_stock_monitor.png" /></p>
+<p><em>Rehearsal of 13 October 2026. All stock numbers are simulated.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Out-of-stock products (stat)</td>
+<td>Pairs with no available stock in the selected stores.</td>
+<td>Green at 0, orange from 1, red from 5.</td>
+</tr>
+<tr>
+<td>Low-stock products</td>
+<td>Stock above zero but below the reorder point.</td>
+<td>Green below 10, orange from 10, red from 30.</td>
+</tr>
+<tr>
+<td>In-stock rate</td>
+<td>The share of tracked products with available stock.</td>
+<td>Red below 90%, orange 90 to 97%, green at 97% or more. The screenshot shows 100%.</td>
+</tr>
+<tr>
+<td>Units on hand</td>
+<td>Total on-hand units in the selected stores.</td>
+<td>Blue, a size indicator. The screenshot shows 537,542 units.</td>
+</tr>
+<tr>
+<td>Seconds since the last stock write</td>
+<td>Age of the newest stock row, about one Silver batch behind.</td>
+<td>Green under 30 s, orange to 60 s, red above.</td>
+</tr>
+<tr>
+<td>Out-of-stock products per store (time series)</td>
+<td>Out-of-stock pairs at each minute from the per-minute snapshots kept 24 hours.</td>
+<td>Shows when and where a stock-out began and ended. The screenshot has two short spikes at Nasr City.</td>
+</tr>
+<tr>
+<td>Units on hand per store</td>
+<td>On-hand units per store at each minute.</td>
+<td>Falls with sales and jumps with restocks. A line that only falls means no restock.</td>
+</tr>
+<tr>
+<td>Units added and removed per minute</td>
+<td>Change in on-hand units between minute snapshots: added is restock, removed is sales and shrinkage.</td>
+<td>Restock waves and sales pressure side by side.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products per minute</td>
+<td>Views and add-to-carts on pairs with zero stock when the minute was written.</td>
+<td>Demand that the shelf could not serve.</td>
+</tr>
+<tr>
+<td>Stock health by store (table)</td>
+<td>Per store: tracked products, out of stock, low, in-stock percentage and units, worst first.</td>
+<td>One row per dark store: the quick comparison.</td>
+</tr>
+<tr>
+<td>Restock watchlist (table)</td>
+<td>The 20 pairs furthest below their reorder point, with a status: out of stock, restock now or ok.</td>
+<td>The to-do list for the stock team. In the screenshot "Bed sheets 20" at Nasr City has 1 unit against a reorder point of 3.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>States that history comes from per-minute snapshots, so a minute with no sink batch has no point.</td>
+<td>Explains gaps in the lines.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.5 FunnelStream: Inventory insights, daily (<code>fs-inventory-daily</code>)</h3>
+<p><strong>Purpose.</strong> The daily view of stock and the express promise, built from the daily marts. Refresh 1 minute, last 14 days.</p>
+<p><img alt="Inventory insights, daily" src="images/grafana/inventory_daily.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Closing stock, latest day (units)</td>
+<td>Units on hand at the end of the latest Cairo day in <code>inventory_daily</code>.</td>
+<td>Blue, a level. Stock is simulated and never below zero.</td>
+</tr>
+<tr>
+<td>Products out of stock at day end</td>
+<td>Store and product pairs whose stock was zero or less at the end of the latest day.</td>
+<td>Green at 0, orange from 1, red from 5.</td>
+</tr>
+<tr>
+<td>Oversold units, latest day</td>
+<td>Units asked for beyond the shelf. A lower bound, because a sale of zero units emits no movement.</td>
+<td>Green at 0, orange from 1, red from 20. It means the app promised stock it did not have.</td>
+</tr>
+<tr>
+<td>Shrinkage share of units out, latest day</td>
+<td>Shrunk units divided by shrunk plus sold units.</td>
+<td>Green below 3%, orange 3 to 6%, red above 6%. Shrinkage is stock lost without a sale.</td>
+</tr>
+<tr>
+<td>Closing stock by store (units)</td>
+<td>Stock at the end of each Cairo day, summed per dark store.</td>
+<td>Each store's stock trend over two weeks.</td>
+</tr>
+<tr>
+<td>Units sold, received and shrunk per day</td>
+<td>Daily movement totals over all stores and products, three lines.</td>
+<td>Compare sold with received: if sales exceed receipts, stock is draining.</td>
+</tr>
+<tr>
+<td>Lowest days of cover, latest day, 20 products (table)</td>
+<td>Closing stock divided by the average units sold per day over the last 7 days. Products that did not sell are left out.</td>
+<td>A low number means the product runs out soon at the current sales pace.</td>
+</tr>
+<tr>
+<td>Demand on empty shelves per day</td>
+<td>Product views and add-to-carts that arrived while the product was out of stock, per day.</td>
+<td>The daily size of lost demand.</td>
+</tr>
+<tr>
+<td>Express on-time rate, latest day</td>
+<td>On-time orders divided by delivered or breached orders on the latest day in <code>express_daily</code>. Shows 100 when there is nothing to measure.</td>
+<td>Red below 90%, orange 90 to 95%, green at 95% or more.</td>
+</tr>
+<tr>
+<td>Slowest express delivery per day (minutes)</td>
+<td>The longest delivery time of each Cairo day, against a flat line at the 20-minute promise.</td>
+<td>A point above the promise line is a day with a missed promise.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>Notes that stock is simulated, oversold units are a lower bound and cancelled orders do not return stock.</td>
+<td>The limits of the numbers above.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.6 FunnelStream: Marketing, D-1 (<code>fs-marketing-d1</code>)</h3>
+<p><strong>Purpose.</strong> Yesterday's campaign results next to the estimated spend that was sent to out-of-stock products. Refresh 1 minute, last 14 days. It reads the <code>marketing_d1_campaign</code> and <code>marketing_d1_product</code> marts.</p>
+<p><img alt="Marketing D-1" src="images/grafana/marketing_d1.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spend (EGP)</td>
+<td>Ad spend of the latest D-1 day, all campaigns. This is the ad platform's UTC day.</td>
+<td>Blue, the budget used.</td>
+</tr>
+<tr>
+<td>Orders placed</td>
+<td>Orders attributed to the campaigns by last touch on the latest D-1 day.</td>
+<td>Blue.</td>
+</tr>
+<tr>
+<td>ROAS placed</td>
+<td>Placed revenue divided by spend.</td>
+<td>Blue. It is the optimistic return, because cancelled and failed orders are still counted.</td>
+</tr>
+<tr>
+<td>ROAS delivered (provisional)</td>
+<td>Delivered revenue divided by spend.</td>
+<td>Blue. The headline return. Delivery matures one to three days after the order day, so recent days read low.</td>
+</tr>
+<tr>
+<td>Exposed spend (EGP)</td>
+<td>Spend multiplied by the share of landing clicks that went to out-of-stock products.</td>
+<td>Green at 0, orange from 1, red from 1,000. An estimate that assumes spend is spread evenly over served landing clicks.</td>
+</tr>
+<tr>
+<td>Out-of-stock click share</td>
+<td>Landing clicks in minutes flagged out of stock, divided by all landing clicks in served districts.</td>
+<td>Green below 5%, orange 5 to 15%, red from 15%.</td>
+</tr>
+<tr>
+<td>Campaigns, sorted by exposed spend (table)</td>
+<td>One row per campaign with spend, orders, CPA, ROAS placed and delivered, served and out-of-stock clicks, the click share, exposed spend and a provisional flag.</td>
+<td>Which campaign sent the most shoppers to empty shelves. Provisional days can still change.</td>
+</tr>
+<tr>
+<td>Top 5 products by revenue at risk (table)</td>
+<td>Out-of-stock add-to-carts multiplied by price, by store and product, on the latest D-1 day.</td>
+<td>Which products to restock first, or to stop advertising. The mart keeps every out-of-stock product. The limit of five is this panel's.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>Defines exposed spend and notes the UTC versus Cairo day and the provisional days.</td>
+<td>Read before quoting the exposed spend.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.7 The eight alert rules</h3>
+<p>Alerts notify on a change of state, to a local alert sink.</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Fires when</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Late-event rate above 5%</td>
+<td>Late events exceed 5% over 5 minutes, with at least 20 events.</td>
+<td>Clock skew or old events were replayed.</td>
+</tr>
+<tr>
+<td>Quarantine share above 2%</td>
+<td>Quarantined rows exceed 2% over 5 minutes, with at least 20 rows.</td>
+<td>A producer is sending bad data.</td>
+</tr>
+<tr>
+<td>Silver job silent for 2 minutes</td>
+<td>The Silver heartbeat is older than 2 minutes (no data also fires).</td>
+<td>The streaming job is down or stuck.</td>
+</tr>
+<tr>
+<td>No events for 5 minutes</td>
+<td>No Silver event arrived in the last 5 minutes (no data also fires).</td>
+<td>The producers or the job stopped.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products</td>
+<td>At least 5 add-to-carts on an out-of-stock product of one store in each of two consecutive minutes.</td>
+<td>Shoppers are hitting an empty shelf.</td>
+</tr>
+<tr>
+<td>An express order missed its delivery promise</td>
+<td>Any breach.</td>
+<td>A customer waited past the promise.</td>
+</tr>
+<tr>
+<td>Express on-time rate below the 95% target</td>
+<td>On-time rate under 95% over 30 minutes with at least 5 orders, for 2 minutes.</td>
+<td>The service level is slipping.</td>
+</tr>
+<tr>
+<td>Many products out of stock in one store</td>
+<td>More than 20% of a store's products are out of stock, for 1 minute.</td>
+<td>One dark store is running empty.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>3. Power BI</h2>
+<p>The report has seven pages. On every page, the navy rail on the left holds the page navigator and the slicers. The banner states the question the page answers. The row of cards shows the headline numbers, and the charts and tables below explain them. Slicers filter the whole page.</p>
+<p>Definitions of the measures are in <code>dashboards/powerbi/measures.dax</code>. Three rules apply everywhere: ratios are calculated as a ratio of sums (never an average of a rate), empty slices show blank and not an error, and all stock data is simulated.</p>
+<h3>3.1 Executive: is revenue on track, and where do orders leak?</h3>
+<p><img alt="Executive" src="images/powerbi/01_executive.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, channel, platform.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Revenue Placed</td>
+<td>Sum of revenue of all placed orders, attributed or not (<code>Orders Daily</code>).</td>
+<td>Total sales value. The screenshot shows 2,410,979.</td>
+</tr>
+<tr>
+<td>Card: Revenue Delivered</td>
+<td>Revenue of orders that were delivered, counted on the order date (a cohort view).</td>
+<td>The cash that actually came in. 1,914,103 in the screenshot.</td>
+</tr>
+<tr>
+<td>Card: Orders Placed</td>
+<td>Count of placed orders.</td>
+<td>1,495.</td>
+</tr>
+<tr>
+<td>Card: AOV</td>
+<td>Average order value: revenue placed divided by orders placed.</td>
+<td>1,613.</td>
+</tr>
+<tr>
+<td>Card: Delivered Share</td>
+<td>Revenue delivered divided by revenue placed.</td>
+<td>The share of sales that turned into cash: 79.4%.</td>
+</tr>
+<tr>
+<td>Card: Cancel Rate</td>
+<td>Cancelled orders divided by placed orders.</td>
+<td>5.8%.</td>
+</tr>
+<tr>
+<td>Line chart: Revenue by day</td>
+<td>Two lines, revenue placed and revenue delivered, by day.</td>
+<td>Shows the trend and the gap between placed and delivered. One day, 9 October, holds about 55% of all revenue in the simulated data, and the title says so.</td>
+</tr>
+<tr>
+<td>Bar chart: Orders by channel</td>
+<td>Placed orders per channel, ranked.</td>
+<td>Which channel brings orders: organic 859, paid social 387, paid search 249.</td>
+</tr>
+<tr>
+<td>Bar chart: Where orders leak, by payment method</td>
+<td>Three bars per payment method: cancel rate, return rate and failed-attempt rate, each over placed orders.</td>
+<td>Where orders are lost. The failed-attempt rate is highest for vodafone_cash (27.6%) and fawry (25.1%).</td>
+</tr>
+<tr>
+<td>Bar chart: Orders by payment method</td>
+<td>Placed orders per payment method, ranked.</td>
+<td>Cash on delivery is the largest, 832 orders. Read it next to the leak chart.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.2 Campaigns: where should the next budget go?</h3>
+<p><img alt="Campaigns" src="images/powerbi/02_campaigns.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, campaign, platform.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Spend</td>
+<td>Sum of ad spend from the ad API.</td>
+<td>11,730. Ad days are UTC days.</td>
+</tr>
+<tr>
+<td>Card: CPA</td>
+<td>Cost per acquisition: spend divided by attributed placed orders on days that had spend.</td>
+<td>93. Placed orders only.</td>
+</tr>
+<tr>
+<td>Card: CTR</td>
+<td>Click-through rate: API-reported clicks divided by impressions.</td>
+<td>2.4%. This is the platform's click count, not the click used for attribution.</td>
+</tr>
+<tr>
+<td>Card: Conversion Rate</td>
+<td>Attributed orders divided by API clicks.</td>
+<td>1.0%.</td>
+</tr>
+<tr>
+<td>Card: ROAS Delivered</td>
+<td>Return on ad spend: delivered revenue on spend days divided by spend.</td>
+<td>The headline, 8.39. It is what the cash actually returns.</td>
+</tr>
+<tr>
+<td>Bar chart: Return on ad spend by campaign</td>
+<td>Two bars per campaign: ROAS delivered and ROAS placed, ranked by delivered.</td>
+<td>The gap between the bars is the revenue lost to cancelled, returned and failed cash-on-delivery orders. For eid_sale_1 it is 11.67 delivered against 21.55 placed.</td>
+</tr>
+<tr>
+<td>Bar chart: Cost per delivered order by campaign</td>
+<td>Spend divided by delivered orders, per campaign.</td>
+<td>Lower is better. ramadan_offer_1 costs 377, retarget_cart_1 184 and eid_sale_1 119.</td>
+</tr>
+<tr>
+<td>Table: Campaign scorecard</td>
+<td>Per campaign: spend, orders on spend days, CPA, ROAS delivered and CTR, with a total row.</td>
+<td>The summary used to compare campaigns. The total row matches the cards. The scorecard CPA (171 for ramadan_offer_1) differs from the cost per delivered order (377) by definition.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reading note.</strong> ROAS is a period ratio. Read it over a week or a campaign flight, not as a daily truth. The latest days are still settling because delivered revenue lags spend by about two to four days.</p>
+<h3>3.3 Marketing and stock: which campaign sent shoppers to empty shelves?</h3>
+<p><img alt="Marketing and stock" src="images/powerbi/03_marketing_and_stock.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, campaign. This page reads the D-1 marketing marts.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Exposed Spend</td>
+<td>Sum of the exposed spend of each campaign and day: spend multiplied by out-of-stock clicks over served clicks.</td>
+<td>An estimate of spend that landed on products that were out of stock. 378 in the screenshot.</td>
+</tr>
+<tr>
+<td>Card: OOS Click Share</td>
+<td>Out-of-stock landing clicks divided by served landing clicks.</td>
+<td>10.2% of clicks met an empty shelf.</td>
+</tr>
+<tr>
+<td>Card: Exposed Share of Spend</td>
+<td>Exposed spend divided by campaign spend.</td>
+<td>10.1% of spend.</td>
+</tr>
+<tr>
+<td>Card: Revenue at Risk</td>
+<td>Add-to-carts on out-of-stock products multiplied by price.</td>
+<td>71,653. Revenue the shelf could not serve, not lost revenue.</td>
+</tr>
+<tr>
+<td>Card: OOS Add to Cart</td>
+<td>Count of add-to-cart events on out-of-stock products.</td>
+<td>349.</td>
+</tr>
+<tr>
+<td>Bar chart: Exposed spend and campaign spend (D-1)</td>
+<td>Two bars per campaign: exposed spend and total spend of that day.</td>
+<td>The exposed bar is a small part of the spend bar. Compare campaigns: ramadan_offer_1 has 174 exposed of 1,758 spend.</td>
+</tr>
+<tr>
+<td>Column chart: Out-of-stock add to cart by category</td>
+<td>Add-to-carts on empty shelves per product category.</td>
+<td>Which category is losing shoppers: home 177 and fashion 157.</td>
+</tr>
+<tr>
+<td>Table: Products by revenue at risk (all campaigns)</td>
+<td>Product, store and revenue at risk, sorted by revenue at risk.</td>
+<td>The product list to restock or stop advertising. In the screenshot all three are at the Nasr City dark store.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue at risk by category</td>
+<td>Revenue at risk per category.</td>
+<td>The money view of the category chart: fashion about 50K and home 22K.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reading note.</strong> This page is an estimate. Spend is the ad UTC day and demand is the Cairo day. The out-of-stock flag is the stock when the minute was written.</p>
+<h3>3.4 Operations: what to restock, and is the 20-minute promise holding?</h3>
+<p><img alt="Operations" src="images/powerbi/04_operations.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, store, product category.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Out of Stock Lines</td>
+<td>Store and product pairs with available stock of zero or less, in the current snapshot of the eight dark stores.</td>
+<td>0 in the screenshot. Not filtered by date.</td>
+</tr>
+<tr>
+<td>Card: Low Stock Lines</td>
+<td>Pairs above zero but below their reorder point.</td>
+<td>0.</td>
+</tr>
+<tr>
+<td>Card: Out of Stock Rate</td>
+<td>Out-of-stock lines divided by all stock lines.</td>
+<td>0.0%.</td>
+</tr>
+<tr>
+<td>Card: Express Orders</td>
+<td>Count of express orders in the period.</td>
+<td>385.</td>
+</tr>
+<tr>
+<td>Card: Express On-time Rate</td>
+<td>On-time orders divided by on-time plus breached orders.</td>
+<td>98.1%. The target is 95%.</td>
+</tr>
+<tr>
+<td>Card: Express Breaches</td>
+<td>Orders delivered after their promise or undelivered beyond the promise plus 1 minute. Always a number, zero shows as 0.</td>
+<td>4.</td>
+</tr>
+<tr>
+<td>Bar chart: Oversold units by store</td>
+<td>Units customers asked for beyond the stock on the shelf, per store.</td>
+<td>The app promised stock it did not have. All 7 units are at Nasr City. A lower bound.</td>
+</tr>
+<tr>
+<td>Column chart: Units sold and received by day</td>
+<td>Two columns per day: units sold and units received.</td>
+<td>Stock is draining when sold exceeds received.</td>
+</tr>
+<tr>
+<td>Column chart: Shrinkage rate by store</td>
+<td>Shrunk units divided by sold plus shrunk units, per store.</td>
+<td>Stock lost without a sale. New Cairo is highest at 10.5% in the screenshot.</td>
+</tr>
+<tr>
+<td>Table: Products with oversold units</td>
+<td>Product, oversold units and days of cover, sorted by oversold units.</td>
+<td>The products behind the oversold chart. Days of cover is closing stock over the average daily sales, capped at 90.</td>
+</tr>
+<tr>
+<td>Column chart: Express breaches by store</td>
+<td>Breaches per dark store.</td>
+<td>Which store missed the promise: Nasr City has 3.</td>
+</tr>
+<tr>
+<td>Bar chart: Delivery hours by carrier (all orders)</td>
+<td>Average hours from order to delivery, per carrier, over delivered orders with a known delivery time.</td>
+<td>Standard delivery, not express: aramex 21.3, bosta 20.7 and jt_express 25.1 hours.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5 Funnel: which step and which channel should we fix first?</h3>
+<p><img alt="Funnel" src="images/powerbi/05_funnel.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, channel, platform.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Cart Abandon Rate</td>
+<td><code>1 - orders / cart sessions</code>, blank for an empty slice, clamped between 0 and 1.</td>
+<td>Of sessions that added to the cart, how many did not order. 69.1%.</td>
+</tr>
+<tr>
+<td>Card: Checkout Abandon Rate</td>
+<td><code>1 - orders / checkout sessions</code>, blank for an empty slice, clamped between 0 and 1.</td>
+<td>Of sessions that started checkout, how many did not order. 30.7%.</td>
+</tr>
+<tr>
+<td>Card: Session Conversion</td>
+<td>Funnel orders divided by sessions.</td>
+<td>10.4%.</td>
+</tr>
+<tr>
+<td>Funnel: Funnel stages</td>
+<td>Five stages: sessions, product-view sessions, cart sessions, checkout sessions and orders.</td>
+<td>The width shows how many survive each step. Sessions 16,617, product views 16,120, cart 5,578, checkout 2,486, orders 1,723. The biggest drop is between product view and cart.</td>
+</tr>
+<tr>
+<td>Bar chart: Cart and checkout abandon rate by channel</td>
+<td>Two bars per channel.</td>
+<td>Which channel loses the most shoppers. Direct has the highest cart abandon rate, 70.9%. The channels are close to each other.</td>
+</tr>
+<tr>
+<td>Bar chart: Sessions by channel</td>
+<td>Sessions per channel, ranked.</td>
+<td>The size of each channel. Paid social brings the most, 4.5K.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reading note.</strong> Sessions are counted per Cairo day, so a session that crosses midnight counts once on each day. Daily sessions do not add up exactly across days.</p>
+<h3>3.6 Products and cities: what should we stock and promote, and where?</h3>
+<p><img alt="Products and cities" src="images/powerbi/06_products_and_cities.jpeg" /></p>
+<p><strong>Slicers:</strong> date range, product category, city.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Product Revenue</td>
+<td>Sum of revenue by city, product and day (<code>agg_city_product_daily</code>).</td>
+<td>2,410,979, the same as placed revenue on the Executive page.</td>
+</tr>
+<tr>
+<td>Card: Product Units</td>
+<td>Units sold.</td>
+<td>4,535.</td>
+</tr>
+<tr>
+<td>Card: Product Page Views</td>
+<td>Sessions that viewed a product, summed per city, product and day.</td>
+<td>54,626. A session that views three products counts three times, so it is larger than the funnel's sessions.</td>
+</tr>
+<tr>
+<td>Card: Product Add to Carts</td>
+<td>Sessions that added a product to the cart.</td>
+<td>5,578.</td>
+</tr>
+<tr>
+<td>Card: Product Cart Rate</td>
+<td>Add-to-carts divided by product page views.</td>
+<td>10.2%.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue by product category</td>
+<td>Revenue per category, ranked.</td>
+<td>Electronics earns about 1.3M, far more than fashion, home and beauty.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue by city</td>
+<td>Revenue per city, ranked.</td>
+<td>Cairo leads with 0.72M, then Other, Giza and Alexandria.</td>
+</tr>
+<tr>
+<td>Column chart: Add to cart by category</td>
+<td>Add-to-carts per category.</td>
+<td>Almost equal across categories (1,359 to 1,454), so electronics earns more per cart, not more carts.</td>
+</tr>
+<tr>
+<td>Table: Top products</td>
+<td>Product, category, units, revenue, page views and cart rate, sorted by revenue.</td>
+<td>The best sellers and how well each converts from view to cart.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.7 Customers: who buys again, and who should we win back?</h3>
+<p><img alt="Customers" src="images/powerbi/07_customers.jpeg" /></p>
+<p><strong>Slicers:</strong> city, favourite category, preferred payment method. This page has no date filter: it shows one row per customer, in the current state.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>What it shows and how it is calculated</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Customers on File</td>
+<td>Distinct customers in <code>customer_360</code>.</td>
+<td>5,000.</td>
+</tr>
+<tr>
+<td>Card: Buyers</td>
+<td>Customers with at least one placed order.</td>
+<td>1,295.</td>
+</tr>
+<tr>
+<td>Card: Repeat Buyer Rate</td>
+<td>Customers with two or more placed orders divided by buyers.</td>
+<td>13.9%.</td>
+</tr>
+<tr>
+<td>Card: Lifetime Spend</td>
+<td>Spend of orders that were neither cancelled nor returned, in EGP.</td>
+<td>2,084,020.</td>
+</tr>
+<tr>
+<td>Card: Average Spend per Buyer</td>
+<td>Lifetime spend divided by buyers.</td>
+<td>1,609.</td>
+</tr>
+<tr>
+<td>Card: Quiet Buyers (7+ days)</td>
+<td>Buyers whose last order is 7 or more days old.</td>
+<td>106. The data spans about 15 days, so a 30-day rule would always be empty.</td>
+</tr>
+<tr>
+<td>Bar chart: Buyers by favourite category</td>
+<td>Buyers per category, ranked.</td>
+<td>Electronics has the most, 583.</td>
+</tr>
+<tr>
+<td>Bar chart: Buyers by preferred payment</td>
+<td>Buyers per preferred payment method, ranked.</td>
+<td>Cash on delivery leads with 740.</td>
+</tr>
+<tr>
+<td>Column chart: Average spend per buyer by category</td>
+<td>Lifetime spend divided by buyers, per favourite category.</td>
+<td>Electronics buyers spend the most, about 2.5K. A per-buyer measure avoids a misleading "(Blank)" bar for customers who never ordered.</td>
+</tr>
+<tr>
+<td>Bar chart: Lifetime spend by city</td>
+<td>Lifetime spend per city, ranked.</td>
+<td>Cairo leads with 0.62M.</td>
+</tr>
+<tr>
+<td>Table: Top customers by lifetime spend</td>
+<td>Customer id, city, favourite category, orders, lifetime spend and days since last order.</td>
+<td>Meant to list the highest spenders first. <strong>Check on the screen:</strong> in the screenshot the table is sorted by days since the last order, so customers with 0 orders appear first, not the top spenders. If you see that, click the "Lifetime spend" header until the largest values come first. The report only holds the customer id, never names or phone numbers.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>4. Glossary of the measures used in the pages</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROAS</td>
+<td>Return on ad spend: revenue divided by spend. "Delivered" counts only revenue from delivered orders, "placed" counts all placed orders.</td>
+</tr>
+<tr>
+<td>CPA</td>
+<td>Spend divided by placed orders.</td>
+</tr>
+<tr>
+<td>Cost per delivered order</td>
+<td>Spend divided by delivered orders only.</td>
+</tr>
+<tr>
+<td>CTR</td>
+<td>Clicks divided by impressions, as reported by the ad API.</td>
+</tr>
+<tr>
+<td>AOV</td>
+<td>Average order value, placed revenue divided by placed orders.</td>
+</tr>
+<tr>
+<td>Delivered share</td>
+<td>Delivered revenue divided by placed revenue.</td>
+</tr>
+<tr>
+<td>Cancel, return, failed-attempt rate</td>
+<td>Cancelled, returned, or with at least one failed delivery attempt, over placed orders.</td>
+</tr>
+<tr>
+<td>Funnel stages</td>
+<td>Sessions, product views, cart, checkout, order. Abandon rate is one minus the next step over the previous one.</td>
+</tr>
+<tr>
+<td>Out of stock</td>
+<td>A product with <code>available &lt;= 0</code> in a store. Low stock is above zero but below the reorder point.</td>
+</tr>
+<tr>
+<td>Oversold units</td>
+<td>Units customers asked for beyond the stock on the shelf. A lower bound.</td>
+</tr>
+<tr>
+<td>Shrinkage</td>
+<td>Units lost without a sale. Rate is shrunk divided by sold plus shrunk.</td>
+</tr>
+<tr>
+<td>Days of cover</td>
+<td>Closing stock divided by average daily units sold, capped at 90.</td>
+</tr>
+<tr>
+<td>Express on time, breached, at risk</td>
+<td>On time: delivered within the order's own promise. Breached: delivered later, or undelivered beyond the promise plus 1 minute. At risk: undelivered with at least 75% of the promise used.</td>
+</tr>
+<tr>
+<td>Exposed spend</td>
+<td>Spend multiplied by the share of landing clicks that went to out-of-stock products. An estimate.</td>
+</tr>
+<tr>
+<td>Revenue at risk</td>
+<td>Add-to-carts on out-of-stock products multiplied by price. Not lost revenue.</td>
+</tr>
+<tr>
+<td>Provisional or "Settling"</td>
+<td>A recent day whose delivered revenue can still grow, so ROAS delivered reads low.</td>
+</tr>
+<tr>
+<td>Late event</td>
+<td>An event that reaches Kafka more than 10 minutes after its event time.</td>
+</tr>
+<tr>
+<td>Quarantine</td>
+<td>The table of rows rejected by the validator, each with an error code.</td>
+</tr>
+</tbody>
+</table></body></html>

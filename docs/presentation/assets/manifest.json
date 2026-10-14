@@ -1,0 +1,47 @@
+{
+ "pipeline_live": {
+  "file": "assets/pipeline_live.png",
+  "w": 1920,
+  "h": 1545
+ },
+ "express_sla": {
+  "file": "assets/express_sla.png",
+  "w": 1920,
+  "h": 1320
+ },
+ "live_stock_monitor": {
+  "file": "assets/live_stock_monitor.png",
+  "w": 1920,
+  "h": 1320
+ },
+ "pbi_executive": {
+  "file": "assets/pbi_executive.jpeg",
+  "w": 1410,
+  "h": 814
+ },
+ "pbi_campaigns": {
+  "file": "assets/pbi_campaigns.jpeg",
+  "w": 1407,
+  "h": 813
+ },
+ "pbi_marketing": {
+  "file": "assets/pbi_marketing.jpeg",
+  "w": 1418,
+  "h": 818
+ },
+ "pbi_funnel": {
+  "file": "assets/pbi_funnel.jpeg",
+  "w": 1411,
+  "h": 813
+ },
+ "layers": {
+  "file": "assets/layers.png",
+  "w": 3400,
+  "h": 854
+ },
+ "failure": {
+  "file": "assets/failure.png",
+  "w": 2670,
+  "h": 1658
+ }
+}

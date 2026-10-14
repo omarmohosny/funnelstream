@@ -1,0 +1,637 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>FunnelStream data quality checks</title><style>
+:root{--navy:#0d366b;--blue:#2a78d6;--ink:#1c2433;--muted:#5b6578;--line:#d6dce8;--bg:#fff;--soft:#f3f6fb}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;
+  @bottom-center{content:"FunnelStream project documentation   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+*{box-sizing:border-box}
+body{font:10.5pt/1.55 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0 auto;max-width:980px;padding:0 28px}
+h1{font-size:30pt;color:var(--navy);margin:34px 0 4px;letter-spacing:-.5px}
+h2{font-size:17pt;color:var(--navy);margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue);break-after:avoid}
+h3{font-size:13pt;color:var(--navy);margin:24px 0 6px;break-after:avoid}
+h4{font-size:11.5pt;color:var(--blue);margin:20px 0 4px;break-after:avoid}
+p{margin:8px 0}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:9.4pt;break-inside:auto}
+th{background:var(--navy);color:#fff;text-align:left;padding:6px 9px;font-weight:600}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:var(--soft)}
+tr{break-inside:avoid}
+code{font:9.2pt Consolas,"Cascadia Mono",monospace;background:#eef2f9;padding:1px 4px;border-radius:3px}
+pre{background:#0c0e14;color:#d7dae0;padding:12px 14px;border-radius:6px;overflow:auto;font-size:8.8pt;line-height:1.45;break-inside:avoid}
+pre code{background:none;color:inherit;padding:0;font-size:inherit}
+img{max-width:100%;max-height:228mm;width:auto;height:auto;display:block;margin:14px auto 4px;border:1px solid var(--line);border-radius:4px;break-inside:avoid}
+p>em:only-child{display:block;text-align:center;color:var(--muted);font-size:9pt;margin:0 0 16px}
+h2{break-before:page}
+h1+p,h1+h2{break-before:auto}
+.cover{padding:60px 0 20px}
+@media print{body{max-width:none;padding:0}a{color:inherit;text-decoration:none}}
+
+h2{break-before:auto;font-size:15pt;margin-top:26px}
+h1{font-size:24pt}
+h3{break-before:auto;margin-top:22px}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;@bottom-center{content:"FunnelStream data quality checks   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+</style></head><body><h1>FunnelStream data quality checks: all 66, explained</h1>
+<p>This document explains every check that the Gold build runs. The definitions are in <code>warehouse/checks.py</code>. The results quoted at the end come from the Gold build on the scratch catalog on 13 October 2026.</p>
+<hr />
+<h2>1. How the checks work</h2>
+<p>The checks are the last step of the Gold build (<code>scripts/run_batch.py</code>). After Databricks has built the Gold tables from the Silver mirror, the build runs every check as one read-only SQL statement that returns one number.</p>
+<ul>
+<li>A check of severity <strong>fail</strong> returns a violation count. Any value other than zero fails the batch.</li>
+<li>A check of severity <strong>report</strong> returns a number that is printed and never fails the batch. It is there for a person to read.</li>
+<li>A check that cannot run (a broken query, an unreadable manifest) is a technical error and stops the build. A check that runs and finds a violation does not raise an error: the whole list stays visible in the result.</li>
+<li>The SQL is written in Python, uses only three placeholders (<code>{silver}</code>, <code>{gold}</code> and the allowed city and district pairs), contains one statement and no write keyword. A test (<code>tests/test_checks.py</code>) checks every query against these rules.</li>
+</ul>
+<p><strong>Why 66.</strong> The list in <code>warehouse/checks.py</code> holds 64 checks. The manifest comparison adds two more entries, so a run with <code>--manifest</code> reports 66. A run without the manifest reports 65, because the manifest check is then one "skipped" entry.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Checks</th>
+<th>Severity</th>
+<th>Question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Keys</td>
+<td>25</td>
+<td>24 fail, 1 report</td>
+<td>Is every row unique, and does every foreign key point at a real row?</td>
+</tr>
+<tr>
+<td>Reconciliation</td>
+<td>7</td>
+<td>fail</td>
+<td>Do Gold and Silver agree, and do the money totals add up?</td>
+</tr>
+<tr>
+<td>Silver hygiene</td>
+<td>7</td>
+<td>fail</td>
+<td>Did anything slip past the Silver validator?</td>
+</tr>
+<tr>
+<td>Hierarchy and history</td>
+<td>7</td>
+<td>fail</td>
+<td>Are districts inside their city, and are the slowly changing dimensions consistent?</td>
+</tr>
+<tr>
+<td>Reported</td>
+<td>18</td>
+<td>report</td>
+<td>What are the rates and row counts of this run?</td>
+</tr>
+<tr>
+<td>Manifest</td>
+<td>2</td>
+<td>1 fail, 1 report</td>
+<td>Did the pipeline catch the noise the simulator injected?</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>66</strong></td>
+<td><strong>46 fail, 20 report</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>What this means in practice.</strong> Forty-six checks can stop a batch. Twenty are measurements for a person to read, and they never fail. When we say "66 checks, 0 failed", it means none of the 46 fail-type checks found a violation, and the other 20 produced their numbers.</p>
+<p><strong>Thresholds used by the checks</strong></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Future tolerance</td>
+<td>5 minutes (the clock skew the Silver validator allows)</td>
+<td>Check 34</td>
+</tr>
+<tr>
+<td>Line total tolerance</td>
+<td>0.01 EGP (rounding)</td>
+<td>Check 37</td>
+</tr>
+<tr>
+<td>Open order age</td>
+<td>14 days</td>
+<td>Check 51</td>
+</tr>
+<tr>
+<td>Manifest tolerance</td>
+<td>2% of the expected quarantine count</td>
+<td>Check 65</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. Group 1: Keys (checks 1 to 25)</h2>
+<p>A key check protects every number downstream. If one order appeared twice, every revenue and order count that includes it would be too high.</p>
+<h3>2.1 Duplicate keys, Silver mirror (checks 1 to 7)</h3>
+<p>Each check groups the table by its key and counts key values that appear in more than one row. The expected value is 0.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>Key</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>dup_key.silver_events</code></td>
+<td><code>event_id</code></td>
+<td>Two rows for one event would double count sessions, views and carts. This is the check on the deduplication of the 1% duplicate events.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>dup_key.silver_orders</code></td>
+<td><code>order_id</code></td>
+<td>One order must be one row.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>dup_key.silver_order_status</code></td>
+<td><code>event_id</code></td>
+<td>One row per status change event.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>dup_key.silver_order_items</code></td>
+<td><code>order_id</code>, <code>line_no</code></td>
+<td>One row per order line. A duplicate line inflates revenue.</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>dup_key.silver_products</code></td>
+<td><code>product_id</code>, <code>updated_at</code></td>
+<td>One row per product version.</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>dup_key.silver_customers</code></td>
+<td><code>customer_id</code>, <code>updated_at</code></td>
+<td>One row per customer version.</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>dup_key.silver_campaign_snapshots</code></td>
+<td><code>campaign_id</code>, <code>report_date</code>, <code>pulled_at</code></td>
+<td>One row per campaign per day per pull. A repeated pull of the ad API must not repeat rows.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.2 Duplicate keys, Gold tables (checks 8 to 19)</h3>
+<p>The same check on the twelve Gold tables. The expected value is 0.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>Key</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8</td>
+<td><code>dup_key.dim_customer</code></td>
+<td><code>customer_key</code></td>
+<td>A repeated surrogate key makes every fact row join twice.</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>dup_key.dim_product</code></td>
+<td><code>product_key</code></td>
+<td>Same.</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>dup_key.dim_campaign</code></td>
+<td><code>campaign_key</code></td>
+<td>Same.</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>dup_key.dim_date</code></td>
+<td><code>date_key</code></td>
+<td>Same.</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>dup_key.fact_orders</code></td>
+<td><code>order_id</code></td>
+<td>One row per order in the fact table.</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>dup_key.fact_order_lines</code></td>
+<td><code>order_id</code>, <code>line_no</code></td>
+<td>One row per order line.</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>dup_key.fact_attribution</code></td>
+<td><code>order_id</code>, <code>model</code></td>
+<td>One row per order and attribution model (last touch, first touch).</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>dup_key.agg_orders_daily</code></td>
+<td><code>date_key</code>, <code>channel</code>, <code>payment_method</code>, <code>platform</code></td>
+<td>Each daily bucket exists once, so the Executive page does not double count.</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>dup_key.agg_funnel_daily</code></td>
+<td><code>event_date</code>, <code>country</code>, <code>channel</code>, <code>platform</code></td>
+<td>Each funnel bucket exists once.</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>dup_key.agg_campaign_daily</code></td>
+<td><code>campaign_id</code>, <code>report_date</code>, <code>attribution_model</code></td>
+<td>Each campaign day and model exists once, so spend is not counted twice.</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>dup_key.agg_city_product_daily</code></td>
+<td><code>city</code>, <code>product_id</code>, <code>date_key</code></td>
+<td>Each city and product day exists once.</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>dup_key.customer_360</code></td>
+<td><code>customer_id</code></td>
+<td>One row per customer.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.3 Orphan keys (checks 20 to 24)</h3>
+<p>An orphan is a fact row that points at a dimension row or a parent row that does not exist. The key <code>-1</code> is the allowed "unknown member": a row is not an orphan if it points at <code>-1</code>. A NULL key is always a violation, because the build should have written <code>-1</code> instead.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>What it counts</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20</td>
+<td><code>orphan.fact_orders.customer_key</code></td>
+<td><code>fact_orders</code> rows whose <code>customer_key</code> is NULL or not in <code>dim_customer</code></td>
+<td>Orders must belong to a known customer or to the unknown member, or customer reports lose revenue.</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>orphan.fact_order_lines.customer_key</code></td>
+<td><code>fact_order_lines</code> rows with the same problem</td>
+<td>Same, for order lines.</td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>orphan.fact_order_lines.product_key</code></td>
+<td><code>fact_order_lines</code> rows whose <code>product_key</code> is NULL or not in <code>dim_product</code></td>
+<td>Product revenue must always find a product.</td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>orphan.fact_order_lines.order_id</code></td>
+<td>order lines whose order is not in <code>fact_orders</code></td>
+<td>A line without an order would add revenue with no order.</td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>orphan.fact_attribution.order_id</code></td>
+<td>attribution rows whose order is not in <code>fact_orders</code></td>
+<td>Attribution must describe real orders.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.4 Report: unknown customer share (check 25)</h3>
+<p><code>unknown_customer_share</code> is the share of <code>fact_orders</code> rows with the unknown customer key <code>-1</code>, from 0 to 1. It is a report-type check. A high value would mean many orders could not be matched to a customer version valid at the order time.</p>
+<hr />
+<h2>3. Group 2: Reconciliation (checks 26 to 32)</h2>
+<p>Reconciliation checks compare one table with another that should agree. They catch a build that silently loses or invents rows or money.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>What it tests</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>26</td>
+<td><code>recon.order_total_sum</code></td>
+<td>1 if the sum of <code>fact_orders.order_total</code> differs from the sum of <code>fact_order_lines.line_total</code>, else 0</td>
+<td>The fast, whole-database money check: order revenue must equal line revenue.</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>recon.order_total_per_order</code></td>
+<td>Orders whose <code>order_total</code> differs from the sum of their lines (no lines counts as 0)</td>
+<td>Finds the exact orders behind a failure of check 26.</td>
+</tr>
+<tr>
+<td>28</td>
+<td><code>recon.orders_count</code></td>
+<td>The difference between the rows of <code>fact_orders</code> and the distinct <code>silver_orders</code> that have a created time and a status row</td>
+<td>Gold must contain every order the build is meant to include, no more and no fewer.</td>
+</tr>
+<tr>
+<td>29</td>
+<td><code>recon.lines_count</code></td>
+<td>The difference between <code>fact_order_lines</code> rows and the <code>silver_order_items</code> rows whose order is in <code>fact_orders</code></td>
+<td>No order line may be lost or invented between Silver and Gold.</td>
+</tr>
+<tr>
+<td>30</td>
+<td><code>recon.attribution_two_rows</code></td>
+<td>Orders that do not have exactly one <code>last_touch</code> row and one <code>first_touch</code> row</td>
+<td>Both attribution models must cover every order, so their totals can be compared.</td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>recon.attribution_order_total</code></td>
+<td>Attribution rows whose <code>order_total</code> differs from <code>fact_orders.order_total</code></td>
+<td>Revenue attributed to campaigns must equal revenue of the orders.</td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>recon.campaign_is_last_touch</code></td>
+<td>Orders whose <code>fact_orders.campaign_id</code> differs from the last-touch campaign of that order</td>
+<td>The campaign shown on the order must be the last-touch campaign, so reports agree with each other.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>4. Group 3: Silver hygiene (checks 33 to 39)</h2>
+<p>These checks look at the Silver mirror and ask whether any bad row passed the validator. In theory all of them return 0, because the validator quarantines bad rows. A non-zero value means a validator rule is missing or broken.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>What it counts</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>33</td>
+<td><code>silver.events_null_key_or_time</code></td>
+<td><code>silver_events</code> rows with a NULL <code>event_id</code> or <code>event_time</code></td>
+<td>An event without an id cannot be deduplicated, and without a time it cannot be placed on a day.</td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>silver.events_future_time</code></td>
+<td>Events more than 5 minutes in the future</td>
+<td>The validator tolerates 5 minutes of clock skew and quarantines anything later (<code>FUTURE_TIMESTAMP</code>). A hit means that rule failed.</td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>silver.events_unknown_product</code></td>
+<td>Events with a <code>product_id</code> that is not in <code>silver_products</code> (NULL is allowed)</td>
+<td>An unknown product is quarantined (<code>UNKNOWN_PRODUCT</code>). A hit would break product reports.</td>
+</tr>
+<tr>
+<td>36</td>
+<td><code>silver.order_status_not_allowed</code></td>
+<td>Status rows whose status is not one of the statuses of the Silver contract</td>
+<td>A misspelt status would break the order lifecycle ranking.</td>
+</tr>
+<tr>
+<td>37</td>
+<td><code>silver.order_items_line_total</code></td>
+<td>Order lines where <code>line_total</code> differs from <code>quantity x unit_price</code> by more than 0.01</td>
+<td>The price arithmetic must hold. The 0.01 EGP margin allows for rounding.</td>
+</tr>
+<tr>
+<td>38</td>
+<td><code>silver.snapshots_clicks_gt_impressions</code></td>
+<td>Ad snapshots with more clicks than impressions</td>
+<td>Impossible data. The ad report validator rejects it (<code>CLICKS_GT_IMPRESSIONS</code>).</td>
+</tr>
+<tr>
+<td>39</td>
+<td><code>silver.snapshots_negative_spend</code></td>
+<td>Ad snapshots with negative spend</td>
+<td>Impossible data. The validator rejects it (<code>NEGATIVE_SPEND</code>).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>5. Group 4: Hierarchy and history (checks 40 to 46)</h2>
+<h3>5.1 District inside city (checks 40 to 42)</h3>
+<p>Each check counts rows whose district is not one of the districts of their city. The allowed pairs come from the same file as the simulator (<code>contracts/geo.py</code>). A blank district, <code>unknown</code>, and an unknown city are not violations.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>Table</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>40</td>
+<td><code>district.silver_customers</code></td>
+<td><code>silver_customers</code></td>
+<td>A customer in "Maadi, Alexandria" would be a data error. Store assignment depends on the district.</td>
+</tr>
+<tr>
+<td>41</td>
+<td><code>district.silver_orders</code></td>
+<td><code>silver_orders</code></td>
+<td>The delivery address of an order must be consistent.</td>
+</tr>
+<tr>
+<td>42</td>
+<td><code>district.silver_events</code></td>
+<td><code>silver_events</code></td>
+<td>Demand and out-of-stock analysis use the district to pick the store.</td>
+</tr>
+</tbody>
+</table>
+<h3>5.2 Slowly changing dimensions (checks 43 to 46)</h3>
+<p><code>dim_customer</code> and <code>dim_product</code> keep history. Each change writes a new version with <code>valid_from</code>, <code>valid_to</code> and <code>is_current</code>. Two things must always hold.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>What it counts</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>43</td>
+<td><code>scd2.dim_customer.one_current</code></td>
+<td>Customers that do not have exactly one <code>is_current</code> row</td>
+<td>Zero current rows means the customer vanished from current reports. Two means the customer is counted twice.</td>
+</tr>
+<tr>
+<td>44</td>
+<td><code>scd2.dim_customer.no_overlap</code></td>
+<td>Pairs of versions of the same customer whose validity ranges overlap</td>
+<td>At any moment a customer has one version, so a fact finds one dimension row.</td>
+</tr>
+<tr>
+<td>45</td>
+<td><code>scd2.dim_product.one_current</code></td>
+<td>Products that do not have exactly one <code>is_current</code> row</td>
+<td>Same, for products.</td>
+</tr>
+<tr>
+<td>46</td>
+<td><code>scd2.dim_product.no_overlap</code></td>
+<td>Pairs of product versions whose validity ranges overlap</td>
+<td>Same. A price change must not leave two valid prices at one time.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>6. Group 5: Reported (checks 47 to 64)</h2>
+<p>These are report-type checks. They never fail the batch. A person reads them to judge the run.</p>
+<h3>6.1 Rates and anomalies (checks 47 to 52)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>What it reports</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>47</td>
+<td><code>report.late_rate</code></td>
+<td>The share of <code>silver_events</code> rows flagged <code>is_late</code>, from 0 to 1</td>
+<td>The alert threshold is 0.05. A history replay is late by rule, so the value is high there.</td>
+</tr>
+<tr>
+<td>48</td>
+<td><code>report.quarantine_share</code></td>
+<td>Quarantined rows divided by quarantine plus events plus orders plus order status rows, from 0 to 1</td>
+<td>The alert threshold is 0.02. A steady small share is expected, because the simulator injects bad rows on purpose.</td>
+</tr>
+<tr>
+<td>49</td>
+<td><code>report.negative_delivery_lead_hours</code></td>
+<td>Orders with a negative <code>delivery_lead_hours</code> (delivered before they were created)</td>
+<td>Should be 0. A value above 0 points at a clock or ordering problem.</td>
+</tr>
+<tr>
+<td>50</td>
+<td><code>report.cancelled_with_shipment</code></td>
+<td>Orders counted as cancelled that also have an <code>order_shipped</code> status row</td>
+<td>A cancel after shipment is rejected to quarantine, so this should normally be 0.</td>
+</tr>
+<tr>
+<td>51</td>
+<td><code>report.open_over_14_days</code></td>
+<td>Orders placed more than 14 days ago that are not delivered, cancelled or returned</td>
+<td>Stuck orders. It uses the same rule as <code>orders_open</code> in <code>agg_campaign_daily</code>.</td>
+</tr>
+<tr>
+<td>52</td>
+<td><code>report.direct_attribution_share</code></td>
+<td>The share of orders with no campaign in the last-touch model, from 0 to 1</td>
+<td>How much revenue no campaign can claim (direct, organic traffic).</td>
+</tr>
+</tbody>
+</table>
+<h3>6.2 Row counts (checks 53 to 64)</h3>
+<p>One check per Gold table that reports its row count: <code>rows.dim_customer</code>, <code>rows.dim_product</code>, <code>rows.dim_campaign</code>, <code>rows.dim_date</code>, <code>rows.fact_orders</code>, <code>rows.fact_order_lines</code>, <code>rows.fact_attribution</code>, <code>rows.agg_orders_daily</code>, <code>rows.agg_funnel_daily</code>, <code>rows.agg_campaign_daily</code>, <code>rows.agg_city_product_daily</code> and <code>rows.customer_360</code>. They are numbered 53 to 64 in that order.</p>
+<p>The row counts do not fail anything. They give a person a number to compare with what they expect after the run: a table that is suddenly empty or tenfold bigger is easy to spot.</p>
+<hr />
+<h2>7. Group 6: Manifest (checks 65 and 66)</h2>
+<p>The simulator injects faults on purpose and writes how many of each to <code>noise_manifest.json</code>. These two entries compare the pipeline with that manifest. They run only when the build gets <code>--manifest</code>.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Check</th>
+<th>Severity</th>
+<th>What it tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>65</td>
+<td><code>manifest.quarantine_count</code></td>
+<td>fail</td>
+<td>The number of rows in <code>silver_quarantine</code> must be within 2% of the injected faults that the validator should reject. The nine kinds are: <code>malformed_json</code>, <code>missing_field</code>, <code>unknown_type</code>, <code>bad_version</code>, <code>negative_price</code>, <code>future_timestamp</code>, <code>null_product_id</code>, <code>unknown_product_id</code> and <code>cancel_after_ship</code>. The tolerance is relative to the expected count, and an expected count of 0 allows exactly 0.</td>
+</tr>
+<tr>
+<td>66</td>
+<td><code>manifest.duplicates</code></td>
+<td>report</td>
+<td>The manifest says how many duplicate events were injected. The Silver job drops them before they reach the mirror and keeps no count, so this number cannot be compared. The check says "not checkable on the mirror". Duplicates are checked another way: <code>scripts/check_duplicates.py</code> and checks 1 to 7.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What check 65 proves.</strong> If the pipeline missed faults, the quarantine would hold fewer rows than expected. If the validator rejected good rows, it would hold more. A match means the validator is neither missing faults nor rejecting good rows. It works because the simulator is our own, so we know the true count. It would not work on real data.</p>
+<hr />
+<h2>8. Result of the 13 October 2026 run</h2>
+<p><img alt="Gold checks" src="images/terminal/gold_checks.png" /></p>
+<p><em>Gold build on the scratch catalog <code>workspace</code>: <code>BATCH OK</code>, 66 checks, 0 failed.</em></p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Result</td>
+<td><code>BATCH OK</code>, 175.6 seconds</td>
+</tr>
+<tr>
+<td>Checks run</td>
+<td>66, with 0 failed</td>
+</tr>
+<tr>
+<td>Manifest comparison</td>
+<td>308 quarantine rows expected, 308 observed</td>
+</tr>
+<tr>
+<td>Catalog</td>
+<td>The scratch catalog <code>workspace</code>, not the real <code>funnelstream</code> catalog</td>
+</tr>
+</tbody>
+</table>
+<p>The first complete smoke run the same day failed this comparison (308 expected, 15,472 observed). The cause was that the insert-only mirror kept rows from earlier runs in the scratch catalog. The test script now publishes with <code>--reset</code>, and a script empties the scratch Gold tables. The check was right: it caught stale data.</p>
+<hr />
+<h2>9. What the checks do not cover</h2>
+<ul>
+<li><strong>Report-type checks never fail.</strong> Twenty of the 66 only print numbers.</li>
+<li><strong>Duplicates before Silver</strong> are not counted. Bronze may hold redelivered messages. Silver is protected by its keys and the <code>MERGE</code>, and checks 1 to 7 confirm it.</li>
+<li><strong>The manifest check needs the simulator.</strong> On real data there is no list of injected faults.</li>
+<li><strong>The checks run on the Databricks mirror and Gold,</strong> after the batch. The live lane has its own guards: the late-event and quarantine alerts, and the Silver heartbeat.</li>
+<li><strong>Passing is not proof of truth.</strong> The checks prove that the tables are consistent with each other and with the rules, not that the business numbers are right. All data is simulated.</li>
+</ul>
+<hr />
+<h2>10. Likely questions</h2>
+<p><strong>Does one failed check stop everything?</strong> A fail-type check with a non-zero value fails the batch, and the result lists every check so the failure is visible. A technical error, such as a query that cannot run, stops the build at once.</p>
+<p><strong>Why are some checks only reported?</strong> Rates such as the late rate and row counts have no fixed correct value. A person has to judge them, so they are printed and never fail the batch.</p>
+<p><strong>What if check 65 fails?</strong> Either the validator missed faults or rejected good rows, or the quarantine holds stale rows from an earlier run. On 13 October it was stale rows, and the fix was to publish with <code>--reset</code>.</p>
+<p><strong>How do you know the checks themselves are correct?</strong> <code>tests/test_checks.py</code> lints every query and tests the manifest comparison, the tolerance rule and the result format.</p></body></html>

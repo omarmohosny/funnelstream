@@ -1,0 +1,303 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>FunnelStream | أسئلة المناقشة</title><style>
+:root{--navy:#0d366b;--blue:#2a78d6;--ink:#1c2433;--muted:#5b6578;--line:#d6dce8;--bg:#fff;--soft:#f3f6fb}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;
+  @bottom-center{content:"FunnelStream project documentation   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+*{box-sizing:border-box}
+body{font:10.5pt/1.55 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0 auto;max-width:980px;padding:0 28px}
+h1{font-size:30pt;color:var(--navy);margin:34px 0 4px;letter-spacing:-.5px}
+h2{font-size:17pt;color:var(--navy);margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue);break-after:avoid}
+h3{font-size:13pt;color:var(--navy);margin:24px 0 6px;break-after:avoid}
+h4{font-size:11.5pt;color:var(--blue);margin:20px 0 4px;break-after:avoid}
+p{margin:8px 0}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:9.4pt;break-inside:auto}
+th{background:var(--navy);color:#fff;text-align:left;padding:6px 9px;font-weight:600}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:var(--soft)}
+tr{break-inside:avoid}
+code{font:9.2pt Consolas,"Cascadia Mono",monospace;background:#eef2f9;padding:1px 4px;border-radius:3px}
+pre{background:#0c0e14;color:#d7dae0;padding:12px 14px;border-radius:6px;overflow:auto;font-size:8.8pt;line-height:1.45;break-inside:avoid}
+pre code{background:none;color:inherit;padding:0;font-size:inherit}
+img{max-width:100%;max-height:228mm;width:auto;height:auto;display:block;margin:14px auto 4px;border:1px solid var(--line);border-radius:4px;break-inside:avoid}
+p>em:only-child{display:block;text-align:center;color:var(--muted);font-size:9pt;margin:0 0 16px}
+h2{break-before:page}
+h1+p,h1+h2{break-before:auto}
+.cover{padding:60px 0 20px}
+@media print{body{max-width:none;padding:0}a{color:inherit;text-decoration:none}}
+
+h2{break-before:auto;font-size:15pt;margin-top:26px}
+h1{font-size:24pt}
+h3{break-before:auto;margin-top:22px}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;@bottom-center{content:"FunnelStream | أسئلة المناقشة   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+
+body{direction:rtl;text-align:right;font-family:"Segoe UI",Tahoma,Arial,sans-serif;line-height:1.9}
+ul,ol{padding-right:24px;padding-left:0}
+code,pre{direction:ltr;unicode-bidi:embed;text-align:left}
+</style></head><body><h1>أسئلة المناقشة: 100 سؤال متوقع وإجاباتها (بالمصري)</h1>
+<p>الملف ده للتدريب قبل المناقشة. كل سؤال ليه جزئين: <strong>ببساطة</strong> (الفكرة بكلام سهل، أحيانًا بمثال) و<strong>الإجابة</strong> (اللي تقوله للجنة). الأرقام والأسماء التقنية زي ما هي في المشروع، من غير تغيير.</p>
+<p><strong>تلات قواعد لكل إجابة</strong></p>
+<ol>
+<li>قول إن البيانات محاكاة (simulated) كل ما تذكر رقم.</li>
+<li>فرّق بين اللي اتنفّذ فعلًا، واللي هو اختيار تصميم، واللي هو شغل مستقبلي.</li>
+<li>لو مش عارف، قول اللي الـ repository بيوضّحه واعرض إنك تفتحه للجنة. ما تخمّنش رقم.</li>
+</ol>
+<p><strong>الأقسام:</strong> أ. البيزنس والنطاق (1-10) | ب. الـ Architecture واختيار التكنولوجيا (11-25) | ج. مصادر البيانات والـ simulator (26-33) | د. Kafka والـ streaming (34-42) | هـ. Bronze و Silver وجودة البيانات (43-55) | و. Gold و Databricks والـ attribution (56-66) | ز. Grafana والـ alerts والـ stock (67-78) | ح. Power BI والمقاييس (79-88) | ط. الاختبار والأداء والاعتمادية (89-95) | ي. الأمان والحدود والمستقبل والعملية (96-100)</p>
+<hr />
+<h2>أ. البيزنس والنطاق</h2>
+<p><strong>1. إيه المشكلة اللي FunnelStream بيحلّها؟</strong></p>
+<p><strong>ببساطة:</strong> الـ store بيصرف على ads، وأغلب orders بتاعته كاش عند الاستلام، وبيوعد بـ delivery سريع. بس مفيش مكان واحد يقوله الصورة كاملة.</p>
+<p><strong>الإجابة:</strong> الـ store مش قادر يجاوب في مكان واحد على تلات أسئلة: أنهي campaign بتجيب orders اتسلّمت فعلًا، وفين الـ customers بيسيبوا الـ funnel، وإيه اللي محتاج تصرف دلوقتي. FunnelStream بيربط الأحداث ورا التلات أسئلة في منصة واحدة، وليها عرضين: عرض لحظي للـ operations، وعرض تاني يوم الصبح للـ marketing.</p>
+<p><strong>2. مين المستخدمين؟</strong></p>
+<p><strong>ببساطة:</strong> اتنين: واحد بيراقب دلوقتي، وواحد بيقرر الصبح.</p>
+<p><strong>الإجابة:</strong> مستخدم الـ operations بيتابع الترافيك اللحظي، والـ stock في 8 dark stores، و promise الـ delivery الـ express (20 دقيقة) في Grafana. ومستخدم الـ marketing بيقرا نتايج امبارح للـ campaigns والـ funnel والـ sales في Power BI.</p>
+<p><strong>3. إيه الحاجة الوحيدة اللي منصة مترابطة بس تقدر تعرضها؟</strong></p>
+<p><strong>ببساطة:</strong> إنت بتصرف على ad بيودّي الناس لرف فاضي.</p>
+<p><strong>الإجابة:</strong> فلوس ads اتصرفت على products كانت خالصة من المخزن. الـ operations بتشوفها لحظيًا كطلب وصل لرف فاضي، والـ marketing بيشوفها تاني يوم الصبح كـ "exposed spend" مقدّر.</p>
+<p><strong>4. هل دي بيانات بيزنس حقيقية؟</strong></p>
+<p><strong>ببساطة:</strong> لأ، كلها متولّدة بالـ simulator.</p>
+<p><strong>الإجابة:</strong> لأ. الـ customers والـ orders وأرقام الـ ads والـ stock كلها بيولّدها simulator بـ seed ثابت. الأرقام بتثبت إن الـ pipeline والطريقة شغالين، مش أداء بيزنس حقيقي، والـ dashboards بتقول كده صراحة.</p>
+<p><strong>5. ليه عملتوا محاكاة بدل dataset جاهزة؟</strong></p>
+<p><strong>ببساطة:</strong> إحنا محتاجين بيانات كلها متّسقة مع بعض، وعايزين نحط فيها أخطاء معروفة ونعدّها.</p>
+<p><strong>الإجابة:</strong> كنا محتاجين stream events، و orders ليها دورة حياة، وبيانات ads، وأحداث stock، وكلهم متّسقين مع بعض، وكنا محتاجين نحقن أخطاء معروفة ونعدّها. أي dataset عامة مش بتدّي stream متّسق فيه stock و delivery express وربط بالـ campaigns. والـ seed بيخلّي كل demo واختبار replay قابل للتكرار.</p>
+<p><strong>6. المحاكاة واقعية قد إيه؟</strong></p>
+<p><strong>ببساطة:</strong> عملناها على شكل store مصري حقيقي، بس مش هنقول إنها مطابقة 100%.</p>
+<p><strong>الإجابة:</strong> بتحاكي store مصري: أسماء وأرقام تليفونات مصرية، ومدن موزّعة حسب عدد السكان بمناطقها الحقيقية، والجنيه EGP، والكاش عند الاستلام كأكبر وسيلة دفع، وفوري وفودافون كاش وإنستاباي، وشركات الشحن Bosta و Aramex و J&amp;T، وذروة رمضان والعيد. مش نقدر نثبت إنها واقعية بالكامل، لكن الافتراضات متوثّقة والتوزيعات متراجعة عليها.</p>
+<p><strong>7. أنهي قرارات بيزنس النظام بيدعمها؟</strong></p>
+<p><strong>ببساطة:</strong> قرارات صغيرة وواضحة: فلوس الـ ad، الـ funnel، الـ stock، الـ delivery.</p>
+<p><strong>الإجابة:</strong> نقل الـ budget بين الـ campaigns بناءً على ROAS للdelivered orders، وإصلاح الخطوة والـ channel اللي فيهم أعلى abandonment، وإعادة تخزين الـ products اللي خلصت، ومتابعة orders الـ express اللي هتفوّت وعدها، ووقف ads الـ products اللي خلصت. وكل ده معروض على بيانات محاكاة.</p>
+<p><strong>8. إيه نطاق المشروع، وإيه اللي سبتوه قصدًا؟</strong></p>
+<p><strong>الإجابة:</strong> جوه النطاق: الـ ingestion، والمعالجة الـ streaming، وفحوصات الجودة، ونموذج lakehouse، ومراقبة لحظية بـ alerts، وتقرير BI من 7 صفحات، ومساعد LLM بيجاوب على الأسئلة. اللي سبناه قصدًا: customers حقيقيين، ونشر Kafka و Spark على السحابة، والتوصيات (جدول <code>rec_product</code> فاضي كمكان محجوز)، واختبار incrementality، و contribution margin.</p>
+<p><strong>9. ليه أداتين: Grafana و Power BI؟</strong></p>
+<p><strong>ببساطة:</strong> ده زي عداد السرعة في العربية مقابل تقرير الصيانة الشهري. واحد للحظة، والتاني للقرار.</p>
+<p><strong>الإجابة:</strong> هما بيخدموا مستخدمين بسرعات مختلفة. Grafana بيقرا جداول Postgres صغيرة بتتحدّث في أقل من دقيقة وفيه alert rules، فمناسب للـ operations. Power BI بيقرا جداول Gold بعد المطابقة والـ daily marts، فمناسب للـ marketing اللي محتاج أرقام موثوقة لامبارح. Grafana بيجاوب "السيستم سليم وإيه محتاج تصرف دلوقتي"، و Power BI بيجاوب "إيه اللي حصل وإيه نقرر".</p>
+<p><strong>10. إيه أهم نتيجة؟</strong></p>
+<p><strong>الإجابة:</strong> pipeline streaming بيستحمل crash من غير تكرار، وبيانات وحشة بتتحجز في quarantine بسببها وبتتعدّ مقابل الـ noise اللي اتحقن، وجمهورين بيخدموا من نفس الأحداث، وجسر واحد بينهم. الأدلة المقاسة: 66 data quality check من غير ولا فشل، و 1,169 اختبار على الـ host نجحوا، و <code>NO DUPLICATES</code> في تجربتين kill-and-restart.</p>
+<hr />
+<h2>ب. الـ Architecture واختيار التكنولوجيا</h2>
+<p><strong>11. اشرح الـ architecture في دقيقة.</strong></p>
+<p><strong>ببساطة:</strong> البيانات بتدخل من الشمال، بتتنضّف في النص، وبتتقسم لمسارين.</p>
+<p><strong>الإجابة:</strong> simulator و mock ad API بيولّدوا events. Kafka بيشيل 4 topics. وSpark Structured Streaming جوه Docker بيكتب Bronze (الخام) و Silver (متحقق منه وملغي التكرار) بصيغة Delta، ومعاهم جدول quarantine للصفوف المرفوضة. من Silver، المسار اللحظي بيكتب جداول Postgres صغيرة لـ Grafana و 8 alert rules. والمسار الصباحي بينشر Silver على Databricks، وبيبني Gold على star schema بـ 66 check، وبيضيف daily marts في Postgres، وبيغذّي Power BI.</p>
+<p><strong>12. ليه تصميم medallion (Bronze, Silver, Gold)؟</strong></p>
+<p><strong>ببساطة:</strong> زي مصنع: مخزن مواد خام، بعدين خط تنضيف، بعدين product جاهز للبيع.</p>
+<p><strong>الإجابة:</strong> كل layer ليها شغلة واحدة. Bronze بيحتفظ بكل رسالة خام للأبد، فمفيش حاجة بتضيع وممكن نعيد البناء. Silver هو النسخة الموثوقة الوحيدة: typed ومتحقق منه وملغي التكرار. Gold جاهز للبيزنس: facts و dimensions و aggregates. فصلهم بيخلّينا نصلّح قاعدة في Silver أو Gold ونعيد البناء من غير ما نرجع للمصدر.</p>
+<p><strong>13. ليه مسارين بدل pipeline واحدة؟</strong></p>
+<p><strong>ببساطة:</strong> حد عايز الرقم بسرعة حتى لو تقريبي، وحد عايز الرقم مظبوط حتى لو اتأخر.</p>
+<p><strong>الإجابة:</strong> القرارات محتاجة سرعات مختلفة ودرجات تأكّد مختلفة. الـ operations محتاجة رقم في دقيقة حتى لو event متأخر ممكن يغيّره. والـ marketing محتاج رقم متطابق ومبيتحرّكش. المسار اللحظي بيضحّي بالتأكّد عشان السرعة وبيسيب الـ late events بره. والمسار الصباحي بيحطهم ويشغّل 66 check.</p>
+<p><strong>14. ليه Kafka؟</strong></p>
+<p><strong>ببساطة:</strong> زي صندوق بريد: اللي بيبعت مش لازم يستنى اللي بيستلم.</p>
+<p><strong>الإجابة:</strong> بيفصل المنتجين عن المعالجة، وبيحتفظ بالرسايل لما Spark job يكون واقف، وبيسمح بـ replay بعد أي crash. الـ keys بتحافظ على ترتيب كل session وكل order. وKafka بيشتغل محليًا في container واحد، وده مناسب لـ deployment على لاب توب. ما جرّبناش brokers تانية، فالادعاء الصادق إن Kafka مناسب للاحتياج، مش إنه فاز على بدائل.</p>
+<p><strong>15. ليه Spark Structured Streaming و Delta Lake؟</strong></p>
+<p><strong>الإجابة:</strong> بيدّونا checkpoints وجداول partitioned و Delta <code>MERGE</code>، ومع بعض بيخلّوا الكتابة idempotent (لو اتكررت مفيش أثر)، ونفس الكود يقدر يعيد تشغيل Bronze لإعادة بناء Silver. ما قيّمناش Flink أو ksqlDB في المشروع ده، فمش بنقارن.</p>
+<p><strong>16. ليه Spark بيشتغل في Docker؟</strong></p>
+<p><strong>الإجابة:</strong> على Windows، Spark محتاج winutils وبيئة شبه Linux، فالـ Spark jobs واختباراتها بتشتغل في container. Java و Spark جوه الـ Docker image ومش متسطّبين على الـ host.</p>
+<p><strong>17. ليه Databricks لـ Gold؟</strong></p>
+<p><strong>الإجابة:</strong> بيدّينا SQL warehouse و Unity Catalog للـ star schema، وبيوضّح الجزء السحابي في التصميم: الـ lake المحلي فيه Bronze و Silver، و Databricks فيه نسخة Silver و Gold. ده workspace من Free Edition، فليه حدود، والـ benchmark بتاعنا على setup واحد، مش ادعاء سعة.</p>
+<p><strong>18. ليه Postgres للجداول اللحظية؟</strong></p>
+<p><strong>ببساطة:</strong> Grafana بيسأل كل كام ثانية، فمحتاج جداول صغيرة وسريعة.</p>
+<p><strong>الإجابة:</strong> Grafana محتاج جداول صغيرة وسريعة ومفهرسة يقدر يسألها كل كام ثانية. الـ live sink بيعيد حساب الدقايق وأزواج الـ store والـ product اللي الـ batch لمسها بس، وبيكتبها في Postgres. وPostgres كمان فيه الـ daily marts اللي Power BI بيقراها. هو مش المخزن التحليلي.</p>
+<p><strong>19. ليه Grafana للمراقبة؟</strong></p>
+<p><strong>الإجابة:</strong> بيعمل provisioning للـ dashboards والـ alert rules كـ code، وبيدعم data source read-only، وبيتعامل كويس مع الفجوات والـ thresholds. 6 dashboards و 8 alert rules بتتولّد من Python builders، وفي اختبار بيفشل لو أي ملف ابتعد عن الـ builder بتاعه.</p>
+<p><strong>20. ليه Power BI للطبقة البيزنس؟</strong></p>
+<p><strong>الإجابة:</strong> هو الأداة المعروفة للبيزنس، وبيدعم semantic model بـ measures و relationships، وصيغة المشروع (<code>.pbip</code>) بتخلّي التقرير ملفات نصية generator يقدر يطلّعها واختبار يقدر يفحصها. استخدمنا Import mode بـ credentials للقراءة فقط.</p>
+<p><strong>21. إيه دور Airflow؟</strong></p>
+<p><strong>الإجابة:</strong> DAG واحد اسمه <code>ads_yesterday_report</code> بيشتغل 03:00 UTC، بيسحب من ad API مرة واحدة لليوم اللي خلص، وبيخزّن snapshot وبيكتب تقرير JSON. بيعيد المحاولة لو جه HTTP 503، وبيرجّع التقرير المخزّن لو اتشغّل تاني. هو optional Docker profile، ونفس الخطوات بتشتغل كـ Python script.</p>
+<p><strong>22. ليه بيانات Airflow بتروح Silver مباشرة مش Bronze؟</strong></p>
+<p><strong>ببساطة:</strong> Bronze مخصّص لرسايل Kafka الخام، وتقرير الـ ads مش جاي من Kafka.</p>
+<p><strong>الإجابة:</strong> Bronze فيه رسايل Kafka الخام بـ partition و offset و وقت الـ ingest. تقرير الـ ads مش جاي من Kafka. هو سحب HTTP واحد في اليوم، بيتحقق منه وقت السحب وبيتخزّن في <code>silver_campaign_snapshots</code>. كل سحبة بتتحفظ كـ snapshot لوحدها بمفتاح (الـ campaign، تاريخ التقرير، وقت السحب)، والصفوف الوحشة بتروح quarantine. المقابل إن الـ response الخام مش محفوظ. جدول <code>bronze_ad_pulls</code> هيقفل الفجوة دي، وده الخطوة الجاية الصادقة.</p>
+<p><strong>23. هل الـ architecture دي نفسها في production؟</strong></p>
+<p><strong>الإجابة:</strong> لأ. كل اللي على شمال Databricks بيشتغل على لاب توب Windows واحد في Docker. في production هنستخدم Kafka مُدار، و object storage للـ lake، و cluster لـ Spark، و secrets manager، و CI، ومراقبة للمنصة نفسها. دي مقترحات مش features متنفّذة.</p>
+<p><strong>24. إيه مبادئ التصميم؟</strong></p>
+<p><strong>الإجابة:</strong> طبقات medallion، وتسليم at-least-once مع كتابة idempotent، وكاتب واحد لكل جدول، ومسارين، وعقود عند الباب (schema validator)، وتعريفات مقاييس معلنة في قاموس واحد، وبدائل زي store Postgres ورا نفس الـ interface بتاع Databricks.</p>
+<p><strong>25. يعني إيه "كاتب واحد لكل جدول" وليه مهم؟</strong></p>
+<p><strong>ببساطة:</strong> لو شخصين بيكتبوا في نفس الدفتر هيحصل تعارض، ولو الرقم غلط مش هنعرف مين السبب.</p>
+<p><strong>الإجابة:</strong> كل جدول Gold بيكتبه الـ Databricks Gold build بس، والـ Spark stream المحلي بيكتب Bronze و Silver والجداول اللحظية بس. كاتب واحد لكل جدول بيمنع تعارض الكتابة وبيوضّح الرقم الغلط جه منين.</p>
+<hr />
+<h2>ج. مصادر البيانات والـ simulator</h2>
+<p><strong>26. إيه الأحداث اللي الـ simulator بيطلّعها؟</strong></p>
+<p><strong>الإجابة:</strong> أحداث التطبيق والويب مع تساقط الـ funnel (<code>app_open</code>, <code>page_view</code>, <code>product_view</code>, <code>product_click</code>, <code>product_search</code>, <code>add_to_cart</code>, <code>remove_from_cart</code>, <code>checkout_started</code>, <code>purchase</code>)، و orders وتوصيلات بدورة حياة كاملة، و snapshots وحركات stock لـ 8 dark stores، وأرقام campaigns من mock Meta و Google Ads API. الكتالوج فيه حوالي 200 product في 4 أقسام و 5,000 customer.</p>
+<p><strong>27. إيه اللي جوه الـ event؟</strong></p>
+<p><strong>ببساطة:</strong> كل event ليه "ظرف" ثابت، زي الخطاب فيه عنوان وتاريخ ومحتوى.</p>
+<p><strong>الإجابة:</strong> كل event بيستخدم envelope واحد: <code>event_id</code> و <code>event_type</code> و <code>event_version</code> و <code>event_time</code> وكائن <code>payload</code>. الأحداث المجهولة ملهاش <code>customer_id</code> وبتتـ key بـ <code>session_id</code>.</p>
+<p><strong>28. ليه بتحقنوا noise قصدًا؟</strong></p>
+<p><strong>ببساطة:</strong> لو الـ stream نضيف 100%، مفيش حاجة تثبت إن الفحص شغال. زي ما تحط ورقة غلط في امتحان عشان تتأكد إن المصحّح هيلقطها.</p>
+<p><strong>الإجابة:</strong> الـ stream النضيف مش بيثبت حاجة عن جودة البيانات. الـ simulator بيحقن تكرارات (1%)، و JSON مكسور (0.3%)، وحقول ناقصة، وأنواع مش معروفة، وأسعار سالبة، وتواريخ في المستقبل، و late events (2% زائد 0.3% متأخرة جدًا)، ونصوص وحشة، و bots، وحالات order بترتيب غلط، وصفوف ads وحشة. وبيكتب العدد في <code>noise_manifest.json</code>، فنقدر نتأكد إن الـ pipeline مسك اللي اتحقن.</p>
+<p><strong>29. عرفتوا منين إن الـ pipeline مسك كل الـ noise؟</strong></p>
+<p><strong>الإجابة:</strong> بعد Silver، عدد الـ quarantine بيتقارن بالـ noise manifest ولازم يتطابق في حدود تسامح. في تشغيل 13 أكتوبر على الـ scratch، كان متوقع 308 صف واتلاقوا 308.</p>
+<p><strong>30. يعني إيه "seeded"؟</strong></p>
+<p><strong>ببساطة:</strong> زي ما ترمي نرد بنفس الرمية كل مرة: نفس النتيجة.</p>
+<p><strong>الإجابة:</strong> نفس الـ seed بيدّي نفس الـ customers والـ products والأحداث. ده بيخلّي الـ demo قابل للتكرار وبيسمح لاختبارات الـ replay بمقارنة النتايج. سكريبت الـ demo بيختار seed جديد كل مرة عشان الـ ids ما تتكررش.</p>
+<p><strong>31. هل الـ ad API حقيقي؟</strong></p>
+<p><strong>الإجابة:</strong> لأ، هو mock لـ API تقارير Meta و Google Ads. أرقامه متّسقة مع قيم <code>utm_campaign</code> في الترافيك المتولّد. وبيقدر يفشل قصدًا (HTTP 503، سحبات مكررة، <code>clicks &gt; impressions</code>، spend سالب) عشان نختبر الـ DAG والـ validator.</p>
+<p><strong>32. ليه 8 dark stores؟</strong></p>
+<p><strong>الإجابة:</strong> بيمثّلوا حالة الـ quick-commerce في مناطق مصرية حقيقية: مدينة نصر والمعادي والقاهرة الجديدة في القاهرة، والدقي في الجيزة، والمنتزه ورمل في إسكندرية، وواحد في المنصورة وواحد في طنطا. كل منطقة ليها store أساسي واحد. أسيوط و"أخرى" ملهمش store ومستبعدين من مقاييس stock-out.</p>
+<p><strong>33. هل الـ simulator بيحاكي الـ stock بواقعية؟</strong></p>
+<p><strong>الإجابة:</strong> فيه <code>StockLedger</code> بيمنع الـ stock من النزول تحت الصفر، وبيطلّع snapshot افتتاحي لكل زوج store و product، و snapshot أساسي كل 5 دقايق، وحركة <code>sold</code> لكل سطر order. أحداث الطلب مش بتتوقف لما الـ stock يفضى، لأن الطلب الضايع ده هو اللي بنقيسه. حد معروف: الـ stock بيتحجز لما الـ order يتعمل ومش بيرجع عند الـ cancellation أو الإرجاع أو فشل الـ delivery.</p>
+<hr />
+<h2>د. Kafka والـ streaming</h2>
+<p><strong>34. إيه الـ topics وليه الأربعة دول؟</strong></p>
+<p><strong>ببساطة:</strong> قسّمناهم حسب نوع الحدث، وكل مفتاح بيحافظ على ترتيب أحداثه.</p>
+<p><strong>الإجابة:</strong> <code>app.events</code> (6 partitions، key <code>session_id</code>)، و <code>orders</code> (3، key <code>order_id</code>)، و <code>delivery.events</code> (3، key <code>order_id</code>)، و <code>inventory.events</code> (3، key <code>store_id</code>). اتقسّموا حسب الكيان وحسب احتياج الترتيب، فكل key بيحافظ على ترتيب أحداثه جوه partition واحد. <code>app.events</code> ليه 6 partitions لأنه أكتر stream زحمة بفارق كبير، والتلاتة التانيين 3 لأنهم بيشيلوا جزء صغير من الترافيك ده. الـ repository بيسجّل الأرقام بس من غير سبب مكتوب، فقول إنها اتختارت بما يناسب الترافيك وحجم لاب توب واحد (الـ Spark job بيشتغل بـ <code>local[4]</code>، أربع tasks متوازية)، وإننا ما قسناش قيم تانية. في production العدد هيتحدد من أقصى throughput وعدد الـ consumer tasks مع هامش، لأن عدد الـ partitions ممكن يتزوّد بعدين لكن مينفعش يتقلّل.</p>
+<p><strong>35. ليه الـ keys دي؟</strong></p>
+<p><strong>الإجابة:</strong> كل أحداث الـ session وكل أحداث الـ order بتروح partition واحد بالتسلسل. ده بيحافظ على ترتيب كل session وكل order، واللي منطق دورة حياة الـ order معتمد عليه.</p>
+<p><strong>36. إيه ضمان التسليم عندكم؟</strong></p>
+<p><strong>ببساطة:</strong> ممكن الرسالة توصل مرتين، بس لو وصلت مرتين مفيش أي أثر. النتيجة نفسها كأنها وصلت مرة واحدة.</p>
+<p><strong>الإجابة:</strong> at-least-once مع كتابة idempotent. منتجو Kafka بيستخدموا <code>acks=all</code> و idempotence، و Silver بيشيل التكرار على <code>event_id</code>، و Delta <code>MERGE</code> على الـ key معناه إن الرسالة المعادة مش بتضيف حاجة. النتيجة exactly-once في الأثر، من غير إعداد exactly-once على مستوى الـ broker.</p>
+<p><strong>37. إيه اللي بيحصل لو Spark job عمل crash؟</strong></p>
+<p><strong>ببساطة:</strong> زي ما تعمل bookmark في كتاب: ترجع لنفس الصفحة.</p>
+<p><strong>الإجابة:</strong> الـ checkpoints على الـ disk فيها الـ Kafka offsets اللي اتـ commit. لما الـ job يشتغل تاني بنفس الأمر ونفس فولدر الـ checkpoint، بيكمّل من الـ offsets دي وبيقرا اللي Kafka احتفظ بيه وهو واقف.</p>
+<p><strong>38. جرّبتوا ده؟</strong></p>
+<p><strong>الإجابة:</strong> أيوه. في الـ failure demo قتلنا Silver job بـ <code>docker kill</code>، وشفنا alert "Silver job silent" بيطلع بعد 2 دقيقة و 12 ثانية و 2 دقيقة و 54 ثانية من القتل في تجربتين، وعملنا restart بنفس الـ checkpoints، وفحص التكرار طلع <code>NO DUPLICATES</code> في المرتين. الفحص بيغطي Silver بس، ومبيثبتش إن مفيش event ضاع.</p>
+<p><strong>39. إيه الـ micro-batch trigger؟</strong></p>
+<p><strong>الإجابة:</strong> عشر ثواني. على اللاب توب ده، batches الـ Silver ممكن تكون أبطأ من الـ trigger و Spark بيطلّع تحذير "batch is falling behind". ده طبيعي هنا، وإحنا بنقفل Gold sync أثناء الـ demo.</p>
+<p><strong>40. إزاي بتتعاملوا مع وقت الـ event؟</strong></p>
+<p><strong>الإجابة:</strong> الأحداث بتشيل <code>event_time</code> بتوقيت UTC. الـ event بيعتبر متأخر لما وقت Kafka ناقص وقت الـ event يزيد عن 10 دقايق. الـ late events بتفضل في Silver و Gold، وبتتعلّم <code>is_late</code>، وبتتسيب بره المقاييس اللحظية، وبتتصحّح في الـ batch. أيام البيزنس بتتحسب بتوقيت <code>Africa/Cairo</code>.</p>
+<p><strong>41. إزاي بتتعاملوا مع حالات الـ order اللي جت بترتيب غلط؟</strong></p>
+<p><strong>ببساطة:</strong> مش بنثق في ترتيب الوصول. بنثق في أعلى "مرحلة" وصل لها الـ order.</p>
+<p><strong>الإجابة:</strong> الحالة الحالية للـ order هي الحالة صاحبة أعلى rank: <code>order_created</code> 1، <code>payment_authorised</code> 2، <code>order_packed</code> 3، <code>order_shipped</code> 4، <code>out_for_delivery</code> و <code>delivery_failed</code> 5، <code>delivered</code> 6، <code>order_completed</code> و <code>order_returned</code> 7. <code>order_cancelled</code> rank 2 وهي نهائية، والـ cancellation بعد الشحن بيترفض لـ quarantine.</p>
+<p><strong>42. ليه مش بنقرا من Kafka مباشرة لـ Postgres من غير Bronze و Silver؟</strong></p>
+<p><strong>الإجابة:</strong> هنخسر النسخة الخام، و cancellation التكرار، والـ quarantine، والـ replay، وجداول Silver اللي بتغذّي Gold. Bronze و Silver هما اللي بيخلّوا الاسترجاع من crash وإعادة البناء وإثبات الجودة ممكنين.</p>
+<hr />
+<h2>هـ. Bronze و Silver وجودة البيانات</h2>
+<p><strong>43. إيه اللي في Bronze؟</strong></p>
+<p><strong>الإجابة:</strong> قيمة الرسالة الخام زائد Kafka partition و offset و timestamp ووقت الـ ingest. هو append-only ومفيش حاجة بتتحذف أو تتغيّر. هو المصدر لأي إعادة بناء.</p>
+<p><strong>44. Silver بيعمل إيه؟</strong></p>
+<p><strong>ببساطة:</strong> بياخد الخام وبيعمل منه نسخة نضيفة وموثوقة.</p>
+<p><strong>الإجابة:</strong> بيتحقق من schema ليه version، وبيحوّل الحقول لأنواعها، وبيوحّد القيم (UTC، نص المدينة والجهاز، قيم UTM)، وبيشيل التكرار على الـ key، وبيكتب بـ Delta <code>MERGE</code>. كل جدول Silver ليه key، فإعادة تشغيل batch مبتغيّرش حاجة. والـ batch بيتشال منه التكرار قبل الـ <code>MERGE</code>، فصفّين بنفس الـ key مبيتقابلوش في merge واحد.</p>
+<p><strong>45. إيه اللي بيروح quarantine؟</strong></p>
+<p><strong>الإجابة:</strong> الصفوف اللي بتفشل في التحقق، مع كود الخطأ والـ payload الخام: <code>BAD_JSON</code> و <code>MISSING_FIELD</code> و <code>UNKNOWN_EVENT_TYPE</code> و <code>BAD_VERSION</code> و <code>NEGATIVE_PRICE</code> و <code>FUTURE_TIMESTAMP</code> و <code>UNKNOWN_PRODUCT</code>، وللـ ads <code>NEGATIVE_SPEND</code> و <code>CLICKS_GT_IMPRESSIONS</code>. الصف المحجوز عمره ما بيوصل للأرقام.</p>
+<p><strong>46. ليه quarantine بدل ما نحذف الصفوف الوحشة أو نصلّحها؟</strong></p>
+<p><strong>ببساطة:</strong> لو رميت الورقة الغلط مش هتعرف مين غلط. ولو صلّحتها بالتخمين، هتألّف بيانات.</p>
+<p><strong>الإجابة:</strong> الحذف بيخبّي مشكلة الـ product. والتخمين بيخترع بيانات. الـ quarantine بيحتفظ بالدليل، وبيدّي سبب بيشاور على الـ producer اللي لازم يتصلّح، وبيخلّينا نعدّ الصفوف المرفوضة مقابل الـ noise المحقون. ونسبة الـ quarantine كمان بتشغّل alert عند 2%.</p>
+<p><strong>47. هل Silver ممكن يتعاد بناؤه؟</strong></p>
+<p><strong>الإجابة:</strong> أيوه، من Bronze في أي وقت، لكل اللي بيعدّي من Kafka. الاستثناء الوحيد هو snapshots الـ ads، لأنها مبتعدّيش من Bronze. عملنا replay لـ Bronze في الـ smoke test و 10 جداول Silver ما اتغيّرتش.</p>
+<p><strong>48. إزاي بتشيلوا التكرار؟</strong></p>
+<p><strong>الإجابة:</strong> الـ simulator بيكرّر 1% من الأحداث بنفس الـ <code>event_id</code>. Silver بيشيل التكرار على <code>event_id</code> جوه الـ batch، والـ <code>MERGE</code> بيتجاهل أي key موجود. و <code>scripts/check_duplicates.py</code> بيقرا كل جدول Silver ليه key وبيبلّغ عن أي تكرار.</p>
+<p><strong>49. إيه جداول Silver؟</strong></p>
+<p><strong>الإجابة:</strong> <code>silver_events</code> و <code>silver_orders</code> و <code>silver_order_status</code> و <code>silver_order_items</code> و <code>silver_stock_movements</code> و <code>silver_stock_snapshots</code> و <code>silver_express_orders</code> و <code>silver_customers</code> و <code>silver_products</code> و <code>silver_quarantine</code>، وزيهم <code>silver_campaign_snapshots</code> من الـ ad API.</p>
+<p><strong>50. إيه هي الـ bot sessions وبتعملوا فيها إيه؟</strong></p>
+<p><strong>الإجابة:</strong> حوالي 0.1% من الـ sessions بتبقى bots فيها مئات الأحداث في ثواني. بتاخد علامة <code>is_bot</code> وبتتسيب بره الـ funnel والـ attribution والمقاييس اللحظية. حد معروف: مسار demand الـ out-of-stock products مش بيشيل الـ bot sessions، لكن Gold بيشيلها.</p>
+<p><strong>51. إزاي بتتحققوا من عقود البيانات (data contracts)؟</strong></p>
+<p><strong>الإجابة:</strong> validator في <code>contracts/</code> بيفحص كل event على schema ليه version حسب نوعه. الـ event الوحش بيروح quarantine بكود خطأ. الـ validator والـ schemas مغطيين باختبارات.</p>
+<p><strong>52. إيه هي الـ 66 data quality check؟</strong></p>
+<p><strong>ببساطة:</strong> بعد كل Gold build بنشغّل 66 فحص. 46 منهم لو لقوا مخالفة بيوقّفوا الـ batch. و 20 بيطبعوا رقم بس.</p>
+<p><strong>الإجابة:</strong> 66 نتيجة في كل Gold build: 46 فحص من نوع fail بيوقّفوا الـ batch لو لقوا مخالفة، و 20 فحص من نوع report بيطبعوا رقم بس (نسب وأعداد صفوف). المجموعات: تكرار المفاتيح، ونضافة Silver (مفيش <code>event_id</code> فاضي، ومفيش حاجة في المستقبل، ومفيش product مجهول، و <code>line_total = quantity x unit_price</code>)، والـ hierarchy والتاريخ (صف حالي واحد لكل key، ومفيش فترات صلاحية متداخلة، والمنطقة تابعة لمدينتها)، والمطابقة (مجموع الـ orders بيساوي سطورها، وعدد Gold بيطابق Silver)، وفحص الـ manifest (الـ quarantine في حدود 2% من الـ manifest)، والنسب المُبلّغ عنها.</p>
+<p><strong>53. الـ manifest check بيثبت إيه؟</strong></p>
+<p><strong>ببساطة:</strong> إحنا عارفين بالظبط حطّينا كام غلطة، فنقدر نتأكد إن الـ pipeline لقاهم كلهم ومارمّاش حاجة سليمة.</p>
+<p><strong>الإجابة:</strong> إن عدد الـ quarantine عند الـ pipeline بيساوي الأخطاء اللي الـ simulator بيقول إنه حقنها، في حدود 2%. ده دليل إن الـ validator مش بيفوّت أخطاء ومش بيرفض صفوف سليمة. وبيشتغل لأن الـ simulator بتاعنا، فعارفين العدد الحقيقي.</p>
+<p><strong>54. إيه اللي بيحصل للـ late events؟</strong></p>
+<p><strong>الإجابة:</strong> بتتحفظ. بتتعلّم، وبتتسيب بره المقاييس اللحظية عشان المسار اللحظي ميتحرّكش بعد الواقعة، وبتتحط في الـ batch عشان Gold و Power BI يبقوا صح.</p>
+<p><strong>55. إزاي بتتعاملوا مع البيانات الشخصية؟</strong></p>
+<p><strong>الإجابة:</strong> الأسماء وأرقام التليفونات موجودة في Bronze و Silver بس. النشر على Databricks بيستخدم allow-list للأعمدة، فمبتوصلش لنسخة Silver ولا Gold ولا Power BI. Gold والتقرير فيهم <code>customer_id</code> بس. وكل البيانات اصطناعية.</p>
+<hr />
+<h2>و. Gold و Databricks والـ attribution</h2>
+<p><strong>56. إيه اللي في Gold؟</strong></p>
+<p><strong>الإجابة:</strong> اتناشر جدول: <code>dim_customer</code> و <code>dim_product</code> (slowly changing من النوع 2)، و <code>dim_campaign</code> و <code>dim_date</code> و <code>fact_orders</code> و <code>fact_order_lines</code> و <code>fact_attribution</code> و <code>agg_orders_daily</code> و <code>agg_funnel_daily</code> و <code>agg_campaign_daily</code> و <code>agg_city_product_daily</code> و <code>customer_360</code>. وفي مكان تالتاشر محجوز اسمه <code>rec_product</code> فاضي قصدًا.</p>
+<p><strong>57. إيه هو SCD2 وفين بتستخدموه؟</strong></p>
+<p><strong>ببساطة:</strong> لما حاجة تتغيّر (سعر product مثلًا)، مش بنمسح القديم. بنضيف صف جديد ونفضل نعرف إمتى كان كل سعر ساري.</p>
+<p><strong>الإجابة:</strong> الـ slowly changing dimension نوع 2 بيحتفظ بالتاريخ بإضافة صف جديد لكل تغيير، بـ <code>valid_from</code> و <code>valid_to</code> و <code>is_current</code>. <code>dim_customer</code> بيتتبّع المدينة والمنطقة والجهاز الأساسي. <code>dim_product</code> بيتتبّع القسم والسعر وحالة النشاط. الـ simulator بيغيّر الأسعار والأقسام قصدًا عشان التاريخ يتكوّن. وفي فحوصات بتتأكد من صف حالي واحد لكل key ومفيش فترات صلاحية متداخلة.</p>
+<p><strong>58. إزاي الـ facts بتلاقي صف الـ dimension الصح؟</strong></p>
+<p><strong>الإجابة:</strong> مفاتيح الـ dimension بتتحل وقت بناء الـ fact، من نسخة الـ dimension اللي كانت سارية وقت الـ event. الصف اللي ملوش تطابق بيروح quarantine ومش بياخد key مخمّن. المفتاح -1 هو العضو المجهول في الـ dimensions.</p>
+<p><strong>59. إزاي بتنشروا Silver على Databricks؟</strong></p>
+<p><strong>ببساطة:</strong> Databricks مش شايف الـ Kafka اللي على اللاب توب، فبنبعت له ملفات.</p>
+<p><strong>الإجابة:</strong> Databricks مش بيقدر يوصل لـ Kafka اللي على اللاب توب، فـ Silver بيعدّي كملفات. <code>scripts/publish_silver.py</code> بيصدّر Silver بـ allow-list للأعمدة، وبيرفع Parquet على Unity Catalog volume، وبيعمل <code>MERGE</code> في نسخة Silver. هو insert-only و idempotent. وفي خيار <code>--reset</code> اختياري بيفرّغ جداول النسخة قبل نشر جديد.</p>
+<p><strong>60. إزاي الـ attribution بيشتغل؟</strong></p>
+<p><strong>ببساطة:</strong> السؤال "الـ order ده نسبه لأنهي campaign؟". عندنا طريقتين: آخر ضغطة، وأول ضغطة.</p>
+<p><strong>الإجابة:</strong> فيه نموذجين. <code>last_touch</code> بينسب الـ order لـ campaign الـ click بتاع الـ session نفسه أولًا، ولو مفيش فآخر click للـ customer في الـ 7 أيام اللي قبله. <code>first_touch</code> بينسبه لأول click. الـ order اللي مفيش وراه click بيعتبر direct بـ campaign NULL.</p>
+<p><strong>61. ليه الـ ROAS الأساسي على الـ delivered orders؟</strong></p>
+<p><strong>ببساطة:</strong> الـ order اللي اتسجّل واتلغى مجابش فلوس. فالأمين إننا نحسب على اللي اتسلّم.</p>
+<p><strong>الإجابة:</strong> orders كتير كاش عند الاستلام وبتتلغي أو بيفشل توصيلها، فـ ROAS على الـ placed orders بيبالغ في العائد. الرقم الأساسي هو <code>revenue_delivered / spend</code>، والـ ROAS على الـ placed ثانوي. التسليم بيتأخر عن الـ spend من يومين لأربعة، فالأيام الأخيرة بتبان واطية وبتتعلّم provisional.</p>
+<p><strong>62. هل الـ attribution بيثبت إن الـ campaign هي اللي سبّبت الـ order؟</strong></p>
+<p><strong>الإجابة:</strong> لأ. last touch بيفضّل القنوات اللي في آخر الـ funnel زي البحث و retargeting، ومفيش نموذج بيثبت incrementality. التقرير بيعرض النموذجين. واختبارات الـ incrementality مكتوبة كشغل مستقبلي.</p>
+<p><strong>63. إيه الفرق بين CPA وتكلفة الـ delivered order؟</strong></p>
+<p><strong>الإجابة:</strong> CPA هو الـ spend مقسوم على الـ placed orders. وتكلفة الـ delivered order هي الـ spend مقسوم على الـ delivered orders بس. هما بيختلفوا بالتعريف. مثال: في صفحة الـ campaigns، <code>ramadan_offer_1</code> فيها CPA بـ 171 وتكلفة الـ delivered order بـ 377.</p>
+<p><strong>64. ليه أرقام الـ ads على يوم مختلف عن الـ orders؟</strong></p>
+<p><strong>الإجابة:</strong> منصة الـ ads بتبلّغ بيوم UTC، والـ orders بتنتمي ليوم القاهرة. الفرق ما بيزيدش عن 3 ساعات، والاختلاف ده مقبول ومكتوب في الصفحات اللي بيأثّر فيها.</p>
+<p><strong>65. إيه البديل في Postgres لـ Gold؟</strong></p>
+<p><strong>الإجابة:</strong> فيه interface اسمه <code>GoldStore</code> ليه backend لـ Databricks و backend لـ Postgres، فجداول Gold تقدر تتحمّل في Postgres لو Databricks مش متاح. وخطوات Airflow كمان بتشتغل كـ Python script.</p>
+<p><strong>66. إيه اللي طلّعه الـ Gold build في آخر تشغيل؟</strong></p>
+<p><strong>الإجابة:</strong> على الـ scratch catalog يوم 13 أكتوبر، الـ build خلص بـ <code>BATCH OK</code> في 175.6 ثانية بـ 66 check وصفر فشل، وعدد الـ quarantine طابق الـ manifest (308 متوقع، 308 اتلاقوا).</p>
+<hr />
+<h2>ز. Grafana والـ alerts والـ stock</h2>
+<p><strong>67. عندكم كام dashboard وكام alert؟</strong></p>
+<p><strong>الإجابة:</strong> 6 dashboards: الـ pipeline اللحظي، و stock الـ operations اللحظي، و express SLA، و live stock monitor، وتحليلات الـ stock اليومية، و marketing D-1. و 8 alert rules: نسبة الـ late events، ونسبة الـ quarantine، و Silver job silent، ولا أحداث، وطلب على الـ out-of-stock products، و order express فوّت وعده، ونسبة الـ express on-time تحت الهدف، و products كتير خالصة في store واحد.</p>
+<p><strong>68. إزاي الـ dashboards والـ alerts بتتدار؟</strong></p>
+<p><strong>ببساطة:</strong> هي ملفات كود مش حاجة بتتعمل بالإيد في الواجهة.</p>
+<p><strong>الإجابة:</strong> كـ code. Python builders في <code>monitoring/</code> بتولّد الـ dashboard JSON والـ alert rules، و Grafana بيعمل provisioning من الملفات، واختبار بيفشل لو أي ملف ابتعد عن الـ builder. بعد أي تعديل في dashboard لازم نعمل restart لـ Grafana container.</p>
+<p><strong>69. الـ alert "Silver job silent" بيعمل إيه؟</strong></p>
+<p><strong>الإجابة:</strong> بيشتغل لما الـ Silver heartbeat يبقى أقدم من دقيقتين، وكمان لو مفيش بيانات خالص. في الـ failure demo اشتغل بعد 2 دقيقة و 12 ثانية و 2 دقيقة و 54 ثانية من القتل، فالـ promise اللي بنقوله هو "في خلال 3 دقايق".</p>
+<p><strong>70. إزاي بتعرّفوا stock-out (out of stock)؟</strong></p>
+<p><strong>الإجابة:</strong> الـ product خالص لما <code>available &lt;= 0</code>، وقليل لما <code>0 &lt; available &lt; reorder point</code>. الـ stock محاكى، والجداول اللحظية بتعرض الحالة الحالية و snapshot كل دقيقة لكل store بيتحفظ 24 ساعة.</p>
+<p><strong>71. إزاي بتقيسوا promise الـ express؟</strong></p>
+<p><strong>ببساطة:</strong> كل order express ليه promise بالدقايق (20 في production). لو وصل في الوقت، فـ on time. لو اتأخر، فـ breached.</p>
+<p><strong>الإجابة:</strong> orders الـ express بتشيل <code>promised_minutes</code> بتاعتها (20 في production). On time يعني اتسلّم في خلال الـ promise. Breached يعني اتسلّم متأخر، أو لسه مش متسلّم بعد الـ promise زائد دقيقة سماح. At risk يعني مش متسلّم وخلّص 75% على الأقل من الـ promise. الهدف 95%.</p>
+<p><strong>72. ليه صورة Express SLA فيها 6 breaches؟</strong></p>
+<p><strong>الإجابة:</strong> هي من بروفة قصّرنا فيها الـ promise لدقيقتين وأجبرنا بعض orders الـ express تتأخر قصدًا، عشان نعرض breach و alert بتاعه لايف. دي مش نتيجة السيستم.</p>
+<p><strong>73. ليه events per minute بصفر في صورة الـ pipeline؟</strong></p>
+<p><strong>الإجابة:</strong> الصورة اتاخدت في آخر بروفة 13 أكتوبر، بعد ما المولّد وقف. التايل بيعرض آخر دقيقة كاملة، وده بالظبط الحالة اللي alert "no events" معمول لاكتشافها.</p>
+<p><strong>74. ليه تايلات Gold update و publish برتقاني وبتعرض يوم واحد؟</strong></p>
+<p><strong>الإجابة:</strong> في اللقطة دي آخر Gold update و publish كانوا من يوم، لأن مسار الـ batch بيشتغل عند الطلب مش باستمرار.</p>
+<p><strong>75. إيه الـ "hero scenario"؟</strong></p>
+<p><strong>الإجابة:</strong> وضع demo (<code>--scenario hero-stockout</code>) بيخلّي تلات products "بطلة" في أزحم store تبدأ بـ 40 وحدة، وبيزوّد مشاهداتها وإضافاتها للـ cart، وبيعيد تخزينها بعد حوالي 90 ثانية من stock-out. نفس الـ seed بيدّي نفس الـ demo.</p>
+<p><strong>76. إيه اللي قستوه في الـ timeline بتاع الـ demo؟</strong></p>
+<p><strong>الإجابة:</strong> يوم 12 أكتوبر أول product بطل وصل صفر بعد حوالي 4 دقايق من أمر الـ demo (Galabeya 61 في مدينة نصر، الساعة 21:16:14 بتوقيت القاهرة). alert الطلب على الخالص اشتغل بعدها بدقيقة، وإعادة التخزين حصلت بعد حوالي دقيقتين من stock-out. وبروفة express فيها 33 order express، 31 في الوقت و 2 متأخرين.</p>
+<p><strong>77. الـ live sink بيشتغل إزاي؟</strong></p>
+<p><strong>الإجابة:</strong> بعد كل Silver batch، بيعيد حساب الدقايق وأزواج الـ store والـ product اللي الـ batch لمسها بس، وبيكتبها في Postgres. Grafana بيقراها بالـ role read-only <code>grafana_ro</code>.</p>
+<p><strong>78. إزاي بتتجنبوا الإنذارات الكاذبة من البيانات الفاضية؟</strong></p>
+<p><strong>الإجابة:</strong> alerts النسب محتاجة حد أدنى للعدد (20 event أو صف على الأقل، 5 orders express على الأقل). البيانات الناقصة بتشغّل بس الـ alerts المعمولة للصمت. والـ dashboards بتعرض فجوات بدل صفر للنسب ومستويات الـ stock، وشرطة محايدة لما مفيش بيانات.</p>
+<hr />
+<h2>ح. Power BI والمقاييس</h2>
+<p><strong>79. إزاي نموذج Power BI مبني؟</strong></p>
+<p><strong>الإجابة:</strong> star schema في Import mode: 4 dimensions (<code>Date</code> و <code>Campaign</code> و <code>Store</code> و <code>Product</code>) والـ facts حواليهم. فيه 19 جدول و 27 relationship و 103 measure. مفيش علاقة many-to-many ولا فلتر ثنائي الاتجاه. بعد إعادة التصميم في 13 أكتوبر بقى فيه 106 visual على 7 صفحات.</p>
+<p><strong>80. إيه الصفحات السبعة؟</strong></p>
+<p><strong>الإجابة:</strong> Executive و Campaigns و Marketing and stock و Operations و Funnel و Products and cities و Customers. كل صفحة بتجاوب سؤال واحد وفيها 6 cards و 3 slicers بالكتير.</p>
+<p><strong>81. Power BI بيجيب بياناته منين؟</strong></p>
+<p><strong>الإجابة:</strong> 11 جدول Gold من Databricks و 7 marts من Postgres، بـ credentials للقراءة فقط. الـ credentials مش بتتخزّن في الملف، فـ Power BI Desktop بيسأل عن Databricks token و Postgres password عند الفتح.</p>
+<p><strong>82. ليه Import mode مش DirectQuery؟</strong></p>
+<p><strong>ببساطة:</strong> Import بيخلّي التقرير سريع ويشتغل من غير اتصال لايف وقت المناقشة.</p>
+<p><strong>الإجابة:</strong> الـ repository بيسجّل القرار (Import mode) من غير سبب مكتوب، فجاوب بالمنطق: Import mode بيخلّي التقرير سريع وبيشتغل من غير اتصال لايف وقت المناقشة، والبيانات بتتحدّث بعد Gold batch وبعد الـ builders بتوع Postgres. DirectQuery هيعتمد على إن Databricks warehouse يكون صاحي وهيبقى أبطأ.</p>
+<p><strong>83. ليه التقرير غيّر تصميمه؟</strong></p>
+<p><strong>الإجابة:</strong> أعدنا تصميمه حوالين هوية واحدة: rail كحلي فيه الـ page navigator والـ slicers، و banner للعنوان بيقول سؤال الصفحة، وألوان Accessible Tidal، ومسافات ثابتة، وأعمدة مرتّبة بدل pie charts، وجداول مقروءة بعرض أعمدة صريح. التقرير بيتولّد من <code>scripts/make_pbip.py</code>، والاختبارات بتتأكد إن حقول كل visual موجودة في النموذج.</p>
+<p><strong>84. إيه هو "exposed spend" بالظبط؟</strong></p>
+<p><strong>ببساطة:</strong> من budget الـ campaign، الجزء اللي غالبًا راح لناس نزلت على product خالص.</p>
+<p><strong>الإجابة:</strong> <code>exposed_spend = spend x oos_click_share</code>، حيث <code>oos_click_share</code> هي clicks الوصول على الـ out-of-stock products مقسومة على clicks الوصول اللي اتخدمت. الـ ad API بيدّي الـ spend لكل campaign لكل يوم بس، فبنفترض إن الـ spend موزّع بالتساوي على clicks الوصول. هو تقدير مش خسارة مقاسة، ومش "ضايع" بالكامل، لأن الزبون ممكن يشتري بديل.</p>
+<p><strong>85. إيه هو "revenue at risk"؟</strong></p>
+<p><strong>الإجابة:</strong> إضافات للـ cart على الـ out-of-stock products مضروبة في السعر. في صفحة Marketing and stock هو 71,653 على بيانات محاكاة، والتلات products المعرّضة كلهم في store واحد، مدينة نصر.</p>
+<p><strong>86. ليه في ذروة يوم واحد في chart الـ revenue؟</strong></p>
+<p><strong>الإجابة:</strong> البيانات المحاكاة فيها قفزة حجم يوم 9 أكتوبر بتشيل حوالي 55% من كل الـ revenue. صفحة Executive بتقول ده في العنوان الفرعي عشان محدش يقراه كاتجاه حقيقي.</p>
+<p><strong>87. إزاي بتتحسب نسب الـ abandonment؟</strong></p>
+<p><strong>الإجابة:</strong> cart abandon rate هي <code>1 - orders_placed / cart_sessions</code>، و checkout abandon rate هي <code>1 - orders_placed / checkout_sessions</code>. بتبقى فاضية للشريحة الفاضية وبتتحصر بين 0 و 1، ومش بتعدّي 100%. في صفحة Funnel هما 69.1% و 30.7%، والـ session conversion هو 10.4%.</p>
+<p><strong>88. ليه التقرير بيقول "settling"؟</strong></p>
+<p><strong>ببساطة:</strong> revenue التسليم بتاع الأيام الأخيرة لسه ممكن يزيد لأن orders لسه بتتسلّم.</p>
+<p><strong>الإجابة:</strong> الـ delivered revenue للأيام الأخيرة ممكن يزيد لسه كل ما orders تتسلّم، فـ <code>Maturity Label</code> بيعلّم الأيام بـ "Settling" أو "Settled". ده سبب إن الـ delivered ROAS الأخير بيبان واطي.</p>
+<hr />
+<h2>ط. الاختبار والأداء والاعتمادية</h2>
+<p><strong>89. إزاي المشروع بيتختبر؟</strong></p>
+<p><strong>الإجابة:</strong> على أربع مستويات: 1,169 اختبار على الـ host نجحوا بصفر فشل (13 أكتوبر)، و 217 اختبار Spark في 22 ملف نجحوا في Docker (12 أكتوبر)، و smoke test من 15 مرحلة، و benchmark و failure demo. الاختبارات بتغطي العقود والـ validator والـ simulator ومنطق Silver و Gold SQL وتعريفات الـ 66 check و Grafana JSON والـ alert rules ومولّد Power BI وحمايات الـ LLM.</p>
+<p><strong>90. ليه 218 اختبار متخطّين (skipped)؟</strong></p>
+<p><strong>الإجابة:</strong> دي اختبارات Spark، وبتحتاج بيئة Docker وبتشتغل فيها ملف ملف. وفي اختبارات تانية بتتخطّى لما Postgres مش شغّال.</p>
+<p><strong>91. إيه نتيجة الـ benchmark؟</strong></p>
+<p><strong>ببساطة:</strong> مليون event عدّوا على السيستم كله في حوالي 11 دقيقة على لاب توب واحد. ده قياس لـ setup واحد، مش promise بالسعة.</p>
+<p><strong>الإجابة:</strong> 1,000,000 event محاكى (1,022,333 رسالة Kafka) عدّوا على الـ pipeline كله في 654.73 ثانية على لاب توب واحد بـ 12 CPU و Docker محدود بحوالي 8 GB، باستخدام Databricks Free Edition SQL warehouse. ده حوالي 1,560 رسالة في الثانية end to end. هو بيقيس setup واحد ومش ادعاء سعة.</p>
+<p><strong>92. هل هيكبر (scale)؟</strong></p>
+<p><strong>الإجابة:</strong> ما اختبرناش أكتر من الـ benchmark. نقط التصميم اللي بتساعد على التوسّع هي: topics مقسّمة، وجداول Delta مقسّمة، وكتابة idempotent، ومسار batch منفصل. التوسّع الحقيقي هيحتاج cluster و Kafka مُدار و object storage، وده ما بنيناهوش ولا قسناه.</p>
+<p><strong>93. إيه اللي أظهره الـ smoke test؟</strong></p>
+<p><strong>الإجابة:</strong> أول تشغيل كامل له يوم 13 أكتوبر نجح في 10 مراحل وفشل في 3، ولا واحدة منهم كانت عيب في الـ pipeline: شرط بيانات غلط كان بيطلب جدول لحظي أثناء replay، و cast في بديل الاختبار لماكرو وقت Grafana، وصفوف قديمة في الـ scratch catalog. التلاتة اتصلّحوا. بعدها مراحل Gold نجحت في إعادة تشغيل يدوية. لسه مفتوح: تشغيل واحد أخضر من غير انقطاع يشمل مرحلة Spark.</p>
+<p><strong>94. إيه كان أصعب مشكلة؟</strong></p>
+<p><strong>ببساطة:</strong> نخلّي كل خطوة آمنة لو اتعادت.</p>
+<p><strong>الإجابة:</strong> إننا نخلّي كل خطوة آمنة لو اتكررت. الـ pipeline لازم يستحمل crash و replay من غير تكرار، ويتعامل مع الـ late والـ out-of-order events، وبرضه يدّي أرقام متطابقة. الدليل هو فحص التكرار بعد الـ crash، وإعادة Bronze اللي سابت كل جداول Silver الـ 10 من غير تغيير.</p>
+<p><strong>95. إيه اللي بيحصل لو Databricks وقع؟</strong></p>
+<p><strong>الإجابة:</strong> المسار اللحظي والـ lake المحلي بيفضلوا شغّالين لأنهم مش معتمدين عليه. وجداول Gold تقدر تتحمّل في Postgres من خلال الـ store backend التاني. Power BI هيعرض آخر بيانات اتعملها import.</p>
+<hr />
+<h2>ي. الأمان والحدود والمستقبل والعملية</h2>
+<p><strong>96. إزاي بتتعاملوا مع الأسرار والصلاحيات؟</strong></p>
+<p><strong>الإجابة:</strong> <code>.env</code> مش بيتعمله commit أبدًا، و <code>.env.example</code> فيه الأسماء بس. بورتات Kafka و Postgres و Grafana و Airflow مربوطة بـ <code>127.0.0.1</code>. Grafana و Power BI بيستخدموا credentials للقراءة فقط، والـ Databricks write token بيتستخدم في jobs التحميل بس. الـ smoke test بيرفض يلمس الـ catalog الحقيقي وبيشتغل في scratch catalog.</p>
+<p><strong>97. إيه أهم الحدود؟</strong></p>
+<p><strong>الإجابة:</strong> كل البيانات محاكاة. علامة stock-out هي الـ stock وقت ما الدقيقة اتكتبت، فـ replay أو late event ممكن يعلّمها بشكل مختلف. الـ stock مش بيرجع عند الـ cancellation أو الإرجاع أو فشل الـ delivery. الـ exposed spend تقدير. أرقام الـ ads بيوم UTC والـ orders بيوم القاهرة. Gold فيه City بس ومفيش Store dimension. مؤشرات الـ express موجودة في جداول Postgres بس. والـ benchmark على setup واحد على Databricks Free Edition.</p>
+<p><strong>98. إيه اللي هتعملوه بعد كده؟</strong></p>
+<p><strong>الإجابة:</strong> نحسب فترات الـ stock من Silver بوقت الـ event عشان علامة النفاد تبقى آمنة عند الـ replay، ونرجّع الـ stock عند الـ cancellation والإرجاع، وننشر جداول الـ stock على Databricks مع جدول Gold للطلب على الخالص، ونضيف delivery zones و Store dimension في Gold، ونملّى جدول التوصيات <code>rec_product</code>، ونضيف الـ margin بعد تكلفة الكاش والـ cancellation، ونعمل اختبارات incrementality، ونخلّي جولات الـ simulator تتداخل عشان الترافيك اللحظي ميهدّاش، ونضيف Great Expectations أو dbt فوق فحوصات الـ SQL.</p>
+<p><strong>99. المساعد الـ LLM بيعمل إيه وإزاي بيتأمّن؟</strong></p>
+<p><strong>ببساطة:</strong> الواحد بيسأل بالكلام العادي، والموديل بيكتب استعلام قراءة بس، ومبيشوفش بيانات شخصية.</p>
+<p><strong>الإجابة:</strong> بيخلّي المستخدم يسأل بلغة طبيعية، مثلًا أنهي campaign فيها أعلى CTR. الموديل بيكتب <code>SELECT</code> واحد في المرة بيشتغل على DuckDB views للقراءة فقط. الوصول للملفات مقفول، والاستعلامات ليها حد 20 ثانية و 200 صف، والنتايج بتتغلّف بـ tags <code>&lt;query_result&gt;</code> عشان البيانات متعدّيش كأنها تعليمات، والموديل مبياخدش أبدًا أسماء أو أرقام تليفونات، والـ API key مبيتسجّلش. الحمايات دي متختبرة.</p>
+<p><strong>100. المشروع كبير قد إيه، وإزاي اتبنى؟</strong></p>
+<p><strong>الإجابة:</strong> حوالي 30,000 سطر Python (حوالي 17,800 منهم اختبارات) في أكتر من 100 commit، و 88 ملف اختبار. الشغل اتعمل على branch <code>funnelstream-build</code> مع توثيق وقاموس مقاييس و runbooks وملف handoff وقايمة تشييك قبل المناقشة في الـ repository. لو اتسألت مين عمل إيه، جاوب عن جزءك إنت وكن محدد.</p></body></html>

@@ -1,0 +1,1099 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>FunnelStream | دليل الـ dashboards</title><style>
+:root{--navy:#0d366b;--blue:#2a78d6;--ink:#1c2433;--muted:#5b6578;--line:#d6dce8;--bg:#fff;--soft:#f3f6fb}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;
+  @bottom-center{content:"FunnelStream project documentation   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+*{box-sizing:border-box}
+body{font:10.5pt/1.55 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0 auto;max-width:980px;padding:0 28px}
+h1{font-size:30pt;color:var(--navy);margin:34px 0 4px;letter-spacing:-.5px}
+h2{font-size:17pt;color:var(--navy);margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue);break-after:avoid}
+h3{font-size:13pt;color:var(--navy);margin:24px 0 6px;break-after:avoid}
+h4{font-size:11.5pt;color:var(--blue);margin:20px 0 4px;break-after:avoid}
+p{margin:8px 0}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:9.4pt;break-inside:auto}
+th{background:var(--navy);color:#fff;text-align:left;padding:6px 9px;font-weight:600}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:var(--soft)}
+tr{break-inside:avoid}
+code{font:9.2pt Consolas,"Cascadia Mono",monospace;background:#eef2f9;padding:1px 4px;border-radius:3px}
+pre{background:#0c0e14;color:#d7dae0;padding:12px 14px;border-radius:6px;overflow:auto;font-size:8.8pt;line-height:1.45;break-inside:avoid}
+pre code{background:none;color:inherit;padding:0;font-size:inherit}
+img{max-width:100%;max-height:228mm;width:auto;height:auto;display:block;margin:14px auto 4px;border:1px solid var(--line);border-radius:4px;break-inside:avoid}
+p>em:only-child{display:block;text-align:center;color:var(--muted);font-size:9pt;margin:0 0 16px}
+h2{break-before:page}
+h1+p,h1+h2{break-before:auto}
+.cover{padding:60px 0 20px}
+@media print{body{max-width:none;padding:0}a{color:inherit;text-decoration:none}}
+
+h2{break-before:auto;font-size:15pt;margin-top:26px}
+h1{font-size:24pt}
+h3{break-before:auto;margin-top:22px}
+@page{size:A4;margin:16mm 14mm 18mm 14mm;@bottom-center{content:"FunnelStream | دليل الـ dashboards   |   page " counter(page);font:9pt Segoe UI,Arial;color:#5b6578}}
+
+body{direction:rtl;text-align:right;font-family:"Segoe UI",Tahoma,Arial,sans-serif;line-height:1.9}
+ul,ol{padding-right:24px;padding-left:0}
+code,pre{direction:ltr;unicode-bidi:embed;text-align:left}
+</style></head><body><h1>دليل الـ dashboards في FunnelStream: كل panel في Grafana وكل visual في Power BI</h1>
+<p>الدليل ده بيشرح كل chart ورقم وجدول في الـ 6 dashboards بتوع Grafana وصفحات Power BI السبعة. لكل واحد بيقول: بيعرض إيه، وبيتحسب إزاي، وإزاي تقراه. مبني على تعريفات الـ dashboards في الـ repository (<code>monitoring/grafana/dashboards/*.json</code> و <code>scripts/make_pbip.py</code> و <code>dashboards/powerbi/measures.dax</code>) وعلى الـ screenshots في <code>docs/images</code>.</p>
+<p>كل الأرقام في الـ screenshots جاية من بيانات محاكاة. screenshots الـ Grafana اتاخدت أثناء بروفة 13 أكتوبر 2026، وscreenshots الـ Power BI من التقرير بعد إعادة التصميم.</p>
+<hr />
+<h2>1. الأداتين بيتكاملوا إزاي</h2>
+<p><strong>ببساطة:</strong> Grafana زي عدّاد السرعة في العربية: بيقولك دلوقتي إيه الحاصل. Power BI زي تقرير آخر الشهر: بيقولك إيه اللي حصل وإيه نقرر.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Grafana</th>
+<th>Power BI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>الجمهور</td>
+<td>الـ engineers ومستخدم الـ operations</td>
+<td>مستخدم الـ marketing والمديرين</td>
+</tr>
+<tr>
+<td>السؤال</td>
+<td>المنصة سليمة؟ وإيه اللي محتاج تصرف دلوقتي؟</td>
+<td>إيه اللي حصل؟ وإيه اللي نقرره؟</td>
+</tr>
+<tr>
+<td>مصدر البيانات</td>
+<td>جداول Postgres صغيرة بيكتبها الـ live sink بعد كل Silver batch، والـ daily marts</td>
+<td>جداول Gold في Databricks (11) وPostgres marts (7)، بـ import</td>
+</tr>
+<tr>
+<td>الحداثة</td>
+<td>بيتحدّث كل 5 ثواني (الـ dashboards اللحظية) أو كل دقيقة (الـ daily dashboards)</td>
+<td>بيتحدّث يدويًا بعد Gold batch</td>
+</tr>
+<tr>
+<td>Alerts</td>
+<td>8 alert rules</td>
+<td>مفيش</td>
+</tr>
+</tbody>
+</table>
+<p><strong>ألوان Grafana.</strong> الـ stat tiles والـ gauges بتغيّر لونها حسب الـ thresholds. الأخضر معناه سليم، البرتقاني معناه راقب، والأحمر معناه تصرّف. التايلات الزرقا هي أعداد عادية من غير حلو أو وحش. الشرطة المحايدة معناها مفيش بيانات. في charts النسب، الفجوة معناها مفيش بيانات في الدقيقة دي، مش صفر.</p>
+<p><strong>تعريفين لليوم.</strong> إنفاق الإعلانات وclicks الإعلانات بتنتمي ليوم منصة الإعلانات بتوقيت UTC. أما الـ orders والـ stock والـ demand فبتنتمي ليوم القاهرة. الفرق بينهم 3 ساعات بالكتير، وده مقبول.</p>
+<p><strong>معنى "out of stock وقت ما الدقيقة اتكتبت".</strong> الـ demand على الرفوف الفاضية بيتعلّم بمستوى الـ stock في اللحظة اللي الـ live sink كتب فيها الدقيقة دي، مش وقت الـ event. الـ replay أو الـ late event ممكن يعلّمه بشكل مختلف. فهو تقدير.</p>
+<hr />
+<h2>2. Grafana</h2>
+<p>6 dashboards بتتعمل provisioning كـ code. كل panel تحت مترتّب زي ما بيظهر على الشاشة.</p>
+<h3>2.1 FunnelStream: live pipeline (<code>fs-live</code>)</h3>
+<p><strong>الغرض.</strong> بيبيّن إن الـ streaming pipeline عايش ونضيف. Refresh كل 5 ثواني، آخر 30 دقيقة.</p>
+<p><strong>ببساطة:</strong> هو "نبض" السيستم. لو النبض واقف، يبقى فيه مشكلة.</p>
+<p><img alt="Live pipeline" src="images/grafana/pipeline_live.png" /></p>
+<p><em>اتاخدت في آخر بروفة 13 أكتوبر. المولّد كان لسه واقف، فـ events per minute بـ 0.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Events, last full minute (stat)</td>
+<td>الـ events اللي مش late ومش bot في آخر دقيقة كاملة، كل الدول.</td>
+<td>أحمر عند 0، أخضر من 1 فما فوق. الصفر معناه إن الخط اللحظي مسطّح: الـ stream وقف أو الـ Silver job مش بيكتب.</td>
+</tr>
+<tr>
+<td>Events per minute, all countries (time series)</td>
+<td>نفس الـ events في الدقيقة من <code>live_metrics_minute</code>، مجموعة على الدول.</td>
+<td>نبض الـ stream. الهضبة الناعمة معناها ترافيك سليم. النزول للصفر معناه إن الـ stream وقف. في الـ screenshot الخط بيطلع لحوالي 3,000 في الدقيقة وبينزل لصفر لما المولّد خلص.</td>
+</tr>
+<tr>
+<td>Active sessions per minute</td>
+<td>الـ sessions المميزة اللي كان فيها event في الدقيقة.</td>
+<td>كام shopper موجود. المفروض يتبع خط الـ events.</td>
+</tr>
+<tr>
+<td>Orders placed per minute</td>
+<td>صفوف <code>order_created</code> في الدقيقة.</td>
+<td>الـ conversion بشكل مرئي: الـ orders أقل بكتير من الـ sessions وبتعلى وتنزل مع الترافيك.</td>
+</tr>
+<tr>
+<td>Product views and add-to-cart per minute</td>
+<td>خطين: events مشاهدة الـ product وevents الـ add-to-cart في الدقيقة.</td>
+<td>أعلى الـ funnel لحظيًا. الفجوة بين الخطين هي shoppers اتفرجوا ومضافوش للـ cart.</td>
+</tr>
+<tr>
+<td>Late-event rate, last 5 min (gauge)</td>
+<td>الـ late events مقسومة على كل الـ events في آخر 5 دقايق، كنسبة مئوية.</td>
+<td>أخضر تحت 5%، أحمر من 5% فما فوق. الـ event بيبقى late لما يوصل Kafka بعد أكتر من 10 دقايق من وقته. الـ alert بيشتغل فوق 5%. في الـ screenshot بيقرا 2.5%.</td>
+</tr>
+<tr>
+<td>Late-event rate %, 5 min window (time series)</td>
+<td>نفس الـ late rate على نافذة 5 دقايق متحرّكة عبر الوقت، وخط أحمر عند حد 5%.</td>
+<td>بيبيّن إذا كانت البيانات المتأخرة spike ولا مستوى ثابت. اقراه في التشغيلات اللحظية بس: الـ history replay بيبقى late بالقاعدة.</td>
+</tr>
+<tr>
+<td>Quarantine share, last 5 min (gauge)</td>
+<td>الصفوف المحجوزة مقسومة على events زائد الصفوف المحجوزة في آخر 5 دقايق.</td>
+<td>أخضر تحت 2%، أحمر من 2%. دي نسبة الرسايل اللي الـ validator رفضها. الـ alert بيشتغل فوق 2%. بيقرا 1.4% في الـ screenshot. الـ simulator بيحقن صفوف وحشة قصدًا، فالنسبة الصغيرة الثابتة متوقعة.</td>
+</tr>
+<tr>
+<td>Quarantine share %, 5 min window (time series)</td>
+<td>نفس النسبة على نافذة متحرّكة، وخط أحمر عند 2%.</td>
+<td>القفزة فوق مستوى الـ noise المحقون معناها إن producer بدأ يبعت بيانات وحشة.</td>
+</tr>
+<tr>
+<td>Quarantine rows per hour, rolling 60 min</td>
+<td>الصفوف المكتوبة في <code>silver_quarantine</code> في آخر 60 دقيقة، بتتحسب كل دقيقة.</td>
+<td>حجم الصفوف المرفوضة. بيطلع باستمرار أثناء التشغيل لأن الـ noise ثابت. جمّع <code>silver_quarantine</code> حسب السبب عشان تشوف إيه اللي بيترفض.</td>
+</tr>
+<tr>
+<td>Seconds since Silver job last reported (stat)</td>
+<td>دلوقتي ناقص heartbeat الـ <code>silver_job</code>. الـ job بيبلّغ كل 15 ثانية وهو عايش وبعد كل batch.</td>
+<td>أخضر تحت 30 ثانية، برتقاني من 30 لـ 120، أحمر فوق 120. ده الوقت من آخر مرة الـ job بلّغ، مش من آخر مرة وصلت بيانات. هو الرقم اللي بيشغّل alert "Silver job silent". في الـ screenshot هو 7 ثواني.</td>
+</tr>
+<tr>
+<td>Seconds since last Gold update</td>
+<td>دلوقتي ناقص heartbeat الـ <code>gold_build</code>.</td>
+<td>أخضر تحت 24 ساعة، برتقاني من 24 لـ 48، أحمر فوق 48. مسار الـ batch بيشتغل عند الطلب، فالرقم بيكبر بين التشغيلات. بيعرض "1 days" في الـ screenshot.</td>
+</tr>
+<tr>
+<td>Seconds since last publish</td>
+<td>دلوقتي ناقص heartbeat الـ <code>publish</code> (رفع Silver لـ Databricks).</td>
+<td>نفس الـ thresholds. بيقولك نسخة Databricks، وبالتالي Power BI، قديمة قد إيه.</td>
+</tr>
+<tr>
+<td>Alert rules and what to do (text)</td>
+<td>جدول الـ 8 alert rules، وإمتى كل واحد بيشتغل وتعمل إيه.</td>
+<td>الـ runbook على نفس الشاشة مع الأرقام.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.2 FunnelStream: Operations, live inventory (<code>fs-inventory-ops</code>)</h3>
+<p><strong>الغرض.</strong> صفحة مستخدم الـ operations: الـ stock دلوقتي، والـ demand اللي قابل رف فاضي، ووعد الـ express delivery. Refresh كل 5 ثواني، آخر 30 دقيقة.</p>
+<p><strong>ببساطة:</strong> هو "غرفة العمليات" للمخزن: إيه اللي خلص، وإيه اللي بيخلص، وإيه الـ orders اللي هتتأخر.</p>
+<p><img alt="Operations live inventory" src="images/grafana/operations_live_inventory.png" /></p>
+<p><em>قسم الـ express فيه breaches لأن البروفة استخدمت وعد دقيقتين وسلّمت بعض الـ orders متأخرة قصدًا.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Out-of-stock products now (stat)</td>
+<td>عدد أزواج store و product في <code>live_stock_now</code> اللي <code>available &lt;= 0</code>.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 5. كل واحد هو رف مفيش عليه حاجة يتباع.</td>
+</tr>
+<tr>
+<td>Low-stock products now</td>
+<td>الأزواج اللي stock فوق الصفر بس تحت reorder point بتاعتها.</td>
+<td>أخضر تحت 10، برتقاني من 10، أحمر من 30. التحذير قبل الـ stock-out.</td>
+</tr>
+<tr>
+<td>Seconds since the last stock change</td>
+<td>عمر أحدث صف في <code>live_stock_now</code>. الـ stock بيتحسب تاني بعد كل Silver batch، فهو متأخر batch تقريبًا.</td>
+<td>أخضر تحت 30 ثانية، برتقاني لحد 60، أحمر فوق. الرقم العالي معناه إن الـ stock مبقاش بيتحدّث.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>بيقول إن كل أرقام الـ stock محاكاة وإن علامات الـ demand تقديرات.</td>
+<td>اقراه قبل ما تقتبس أرقام.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products per minute (time series)</td>
+<td>مشاهدات الـ product وإضافات الـ cart اللي وصلت لـ store و product الـ stock بتاعهم صفر وقت كتابة الدقيقة.</td>
+<td>ده الـ panel بتاع "الجسر". الـ spike معناه إن shoppers بيطلبوا حاجة الرف ميقدرش يخدمها. alert "Demand on out-of-stock products" مبني عليه.</td>
+</tr>
+<tr>
+<td>App traffic: events per minute</td>
+<td>الـ events اللي مش late ومش bot في الدقيقة، كل الدول.</td>
+<td>سياق: الـ demand على الرفوف الفاضية بيفرق أكتر لما الترافيك عالي.</td>
+</tr>
+<tr>
+<td>Lowest stock now, 20 products (table)</td>
+<td>أزواج store و product العشرين اللي أقل stock متاح، مع reorder point بتاعها.</td>
+<td>فين تعيد التخزين الأول. الصف عند 0 معناه out of stock.</td>
+</tr>
+<tr>
+<td>Lost demand now, last 15 minutes (table)</td>
+<td>الـ products اللي أكتر add-to-carts وهي out of stock في آخر 15 دقيقة، مع المشاهدات.</td>
+<td>أنهي رف فاضي بيكلّف أكتر shoppers دلوقتي.</td>
+</tr>
+<tr>
+<td>Express orders at risk now (stat)</td>
+<td>orders الـ express غير المتسلّمة اللي استهلكت 75% من وعدها ولسه مش breached.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 3. تصرّف في الـ orders دي قبل ما تعمل breach.</td>
+</tr>
+<tr>
+<td>Express breaches, last hour</td>
+<td>orders اتعملت في آخر ساعة واتسلّمت متأخر، أو متأخرة عن الوعد زائد دقيقة سماح.</td>
+<td>أخضر عند 0، أحمر من 1. أي breach هو وعد اتفوّت.</td>
+</tr>
+<tr>
+<td>On-time rate, last hour</td>
+<td>الـ orders on-time مقسومة على الـ orders المتسلّمة أو الـ breached اللي اتعملت في آخر ساعة. الـ orders الملغية أو المرتجعة من غير تسليم مش في أي عدّ.</td>
+<td>أحمر تحت 90%، برتقاني من 90 لـ 95%، أخضر من 95% فما فوق. الهدف 95%.</td>
+</tr>
+<tr>
+<td>Slowest express delivery, last hour (minutes)</td>
+<td>أطول وقت مرّ: وقت التسليم للـ orders المتسلّمة، والعمر للـ orders المفتوحة.</td>
+<td>أخضر تحت 15 دقيقة، برتقاني من 15 لـ 20، أحمر فوق 20 مقابل وعد 20 دقيقة.</td>
+</tr>
+<tr>
+<td>Slowest express orders, last hour (table)</td>
+<td>أبطأ 10 orders express في الوقت المنقضي، مع الوعد والدقايق المنقضية وحالة.</td>
+<td>بيسمّي الـ orders بالظبط اللي متأخرة أو قريبة من التأخير. الـ orders المقفولة بتترتّب في الآخر.</td>
+</tr>
+<tr>
+<td>Express definitions (text)</td>
+<td>بيعرّف on time و breached و at risk و closed without delivery.</td>
+<td>معنى كل رقم express في الصفحة.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.3 FunnelStream: Express delivery SLA (<code>fs-express-sla</code>)</h3>
+<p><strong>الغرض.</strong> مخصّص لوعد الـ 20 دقيقة. فيه فلتر Store. Refresh كل 5 ثواني، آخر 3 ساعات.</p>
+<p><strong>ببساطة:</strong> الـ SLA هو "الوعد اللي وعدناه للعميل". الـ dashboard ده بيقيس كام مرة وفّينا بيه.</p>
+<p><img alt="Express SLA" src="images/grafana/express_sla.png" /></p>
+<p><em>بروفة 13 أكتوبر 2026 بوعد مقصّر لدقيقتين. الخط المتقطع في أول chart هو هدف الـ 95%.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>On-time rate, last hour (stat)</td>
+<td>الـ orders on-time مقسومة على المتسلّمة أو الـ breached اللي اتعملت في آخر ساعة.</td>
+<td>أحمر تحت 90%، برتقاني من 90 لـ 95%، أخضر من 95%. الـ screenshot بيعرض 94.0%، تحت الهدف بشوية، فهو برتقاني.</td>
+</tr>
+<tr>
+<td>Breaches, last hour</td>
+<td>orders اتسلّمت متأخر أو متأخرة (الوعد زائد دقيقة سماح).</td>
+<td>أخضر عند 0، أحمر من 1. الـ screenshot بيعرض 6.</td>
+</tr>
+<tr>
+<td>At risk now</td>
+<td>orders غير متسلّمة استهلكت 75% من وعدها ولسه مش breached.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 3.</td>
+</tr>
+<tr>
+<td>Open express orders</td>
+<td>اتعملت، ومش متسلّمة، ومش ملغية ولا مرتجعة، في آخر 3 ساعات.</td>
+<td>أزرق، من غير حلو أو وحش. الطابور الحالي.</td>
+</tr>
+<tr>
+<td>Median delivery time, last hour (min)</td>
+<td>الـ p50 للـ orders المتسلّمة اللي اتعملت في آخر ساعة.</td>
+<td>أخضر تحت 15 دقيقة، برتقاني لحد 20، أحمر فوق. نص الـ orders كانت أسرع من الرقم ده.</td>
+</tr>
+<tr>
+<td>On-time rate by order creation time, 5-minute buckets (time series)</td>
+<td>نسبة الـ orders المحسومة اللي اتسلّمت جوه وعدها، حسب وقت إنشاء الـ order، مع خط الهدف 95% المتقطع.</td>
+<td>بيبيّن إمتى الخدمة وقعت. الـ buckets اللي مفيهاش orders فجوات مش 0%.</td>
+</tr>
+<tr>
+<td>On-time and breached orders per 5 minutes</td>
+<td>خطين: orders اتسلّمت on time وorders breached، حسب وقت الإنشاء.</td>
+<td>بيبيّن الحجم ورا النسبة: النسبة الواطية على 2 orders معناها قليل، وعلى 30 معناها كتير.</td>
+</tr>
+<tr>
+<td>Delivery time p50 and p90 (minutes)</td>
+<td>الوسيط والـ 90th percentile لوقت تسليم الـ orders المتسلّمة حسب وقت الإنشاء.</td>
+<td>قارن الخطين بالوعد. الـ p90 هو اللي أبطأ عُشر الـ customers حسّوا بيه.</td>
+</tr>
+<tr>
+<td>SLA by store, last hour (table)</td>
+<td>لكل dark store: orders، on-time rate، breaches، at risk، وp90 delivery time، الأسوأ الأول.</td>
+<td>بيلاقي الـ store اللي بيفشل. في الـ screenshot مدينة نصر فيها 88 order و 6 breaches، والـ stores التانية مفيهاش.</td>
+</tr>
+<tr>
+<td>Open orders closest to their promise (table)</td>
+<td>orders غير متسلّمة، الأقدم الأول، مع الوعد والعمر والدقايق المتبقية.</td>
+<td>"الدقايق المتبقية" السالبة معناها إن الـ order متأخر فعلًا. طارد دول الأول.</td>
+</tr>
+<tr>
+<td>Express definitions (text)</td>
+<td>on time و breached و at risk و closed without delivery.</td>
+<td>بيعرّف كل رقم في الصفحة.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.4 FunnelStream: Live stock monitor (<code>fs-live-stock</code>)</h3>
+<p><strong>الغرض.</strong> صحة الـ stock في الـ 8 dark stores، لحظيًا. فيه فلتر Store. Refresh كل 5 ثواني، آخر ساعة.</p>
+<p><img alt="Live stock monitor" src="images/grafana/live_stock_monitor.png" /></p>
+<p><em>بروفة 13 أكتوبر 2026. كل أرقام الـ stock محاكاة.</em></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Out-of-stock products (stat)</td>
+<td>الأزواج اللي مفيهاش stock متاح في الـ stores المختارة.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 5.</td>
+</tr>
+<tr>
+<td>Low-stock products</td>
+<td>stock فوق الصفر بس تحت الـ reorder point.</td>
+<td>أخضر تحت 10، برتقاني من 10، أحمر من 30.</td>
+</tr>
+<tr>
+<td>In-stock rate</td>
+<td>نسبة الـ products المتتبّعة اللي ليها stock متاح.</td>
+<td>أحمر تحت 90%، برتقاني من 90 لـ 97%، أخضر من 97% فما فوق. الـ screenshot بيعرض 100%.</td>
+</tr>
+<tr>
+<td>Units on hand</td>
+<td>إجمالي الوحدات المتاحة في الـ stores المختارة.</td>
+<td>أزرق، مؤشر حجم. الـ screenshot بيعرض 537,542 وحدة.</td>
+</tr>
+<tr>
+<td>Seconds since the last stock write</td>
+<td>عمر أحدث صف stock، متأخر Silver batch تقريبًا.</td>
+<td>أخضر تحت 30 ثانية، برتقاني لحد 60، أحمر فوق.</td>
+</tr>
+<tr>
+<td>Out-of-stock products per store (time series)</td>
+<td>أزواج الـ out-of-stock في كل دقيقة من الـ snapshots الدقيقة اللي بتتحفظ 24 ساعة.</td>
+<td>بيبيّن إمتى وفين الـ stock-out بدأ وانتهى. الـ screenshot فيه spike-ين قصيرين في مدينة نصر.</td>
+</tr>
+<tr>
+<td>Units on hand per store</td>
+<td>الوحدات المتاحة لكل store في كل دقيقة.</td>
+<td>بتنزل مع المبيعات وبتطلع مع إعادة التخزين. الخط اللي بينزل بس معناه مفيش restock.</td>
+</tr>
+<tr>
+<td>Units added and removed per minute</td>
+<td>التغيير في الوحدات المتاحة بين snapshots الدقايق: المضاف restock، والمخصوم مبيعات و shrinkage.</td>
+<td>موجات الـ restock وضغط المبيعات جنب بعض.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products per minute</td>
+<td>المشاهدات والـ add-to-carts على أزواج stock بتاعها صفر وقت كتابة الدقيقة.</td>
+<td>الـ demand اللي الرف معرفش يخدمه.</td>
+</tr>
+<tr>
+<td>Stock health by store (table)</td>
+<td>لكل store: products متتبّعة، out of stock، low، نسبة in-stock والوحدات، الأسوأ الأول.</td>
+<td>صف لكل dark store: مقارنة سريعة.</td>
+</tr>
+<tr>
+<td>Restock watchlist (table)</td>
+<td>الـ 20 زوج الأبعد تحت reorder point، مع حالة: out of stock أو restock now أو ok.</td>
+<td>قايمة المهام لفريق الـ stock. في الـ screenshot "Bed sheets 20" في مدينة نصر فيها وحدة واحدة مقابل reorder point بـ 3.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>بيقول إن التاريخ جاي من snapshots دقيقة، فالدقيقة اللي مفيهاش sink batch مفيهاش نقطة.</td>
+<td>بيفسّر الفجوات في الخطوط.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.5 FunnelStream: Inventory insights, daily (<code>fs-inventory-daily</code>)</h3>
+<p><strong>الغرض.</strong> العرض اليومي للـ stock ووعد الـ express، مبني من الـ daily marts. Refresh كل دقيقة، آخر 14 يوم.</p>
+<p><img alt="Inventory insights, daily" src="images/grafana/inventory_daily.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Closing stock, latest day (units)</td>
+<td>الوحدات المتاحة في آخر يوم قاهرة في <code>inventory_daily</code>.</td>
+<td>أزرق، مستوى. الـ stock محاكى ومش بينزل تحت الصفر.</td>
+</tr>
+<tr>
+<td>Products out of stock at day end</td>
+<td>أزواج store و product اللي stock بتاعها صفر أو أقل في آخر اليوم الأخير.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 5.</td>
+</tr>
+<tr>
+<td>Oversold units, latest day</td>
+<td>وحدات اتطلبت أكتر من اللي على الرف. حد أدنى، لأن بيع صفر وحدات مبيطلّعش حركة.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 20. معناها إن التطبيق وعد بـ stock مكانش عنده.</td>
+</tr>
+<tr>
+<td>Shrinkage share of units out, latest day</td>
+<td>الوحدات المفقودة (shrunk) مقسومة على المفقودة زائد المباعة.</td>
+<td>أخضر تحت 3%، برتقاني من 3 لـ 6%، أحمر فوق 6%. الـ shrinkage هو stock ضاع من غير بيع.</td>
+</tr>
+<tr>
+<td>Closing stock by store (units)</td>
+<td>الـ stock في آخر كل يوم قاهرة، مجمّع لكل dark store.</td>
+<td>اتجاه الـ stock لكل store على أسبوعين.</td>
+</tr>
+<tr>
+<td>Units sold, received and shrunk per day</td>
+<td>مجاميع الحركة اليومية على كل الـ stores والـ products، تلات خطوط.</td>
+<td>قارن sold بـ received: لو المبيعات أكتر من المستلم، الـ stock بيستنزف.</td>
+</tr>
+<tr>
+<td>Lowest days of cover, latest day, 20 products (table)</td>
+<td>الـ closing stock مقسوم على متوسط الوحدات المباعة في اليوم في آخر 7 أيام. الـ products اللي مبتباعتش مستبعدة.</td>
+<td>الرقم الواطي معناه إن الـ product هيخلص قريب بوتيرة البيع الحالية.</td>
+</tr>
+<tr>
+<td>Demand on empty shelves per day</td>
+<td>مشاهدات الـ product وadd-to-carts اللي وصلت والـ product out of stock، في اليوم.</td>
+<td>الحجم اليومي للـ demand الضايع.</td>
+</tr>
+<tr>
+<td>Express on-time rate, latest day</td>
+<td>الـ orders on-time مقسومة على المتسلّمة أو الـ breached في آخر يوم في <code>express_daily</code>. بيعرض 100 لما مفيش حاجة تتقاس.</td>
+<td>أحمر تحت 90%، برتقاني من 90 لـ 95%، أخضر من 95%.</td>
+</tr>
+<tr>
+<td>Slowest express delivery per day (minutes)</td>
+<td>أطول وقت تسليم في كل يوم قاهرة، مقابل خط ثابت عند وعد الـ 20 دقيقة.</td>
+<td>النقطة فوق خط الوعد هي يوم فيه وعد اتفوّت.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>بيقول إن الـ stock محاكى، والـ oversold units حد أدنى، والـ orders الملغية مبترجّعش stock.</td>
+<td>حدود الأرقام اللي فوق.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.6 FunnelStream: Marketing, D-1 (<code>fs-marketing-d1</code>)</h3>
+<p><strong>الغرض.</strong> نتايج الـ campaigns بتاعة امبارح جنب الـ spend المقدّر اللي راح لـ products out of stock. Refresh كل دقيقة، آخر 14 يوم. بيقرا الـ marts <code>marketing_d1_campaign</code> و <code>marketing_d1_product</code>.</p>
+<p><strong>ببساطة:</strong> D-1 يعني "امبارح". الصفحة دي بتقول: امبارح صرفنا كام على الإعلانات، وكام منه راح لمنتجات خالصة.</p>
+<p><img alt="Marketing D-1" src="images/grafana/marketing_d1.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spend (EGP)</td>
+<td>Ad spend لآخر يوم D-1، كل الـ campaigns. ده يوم منصة الإعلانات بتوقيت UTC.</td>
+<td>أزرق، الـ budget المستخدم.</td>
+</tr>
+<tr>
+<td>Orders placed</td>
+<td>الـ orders المنسوبة للـ campaigns بـ last touch في آخر يوم D-1.</td>
+<td>أزرق.</td>
+</tr>
+<tr>
+<td>ROAS placed</td>
+<td>الـ placed revenue مقسوم على الـ spend.</td>
+<td>أزرق. هو العائد المتفائل، لأن الـ orders الملغية والفاشلة لسه معدودة.</td>
+</tr>
+<tr>
+<td>ROAS delivered (provisional)</td>
+<td>الـ delivered revenue مقسوم على الـ spend.</td>
+<td>أزرق. العائد الأساسي. التسليم بينضج بعد يوم لتلات أيام من يوم الـ order، فالأيام الأخيرة بتقرا واطية.</td>
+</tr>
+<tr>
+<td>Exposed spend (EGP)</td>
+<td>الـ spend مضروب في نسبة landing clicks اللي راحت لـ products out of stock.</td>
+<td>أخضر عند 0، برتقاني من 1، أحمر من 1,000. تقدير بيفترض إن الـ spend موزّع بالتساوي على landing clicks اللي اتخدمت.</td>
+</tr>
+<tr>
+<td>Out-of-stock click share</td>
+<td>landing clicks في الدقايق المعلّمة out of stock، مقسومة على كل landing clicks في الـ districts المخدومة.</td>
+<td>أخضر تحت 5%، برتقاني من 5 لـ 15%، أحمر من 15%.</td>
+</tr>
+<tr>
+<td>Campaigns, sorted by exposed spend (table)</td>
+<td>صف لكل campaign بـ spend و orders و CPA و ROAS placed و delivered و clicks اللي اتخدمت و out-of-stock و click share و exposed spend وعلامة provisional.</td>
+<td>أنهي campaign بعتت أكتر shoppers لرفوف فاضية. الأيام الـ provisional لسه ممكن تتغيّر.</td>
+</tr>
+<tr>
+<td>Top 5 products by revenue at risk (table)</td>
+<td>add-to-carts الـ out-of-stock مضروبة في السعر، لكل store و product، في آخر يوم D-1.</td>
+<td>أنهي products تعيد تخزينها الأول، أو توقف إعلانها. الـ mart بيحتفظ بكل product out of stock. حد الخمسة ده بتاع الـ panel.</td>
+</tr>
+<tr>
+<td>About this data (text)</td>
+<td>بيعرّف exposed spend وبيذكر يوم UTC مقابل يوم القاهرة والأيام الـ provisional.</td>
+<td>اقراه قبل ما تقتبس الـ exposed spend.</td>
+</tr>
+</tbody>
+</table>
+<h3>2.7 الـ 8 alert rules</h3>
+<p>الـ alerts بتبلّغ لما الحالة تتغيّر، على alert sink محلي.</p>
+<table>
+<thead>
+<tr>
+<th>القاعدة</th>
+<th>بتشتغل إمتى</th>
+<th>معناها إيه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Late-event rate above 5%</td>
+<td>الـ late events أكتر من 5% في 5 دقايق، مع 20 event على الأقل.</td>
+<td>فرق ساعة أو events قديمة اتعمللها replay.</td>
+</tr>
+<tr>
+<td>Quarantine share above 2%</td>
+<td>الصفوف المحجوزة أكتر من 2% في 5 دقايق، مع 20 صف على الأقل.</td>
+<td>producer بيبعت بيانات وحشة.</td>
+</tr>
+<tr>
+<td>Silver job silent for 2 minutes</td>
+<td>الـ Silver heartbeat أقدم من دقيقتين (مفيش بيانات بتشغّله برضه).</td>
+<td>الـ streaming job واقع أو عالق.</td>
+</tr>
+<tr>
+<td>No events for 5 minutes</td>
+<td>مفيش Silver event وصل في آخر 5 دقايق (مفيش بيانات بتشغّله برضه).</td>
+<td>الـ producers أو الـ job وقفوا.</td>
+</tr>
+<tr>
+<td>Demand on out-of-stock products</td>
+<td>5 add-to-carts على الأقل على product out of stock في store واحد في كل دقيقتين ورا بعض.</td>
+<td>shoppers بيخبطوا في رف فاضي.</td>
+</tr>
+<tr>
+<td>An express order missed its delivery promise</td>
+<td>أي breach.</td>
+<td>customer استنّى أكتر من الوعد.</td>
+</tr>
+<tr>
+<td>Express on-time rate below the 95% target</td>
+<td>on-time rate تحت 95% في 30 دقيقة مع 5 orders على الأقل، لمدة دقيقتين.</td>
+<td>مستوى الخدمة بينزل.</td>
+</tr>
+<tr>
+<td>Many products out of stock in one store</td>
+<td>أكتر من 20% من products الـ store out of stock، لمدة دقيقة.</td>
+<td>dark store واحد بيفضى.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>3. Power BI</h2>
+<p>التقرير فيه 7 صفحات. في كل صفحة، الـ rail الكحلي على الشمال فيه الـ page navigator والـ slicers. الـ banner بيقول السؤال اللي الصفحة بتجاوب عليه. صف الـ cards بيعرض الأرقام الرئيسية، والـ charts والجداول تحته بتشرحها. الـ slicers بتفلتر الصفحة كلها.</p>
+<p>تعريفات الـ measures في <code>dashboards/powerbi/measures.dax</code>. تلات قواعد على الكل: النسب بتتحسب كنسبة مجاميع (مش متوسط نسب أبدًا)، والشريحة الفاضية بتعرض blank مش error، وكل بيانات الـ stock محاكاة.</p>
+<h3>3.1 Executive: الـ revenue ماشي صح؟ والـ orders بتتسرّب فين؟</h3>
+<p><img alt="Executive" src="images/powerbi/01_executive.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ channel، الـ platform.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Revenue Placed</td>
+<td>مجموع revenue كل الـ orders المتسجّلة، منسوبة أو لأ (<code>Orders Daily</code>).</td>
+<td>إجمالي قيمة المبيعات. الـ screenshot بيعرض 2,410,979.</td>
+</tr>
+<tr>
+<td>Card: Revenue Delivered</td>
+<td>revenue الـ orders اللي اتسلّمت، معدودة على تاريخ الـ order (cohort view).</td>
+<td>الكاش اللي دخل فعلًا. 1,914,103 في الـ screenshot.</td>
+</tr>
+<tr>
+<td>Card: Orders Placed</td>
+<td>عدد الـ orders المتسجّلة.</td>
+<td>1,495.</td>
+</tr>
+<tr>
+<td>Card: AOV</td>
+<td>Average order value: revenue placed مقسوم على orders placed.</td>
+<td>1,613.</td>
+</tr>
+<tr>
+<td>Card: Delivered Share</td>
+<td>revenue delivered مقسوم على revenue placed.</td>
+<td>نسبة المبيعات اللي بقت كاش: 79.4%.</td>
+</tr>
+<tr>
+<td>Card: Cancel Rate</td>
+<td>الـ orders الملغية مقسومة على الـ placed.</td>
+<td>5.8%.</td>
+</tr>
+<tr>
+<td>Line chart: Revenue by day</td>
+<td>خطين: revenue placed و revenue delivered، حسب اليوم.</td>
+<td>بيبيّن الاتجاه والفجوة بين placed و delivered. يوم واحد، 9 أكتوبر، فيه حوالي 55% من كل الـ revenue في البيانات المحاكاة، والعنوان بيقول كده.</td>
+</tr>
+<tr>
+<td>Bar chart: Orders by channel</td>
+<td>الـ placed orders لكل channel، مترتّبة.</td>
+<td>أنهي channel بيجيب orders: organic 859، paid social 387، paid search 249.</td>
+</tr>
+<tr>
+<td>Bar chart: Where orders leak, by payment method</td>
+<td>تلات أعمدة لكل payment method: cancel rate و return rate و failed-attempt rate، كلها على الـ placed orders.</td>
+<td>فين الـ orders بتضيع. الـ failed-attempt rate الأعلى عند vodafone_cash (27.6%) و fawry (25.1%).</td>
+</tr>
+<tr>
+<td>Bar chart: Orders by payment method</td>
+<td>الـ placed orders لكل payment method، مترتّبة.</td>
+<td>الكاش عند الاستلام هو الأكبر، 832 order. اقراه جنب chart التسرّب.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.2 Campaigns: الـ budget الجاي يروح فين؟</h3>
+<p><img alt="Campaigns" src="images/powerbi/02_campaigns.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ campaign، الـ platform.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Spend</td>
+<td>مجموع ad spend من الـ ad API.</td>
+<td>11,730. أيام الإعلانات هي أيام UTC.</td>
+</tr>
+<tr>
+<td>Card: CPA</td>
+<td>Cost per acquisition: الـ spend مقسوم على الـ placed orders المنسوبة في الأيام اللي فيها spend.</td>
+<td>93. placed orders بس.</td>
+</tr>
+<tr>
+<td>Card: CTR</td>
+<td>Click-through rate: الـ clicks اللي بلّغ عنها الـ API مقسومة على impressions.</td>
+<td>2.4%. دي عدّ المنصة للـ clicks، مش الـ click المستخدم في الـ attribution.</td>
+</tr>
+<tr>
+<td>Card: Conversion Rate</td>
+<td>الـ orders المنسوبة مقسومة على clicks الـ API.</td>
+<td>1.0%.</td>
+</tr>
+<tr>
+<td>Card: ROAS Delivered</td>
+<td>Return on ad spend: الـ delivered revenue في أيام الـ spend مقسوم على الـ spend.</td>
+<td>الرقم الأساسي، 8.39. هو اللي الكاش بيرجّعه فعلًا.</td>
+</tr>
+<tr>
+<td>Bar chart: Return on ad spend by campaign</td>
+<td>عمودين لكل campaign: ROAS delivered و ROAS placed، مترتّبة بالـ delivered.</td>
+<td>الفجوة بين العمودين هي الـ revenue اللي ضاع بسبب الـ orders الملغية والمرتجعة والفاشلة في الكاش عند الاستلام. لـ eid_sale_1 هو 11.67 delivered مقابل 21.55 placed.</td>
+</tr>
+<tr>
+<td>Bar chart: Cost per delivered order by campaign</td>
+<td>الـ spend مقسوم على الـ delivered orders، لكل campaign.</td>
+<td>الأقل أحسن. ramadan_offer_1 بـ 377، retarget_cart_1 بـ 184، eid_sale_1 بـ 119.</td>
+</tr>
+<tr>
+<td>Table: Campaign scorecard</td>
+<td>لكل campaign: spend، orders في أيام الـ spend، CPA، ROAS delivered، CTR، مع صف إجمالي.</td>
+<td>الملخص اللي بنقارن بيه الـ campaigns. الصف الإجمالي بيطابق الـ cards. الـ CPA في الـ scorecard (171 لـ ramadan_offer_1) بيختلف عن cost per delivered order (377) بالتعريف.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>ملاحظة قراءة.</strong> الـ ROAS نسبة فترة. اقراه على أسبوع أو على فترة campaign، مش كحقيقة يومية. الأيام الأخيرة لسه settling لأن الـ delivered revenue بيتأخر عن الـ spend بحوالي يومين لأربعة.</p>
+<h3>3.3 Marketing and stock: أنهي campaign بعتت shoppers لرفوف فاضية؟</h3>
+<p><img alt="Marketing and stock" src="images/powerbi/03_marketing_and_stock.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ campaign. الصفحة دي بتقرا الـ D-1 marketing marts.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Exposed Spend</td>
+<td>مجموع الـ exposed spend لكل campaign ويوم: spend مضروب في out-of-stock clicks على served clicks.</td>
+<td>تقدير للـ spend اللي وصل لـ products out of stock. 378 في الـ screenshot.</td>
+</tr>
+<tr>
+<td>Card: OOS Click Share</td>
+<td>landing clicks الـ out-of-stock مقسومة على landing clicks المخدومة.</td>
+<td>10.2% من الـ clicks قابلت رف فاضي.</td>
+</tr>
+<tr>
+<td>Card: Exposed Share of Spend</td>
+<td>الـ exposed spend مقسوم على spend الـ campaign.</td>
+<td>10.1% من الـ spend.</td>
+</tr>
+<tr>
+<td>Card: Revenue at Risk</td>
+<td>add-to-carts على products out of stock مضروبة في السعر.</td>
+<td>71,653. revenue الرف معرفش يخدمه، مش revenue ضايع.</td>
+</tr>
+<tr>
+<td>Card: OOS Add to Cart</td>
+<td>عدد events الـ add-to-cart على products out of stock.</td>
+<td>349.</td>
+</tr>
+<tr>
+<td>Bar chart: Exposed spend and campaign spend (D-1)</td>
+<td>عمودين لكل campaign: exposed spend وإجمالي spend اليوم ده.</td>
+<td>عمود الـ exposed جزء صغير من عمود الـ spend. قارن الـ campaigns: ramadan_offer_1 فيها 174 exposed من 1,758 spend.</td>
+</tr>
+<tr>
+<td>Column chart: Out-of-stock add to cart by category</td>
+<td>add-to-carts على الرفوف الفاضية لكل category.</td>
+<td>أنهي category بتخسّر shoppers: home 177 و fashion 157.</td>
+</tr>
+<tr>
+<td>Table: Products by revenue at risk (all campaigns)</td>
+<td>الـ product والـ store والـ revenue at risk، مترتّبة بالـ revenue at risk.</td>
+<td>قايمة الـ products اللي تعيد تخزينها أو توقف إعلانها. في الـ screenshot التلاتة في dark store مدينة نصر.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue at risk by category</td>
+<td>الـ revenue at risk لكل category.</td>
+<td>عرض الفلوس لـ chart الـ category: fashion حوالي 50K و home 22K.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>ملاحظة قراءة.</strong> الصفحة دي تقدير. الـ spend هو يوم UTC للإعلانات، والـ demand هو يوم القاهرة. وعلامة الـ out-of-stock هي الـ stock وقت ما الدقيقة اتكتبت.</p>
+<h3>3.4 Operations: نعيد تخزين إيه؟ ووعد الـ 20 دقيقة ماشي؟</h3>
+<p><img alt="Operations" src="images/powerbi/04_operations.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ store، الـ product category.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Out of Stock Lines</td>
+<td>أزواج store و product اللي stock المتاح صفر أو أقل، في الـ snapshot الحالي للـ 8 dark stores.</td>
+<td>0 في الـ screenshot. مش متفلتر بالتاريخ.</td>
+</tr>
+<tr>
+<td>Card: Low Stock Lines</td>
+<td>الأزواج فوق الصفر وتحت reorder point.</td>
+<td>0.</td>
+</tr>
+<tr>
+<td>Card: Out of Stock Rate</td>
+<td>الـ out-of-stock lines مقسومة على كل stock lines.</td>
+<td>0.0%.</td>
+</tr>
+<tr>
+<td>Card: Express Orders</td>
+<td>عدد الـ express orders في الفترة.</td>
+<td>385.</td>
+</tr>
+<tr>
+<td>Card: Express On-time Rate</td>
+<td>الـ orders on-time مقسومة على on-time زائد breached.</td>
+<td>98.1%. الهدف 95%.</td>
+</tr>
+<tr>
+<td>Card: Express Breaches</td>
+<td>orders اتسلّمت بعد وعدها أو مش متسلّمة بعد الوعد زائد دقيقة. دايمًا رقم، الصفر بيظهر 0.</td>
+<td>4.</td>
+</tr>
+<tr>
+<td>Bar chart: Oversold units by store</td>
+<td>الوحدات اللي الـ customers طلبوها أكتر من الـ stock على الرف، لكل store.</td>
+<td>التطبيق وعد بـ stock مكانش عنده. الـ 7 وحدات كلها في مدينة نصر. حد أدنى.</td>
+</tr>
+<tr>
+<td>Column chart: Units sold and received by day</td>
+<td>عمودين لكل يوم: الوحدات المباعة والوحدات المستلمة.</td>
+<td>الـ stock بيستنزف لما sold يعدّي received.</td>
+</tr>
+<tr>
+<td>Column chart: Shrinkage rate by store</td>
+<td>الوحدات المفقودة مقسومة على المباعة زائد المفقودة، لكل store.</td>
+<td>stock ضاع من غير بيع. New Cairo الأعلى بـ 10.5% في الـ screenshot.</td>
+</tr>
+<tr>
+<td>Table: Products with oversold units</td>
+<td>الـ product والـ oversold units والـ days of cover، مترتّبة بالـ oversold units.</td>
+<td>الـ products ورا chart الـ oversold. الـ days of cover هي closing stock على متوسط المبيعات اليومية، بحد أقصى 90.</td>
+</tr>
+<tr>
+<td>Column chart: Express breaches by store</td>
+<td>الـ breaches لكل dark store.</td>
+<td>أنهي store فوّت الوعد: مدينة نصر فيها 3.</td>
+</tr>
+<tr>
+<td>Bar chart: Delivery hours by carrier (all orders)</td>
+<td>متوسط الساعات من الـ order للتسليم، لكل carrier، على الـ orders المتسلّمة اللي وقت تسليمها معروف.</td>
+<td>توصيل عادي، مش express: aramex 21.3 و bosta 20.7 و jt_express 25.1 ساعة.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5 Funnel: أنهي خطوة وأنهي channel نصلّحها الأول؟</h3>
+<p><img alt="Funnel" src="images/powerbi/05_funnel.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ channel، الـ platform.</p>
+<p><strong>ببساطة:</strong> الـ funnel هو "قمع" شكله واسع من فوق وضيّق من تحت: ناس كتير بتدخل، وقليلين بيشتروا. السؤال: الناس بتقع فين؟</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Cart Abandon Rate</td>
+<td><code>1 - orders / cart sessions</code>، blank للشريحة الفاضية، محصورة بين 0 و 1.</td>
+<td>من الـ sessions اللي ضافت للـ cart، كام منها مطلبتش order. 69.1%.</td>
+</tr>
+<tr>
+<td>Card: Checkout Abandon Rate</td>
+<td><code>1 - orders / checkout sessions</code>، blank للشريحة الفاضية، محصورة بين 0 و 1.</td>
+<td>من الـ sessions اللي بدأت checkout، كام منها مطلبتش order. 30.7%.</td>
+</tr>
+<tr>
+<td>Card: Session Conversion</td>
+<td>الـ funnel orders مقسومة على sessions.</td>
+<td>10.4%.</td>
+</tr>
+<tr>
+<td>Funnel: Funnel stages</td>
+<td>5 مراحل: sessions، product-view sessions، cart sessions، checkout sessions، orders.</td>
+<td>العرض بيبيّن كام واحد بيعدّي كل خطوة. Sessions 16,617، product views 16,120، cart 5,578، checkout 2,486، orders 1,723. أكبر نزول بين product view و cart.</td>
+</tr>
+<tr>
+<td>Bar chart: Cart and checkout abandon rate by channel</td>
+<td>عمودين لكل channel.</td>
+<td>أنهي channel بيخسّر أكتر shoppers. Direct أعلى cart abandon rate، 70.9%. الـ channels قريبين من بعض.</td>
+</tr>
+<tr>
+<td>Bar chart: Sessions by channel</td>
+<td>الـ sessions لكل channel، مترتّبة.</td>
+<td>حجم كل channel. Paid social بيجيب الأكتر، 4.5K.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>ملاحظة قراءة.</strong> الـ sessions بتتعدّ حسب يوم القاهرة، فالـ session اللي بتعدّي نص الليل بتتعدّ مرة في كل يوم. الـ sessions اليومية مبتجمعش بالظبط على الأيام.</p>
+<h3>3.6 Products and cities: نخزّن ونروّج لإيه، وفين؟</h3>
+<p><img alt="Products and cities" src="images/powerbi/06_products_and_cities.jpeg" /></p>
+<p><strong>Slicers:</strong> الفترة، الـ product category، الـ city.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Product Revenue</td>
+<td>مجموع الـ revenue حسب city و product ويوم (<code>agg_city_product_daily</code>).</td>
+<td>2,410,979، نفس placed revenue في صفحة Executive.</td>
+</tr>
+<tr>
+<td>Card: Product Units</td>
+<td>الوحدات المباعة.</td>
+<td>4,535.</td>
+</tr>
+<tr>
+<td>Card: Product Page Views</td>
+<td>الـ sessions اللي شافت product، مجموعة لكل city و product ويوم.</td>
+<td>54,626. الـ session اللي بتشوف 3 products بتتعدّ 3 مرات، فهو أكبر من sessions الـ funnel.</td>
+</tr>
+<tr>
+<td>Card: Product Add to Carts</td>
+<td>الـ sessions اللي ضافت product للـ cart.</td>
+<td>5,578.</td>
+</tr>
+<tr>
+<td>Card: Product Cart Rate</td>
+<td>الـ add-to-carts مقسومة على product page views.</td>
+<td>10.2%.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue by product category</td>
+<td>الـ revenue لكل category، مترتّبة.</td>
+<td>Electronics بتكسب حوالي 1.3M، أكتر بكتير من fashion و home و beauty.</td>
+</tr>
+<tr>
+<td>Bar chart: Revenue by city</td>
+<td>الـ revenue لكل city، مترتّبة.</td>
+<td>Cairo في المقدمة بـ 0.72M، بعدها Other وGiza وAlexandria.</td>
+</tr>
+<tr>
+<td>Column chart: Add to cart by category</td>
+<td>الـ add-to-carts لكل category.</td>
+<td>شبه متساوية بين الـ categories (1,359 لـ 1,454)، فـ electronics بتكسب أكتر لكل cart، مش carts أكتر.</td>
+</tr>
+<tr>
+<td>Table: Top products</td>
+<td>الـ product والـ category والوحدات والـ revenue والـ page views والـ cart rate، مترتّبة بالـ revenue.</td>
+<td>الأكتر مبيعًا وقد إيه كل واحد بيتحوّل من مشاهدة لـ cart.</td>
+</tr>
+</tbody>
+</table>
+<h3>3.7 Customers: مين بيشتري تاني، ومين نرجّعه؟</h3>
+<p><img alt="Customers" src="images/powerbi/07_customers.jpeg" /></p>
+<p><strong>Slicers:</strong> الـ city، الـ favourite category، الـ preferred payment method. الصفحة دي مفيهاش فلتر تاريخ: بتعرض صف لكل customer، في حالته الحالية.</p>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>بيعرض إيه وبيتحسب إزاي</th>
+<th>إزاي تقراه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card: Customers on File</td>
+<td>الـ customers المميزين في <code>customer_360</code>.</td>
+<td>5,000.</td>
+</tr>
+<tr>
+<td>Card: Buyers</td>
+<td>الـ customers اللي عندهم order متسجّل واحد على الأقل.</td>
+<td>1,295.</td>
+</tr>
+<tr>
+<td>Card: Repeat Buyer Rate</td>
+<td>الـ customers اللي عندهم orderين أو أكتر مقسومين على buyers.</td>
+<td>13.9%.</td>
+</tr>
+<tr>
+<td>Card: Lifetime Spend</td>
+<td>إنفاق الـ orders اللي مش ملغية ولا مرتجعة، بالجنيه.</td>
+<td>2,084,020.</td>
+</tr>
+<tr>
+<td>Card: Average Spend per Buyer</td>
+<td>الـ lifetime spend مقسوم على buyers.</td>
+<td>1,609.</td>
+</tr>
+<tr>
+<td>Card: Quiet Buyers (7+ days)</td>
+<td>buyers آخر order ليهم عمره 7 أيام أو أكتر.</td>
+<td>106. البيانات بتغطي حوالي 15 يوم، فقاعدة 30 يوم كانت هتبقى فاضية دايمًا.</td>
+</tr>
+<tr>
+<td>Bar chart: Buyers by favourite category</td>
+<td>الـ buyers لكل category، مترتّبة.</td>
+<td>Electronics فيها الأكتر، 583.</td>
+</tr>
+<tr>
+<td>Bar chart: Buyers by preferred payment</td>
+<td>الـ buyers لكل payment method مفضّلة، مترتّبة.</td>
+<td>الكاش عند الاستلام في المقدمة بـ 740.</td>
+</tr>
+<tr>
+<td>Column chart: Average spend per buyer by category</td>
+<td>الـ lifetime spend على buyers، لكل favourite category.</td>
+<td>buyers الـ electronics بيصرفوا الأكتر، حوالي 2.5K. القياس per-buyer بيتجنّب عمود "(Blank)" مضلّل للـ customers اللي مطلبوش أبدًا.</td>
+</tr>
+<tr>
+<td>Bar chart: Lifetime spend by city</td>
+<td>الـ lifetime spend لكل city، مترتّبة.</td>
+<td>Cairo في المقدمة بـ 0.62M.</td>
+</tr>
+<tr>
+<td>Table: Top customers by lifetime spend</td>
+<td>الـ customer id والـ city والـ favourite category والـ orders والـ lifetime spend وأيام من آخر order.</td>
+<td>المفروض يعرض أعلى الـ spenders الأول. <strong>اتأكد على الشاشة:</strong> في الـ screenshot الجدول مترتّب بأيام من آخر order، فالـ customers اللي عندهم 0 orders ظاهرين الأول، مش أعلى الـ spenders. لو شفت كده، اضغط على header "Lifetime spend" لحد ما أكبر القيم تيجي الأول. التقرير فيه الـ customer id بس، مفيهوش أسماء أو أرقام تليفونات.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>4. قاموس الـ measures المستخدمة في الصفحات</h2>
+<table>
+<thead>
+<tr>
+<th>المصطلح</th>
+<th>معناه</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROAS</td>
+<td>Return on ad spend: الـ revenue مقسوم على الـ spend. "Delivered" بيعدّ revenue الـ orders المتسلّمة بس، و"placed" بيعدّ كل الـ orders المتسجّلة.</td>
+</tr>
+<tr>
+<td>CPA</td>
+<td>الـ spend مقسوم على الـ placed orders.</td>
+</tr>
+<tr>
+<td>Cost per delivered order</td>
+<td>الـ spend مقسوم على الـ delivered orders بس.</td>
+</tr>
+<tr>
+<td>CTR</td>
+<td>الـ clicks مقسومة على impressions، زي ما بلّغ الـ ad API.</td>
+</tr>
+<tr>
+<td>AOV</td>
+<td>Average order value، الـ placed revenue مقسوم على الـ placed orders.</td>
+</tr>
+<tr>
+<td>Delivered share</td>
+<td>الـ delivered revenue مقسوم على الـ placed revenue.</td>
+</tr>
+<tr>
+<td>Cancel, return, failed-attempt rate</td>
+<td>الـ orders الملغية أو المرتجعة أو اللي فيها محاولة تسليم فاشلة على الأقل، على الـ placed orders.</td>
+</tr>
+<tr>
+<td>Funnel stages</td>
+<td>Sessions و product views و cart و checkout و order. الـ abandon rate هو واحد ناقص الخطوة اللي بعدها على اللي قبلها.</td>
+</tr>
+<tr>
+<td>Out of stock</td>
+<td>product فيه <code>available &lt;= 0</code> في store. الـ low stock فوق الصفر وتحت reorder point.</td>
+</tr>
+<tr>
+<td>Oversold units</td>
+<td>الوحدات اللي الـ customers طلبوها أكتر من الـ stock على الرف. حد أدنى.</td>
+</tr>
+<tr>
+<td>Shrinkage</td>
+<td>وحدات ضاعت من غير بيع. النسبة هي shrunk على sold زائد shrunk.</td>
+</tr>
+<tr>
+<td>Days of cover</td>
+<td>الـ closing stock مقسوم على متوسط الوحدات المباعة في اليوم، بحد أقصى 90.</td>
+</tr>
+<tr>
+<td>Express on time, breached, at risk</td>
+<td>On time: اتسلّم جوه وعد الـ order نفسه. Breached: اتسلّم متأخر، أو مش متسلّم بعد الوعد زائد دقيقة. At risk: مش متسلّم واستهلك 75% من الوعد على الأقل.</td>
+</tr>
+<tr>
+<td>Exposed spend</td>
+<td>الـ spend مضروب في نسبة landing clicks اللي راحت لـ products out of stock. تقدير.</td>
+</tr>
+<tr>
+<td>Revenue at risk</td>
+<td>add-to-carts على products out of stock مضروبة في السعر. مش revenue ضايع.</td>
+</tr>
+<tr>
+<td>Provisional أو "Settling"</td>
+<td>يوم حديث الـ delivered revenue بتاعه لسه ممكن يزيد، فالـ ROAS delivered بيقرا واطي.</td>
+</tr>
+<tr>
+<td>Late event</td>
+<td>event بيوصل Kafka بعد أكتر من 10 دقايق من وقته.</td>
+</tr>
+<tr>
+<td>Quarantine</td>
+<td>جدول الصفوف اللي الـ validator رفضها، كل واحد مع error code.</td>
+</tr>
+</tbody>
+</table></body></html>
