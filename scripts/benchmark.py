@@ -11,6 +11,7 @@ or --lake / --checkpoints are outside data/bench, or --catalog is the real catal
 """
 import argparse
 import datetime
+import math
 import os
 import re
 import shutil
@@ -35,6 +36,13 @@ KAFKA_LIST = ["docker", "compose", "exec", "-T", "kafka", "/opt/kafka/bin/kafka-
 SENTENCE_SETUP = ("Synthetic data on one laptop, Docker limited to about 8 GB. "
                   "Numbers are a measurement of this setup, not a capacity claim.")
 SENTENCE_DBX = "The Databricks stages ran in the scratch catalog `workspace` on a Databricks Free Edition SQL warehouse."
+
+
+def _sim_start(events):
+    """Start day of the simulated history. The simulator runs about one million events per seven days and refuses event
+    times in the future, so the start goes back one week per million events plus three spare days."""
+    days = math.ceil(events / 1_000_000 * 7) + 3
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 class BenchmarkFailed(Exception):
@@ -128,7 +136,8 @@ def plan(args):
               note="deletes %s, recreates Kafka (all messages lost), waits up to %d s, creates topics"
                    % (BENCH_REL, KAFKA_WAIT_SECONDS)),
         Stage("simulate", [[py, "scripts/run_simulator.py", "--events", str(args.events), "--seed", str(args.seed),
-                            "--universe-seed", "7", "--bootstrap", "localhost:9092", "--manifest", manifest]],
+                            "--universe-seed", "7", "--start", _sim_start(args.events),
+                            "--bootstrap", "localhost:9092", "--manifest", manifest]],
               rows="messages"),
         Stage("bronze", [_spark(args, "-m", "streaming.jobs.bronze_ingest", "--once", "--lake", lake,
                                 "--checkpoints", ck)], rows="messages"),

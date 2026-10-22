@@ -291,7 +291,8 @@ def test_ensure_bronze_tables_creates_empty_tables_once_and_silver_can_start(spa
 
 
 def test_idle_silver_stream_keeps_reporting_alive(spark, tmp_path, monkeypatch):
-    """No data, so Spark runs no micro-batch; the timer thread still writes the silver_job heartbeat."""
+    """No data: the timer thread keeps writing the silver_job heartbeat. Spark may still run one empty first micro-batch
+    (its heartbeat says "batch 0"), so the test waits for the "alive" heartbeat instead of assuming no batch ran."""
     import time
 
     monkeypatch.setattr(live_store, "LIVENESS_INTERVAL", 1.0)
@@ -301,9 +302,8 @@ def test_idle_silver_stream_keeps_reporting_alive(spark, tmp_path, monkeypatch):
     q = silver_clean.run(lake, str(tmp_path / "ckpt"), once=False, sink=live_store.LiveSink(lake, store=store))
     try:
         deadline = time.time() + 60
-        while ("silver_job",) not in store.tables["pipeline_heartbeat"] and time.time() < deadline:
+        while (store.tables["pipeline_heartbeat"].get(("silver_job",)) or {}).get("details") != "alive"                 and time.time() < deadline:
             time.sleep(0.5)
         assert store.tables["pipeline_heartbeat"][("silver_job",)]["details"] == "alive"
-        assert not store.tables["pipeline_batch_log"]  # and there was no batch
     finally:
         q.stop()
