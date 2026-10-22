@@ -8,7 +8,7 @@ New to the project? Start with the team handoff (Q&A, status, remaining tasks): 
 
 Real-time e-commerce and campaign analytics for an Egyptian online store: Kafka, Spark Structured Streaming, Delta Lake (Bronze, Silver) with local storage, Databricks for Gold, Postgres, Airflow and Power BI.
 
-Defense: 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Inventory spec: `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md`. Inventory plan: `docs/superpowers/plans/2026-10-10-inventory-two-users.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan-v3.xlsx`. Open items before the defense: [docs/PRE-DEFENSE-CHECKLIST.md](docs/PRE-DEFENSE-CHECKLIST.md).
+Defense held 13 October 2026. Design: `docs/superpowers/specs/2026-10-04-funnelstream-design.md`. Metrics: `docs/metrics.md`. Build plan: `docs/superpowers/plans/2026-10-04-funnelstream.md`. Inventory spec: `docs/superpowers/specs/2026-10-10-inventory-two-users-design.md`. Inventory plan: `docs/superpowers/plans/2026-10-10-inventory-two-users.md`. Sprint sheet: `docs/FunnelStream-Sprint-Plan-v3.xlsx`. Pre-defense checklist (historical, kept for the rehearsal steps): [docs/PRE-DEFENSE-CHECKLIST.md](docs/PRE-DEFENSE-CHECKLIST.md).
 
 ## Repository layout
 
@@ -110,17 +110,7 @@ docker compose run --rm spark python scripts/seed_silver_reference.py --lake dat
 - The host does not read `.env`. Scripts that need the Databricks or Postgres settings run in the `spark` container, for example `docker compose run --rm spark python scripts/check_databricks.py`.
 - If `localhost:9092` or `localhost:3000` stop answering after Docker Desktop restarts, run `docker compose restart kafka` or `docker compose up -d --force-recreate grafana`.
 
-## Getting started
-
-```bash
-cp .env.example .env            # set your own passwords
-python -m venv .venv
-.venv/Scripts/activate          # Windows
-pip install -r requirements.txt
-pytest
-```
-
-Spark tasks (7 onward) run in Docker. The host needs Python 3.11 only for the simulator and the host tests. Java is NOT needed on the host: Java is inside the Spark Docker image. See [docs/RUNNING.md](docs/RUNNING.md).
+Spark tasks run in Docker. The host needs Python 3.11 only for the simulator and the host tests (`.python-version` pins it). Java is NOT needed on the host: Java is inside the Spark Docker image. Run the host tests with `.venv\Scripts\python -m pytest tests -q -p no:cacheprovider`. See [docs/RUNNING.md](docs/RUNNING.md).
 
 ## LLM analytics assistant
 

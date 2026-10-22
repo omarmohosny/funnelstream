@@ -1,7 +1,7 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from warehouse.d1_marketing import (assemble_campaign_rows, assemble_product_rows, cairo_yesterday, exposed_spend,
+from warehouse.d1_marketing import (assemble_campaign_rows, assemble_product_rows, utc_yesterday, exposed_spend,
                                     read_oos_demand, read_prices)
 
 D = date(2026, 10, 9)
@@ -70,9 +70,11 @@ def test_every_out_of_stock_product_of_the_day_is_kept_per_store():
     assert rows[3]["revenue_at_risk"] == Decimal("0.00") and rows[4]["revenue_at_risk"] is None  # kept, but unpriced
 
 
-def test_the_default_day_is_yesterday_on_the_cairo_calendar():
-    assert cairo_yesterday(datetime(2026, 10, 9, 22, 30, tzinfo=timezone.utc)) == date(2026, 10, 9)  # 01:30 on the 10th in Cairo
-    assert cairo_yesterday(datetime(2026, 10, 9, 20, 30, tzinfo=timezone.utc)) == date(2026, 10, 8)  # 23:30 on the 9th in Cairo
+def test_the_default_day_is_yesterday_on_the_utc_calendar():
+    assert utc_yesterday(datetime(2026, 10, 9, 22, 30, tzinfo=timezone.utc)) == date(2026, 10, 8)
+    assert utc_yesterday(datetime(2026, 10, 10, 0, 30, tzinfo=timezone.utc)) == date(2026, 10, 9)
+    cairo = timezone(timedelta(hours=3))  # 01:30 on the 10th in Cairo is still the 9th in UTC
+    assert utc_yesterday(datetime(2026, 10, 10, 1, 30, tzinfo=cairo)) == date(2026, 10, 8)
 
 
 def test_both_sides_of_the_share_and_the_prices_come_from_postgres_not_from_silver():

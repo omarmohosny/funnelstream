@@ -314,8 +314,8 @@ def build_marketing_d1():
         text(9, "About this data",
              "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted "
              "in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. "
-             "The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend is the "
-             "ad platform's UTC day, orders and demand are the Cairo day: they differ by at most 3 hours. Recent days "
+             "The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend, "
+             "orders and demand all use the ad platform's UTC day. Recent days "
              "are provisional: ROAS delivered matures after 1 to 3 days.", (0, 18, 24, 4)),
     ]
     d = dashboard("fs-marketing-d1", "FunnelStream: Marketing, D-1", panels)

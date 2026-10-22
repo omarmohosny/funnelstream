@@ -3,27 +3,25 @@
 The pure functions turn yesterday's numbers into the rows of two Postgres tables. The readers (Databricks spend,
 Postgres demand and prices) are thin and live below.
 
-Day rule: ad spend and ad clicks are the ad API's UTC day; orders and demand are the Cairo day;
-agg_campaign_daily.report_date is the ad day. The job takes yesterday in Cairo for the demand and the ad row with the
-same date value; the mismatch is at most 3 hours and is accepted.
+Day rule: one day for every campaign measure, the ad API's UTC day. agg_campaign_daily.report_date is that day and its
+order columns use the same UTC placed-date; the demand comes from live_oos_demand_minute on the same UTC day. The job
+takes yesterday in UTC.
 
 The metric is an ESTIMATE: exposed_spend = spend x oos_clicks / served_clicks, both counts from live_oos_demand_minute
 (served districts only, the same landing-click definition), assuming spend is spread evenly over served landing clicks.
 The out-of-stock flag is the stock when the minute was written (not replay-safe). It is titled "estimated spend exposed
 to out-of-stock" everywhere.
 """
-from datetime import timedelta
+from datetime import timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from zoneinfo import ZoneInfo
 
 PROVISIONAL_DAYS = 3  # ROAS delivered matures one to three days after the order day
-CAIRO = ZoneInfo("Africa/Cairo")
 _CENT, _SHARE = Decimal("0.01"), Decimal("0.0001")
 
 
-def cairo_yesterday(now):
-    """The default D-1 date: yesterday on the Cairo calendar (`now` is an aware datetime)."""
-    return now.astimezone(CAIRO).date() - timedelta(days=1)
+def utc_yesterday(now):
+    """The default D-1 date: yesterday on the UTC calendar, the ad API's day (`now` is an aware datetime)."""
+    return now.astimezone(timezone.utc).date() - timedelta(days=1)
 
 
 def exposed_spend(spend, oos_clicks, served_clicks):
@@ -67,11 +65,11 @@ def assemble_product_rows(report_date, oos_demand_by_pair, price_by_product):
     return rows
 
 
-_CAIRO_DAY = "(minute_start AT TIME ZONE 'Africa/Cairo')::date = %s"
+_AD_DAY = "(minute_start AT TIME ZONE 'UTC')::date = %s"
 
 
 def read_spend_rows(dbx_store, report_date):
-    """D-1 rows of agg_campaign_daily (last touch) from Databricks: the ad row whose report_date has the same date value."""
+    """D-1 rows of agg_campaign_daily (last touch) from Databricks: the ad row of that report_date."""
     sql = ("SELECT campaign_id, spend, clicks, orders_placed, revenue_placed, revenue_delivered, cpa, roas_placed, "
            "roas_delivered FROM %s WHERE report_date = DATE'%s' AND attribution_model = 'last_touch'"
            % (dbx_store.qualified("agg_campaign_daily"), report_date.isoformat()))
@@ -83,15 +81,15 @@ def read_spend_rows(dbx_store, report_date):
 def read_oos_demand(pg_store, report_date):
     """(served clicks by campaign_id, out-of-stock clicks by campaign_id, {(store, product): (oos views, oos add-to-carts)}).
 
-    All three come from live_oos_demand_minute for the Cairo day, so numerator and denominator of the share have the same
+    All three come from live_oos_demand_minute for the UTC ad day, so numerator and denominator of the share have the same
     population: landing clicks in served districts. 'Out of stock' is the oos_at_write flag."""
     served, oos = {}, {}
     for cid, n_served, n_oos in pg_store.query(
             "SELECT campaign_id, sum(landing_clicks), coalesce(sum(landing_clicks) FILTER (WHERE oos_at_write), 0) "
-            "FROM live_oos_demand_minute WHERE " + _CAIRO_DAY + " GROUP BY campaign_id", (report_date,)):
+            "FROM live_oos_demand_minute WHERE " + _AD_DAY + " GROUP BY campaign_id", (report_date,)):
         served[cid], oos[cid] = int(n_served), int(n_oos)
     pairs = {(store_id, product_id): (int(views), int(carts)) for store_id, product_id, views, carts in pg_store.query(
-        "SELECT store_id, product_id, sum(views), sum(add_to_cart) FROM live_oos_demand_minute WHERE " + _CAIRO_DAY
+        "SELECT store_id, product_id, sum(views), sum(add_to_cart) FROM live_oos_demand_minute WHERE " + _AD_DAY
         + " AND oos_at_write GROUP BY store_id, product_id", (report_date,))}
     return served, oos, pairs
 

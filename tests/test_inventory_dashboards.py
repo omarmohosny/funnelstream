@@ -251,8 +251,8 @@ def test_the_marketing_tables_sort_and_limit_as_agreed():
 def test_the_marketing_note_states_the_day_rule_and_never_says_upper_bound():
     d = build_marketing_d1()
     note = next(p for p in d["panels"] if p["type"] == "text")["options"]["content"].lower()
-    assert "simulated" in note and "estimate" in note and "utc day" in note and "cairo day" in note
-    assert "3 hours" in note and "provisional" in note
+    assert "simulated" in note and "estimate" in note and "utc day" in note and "cairo" not in note
+    assert "provisional" in note
     for p in d["panels"]:
         assert "upper bound" not in (p.get("description", "") + p.get("title", "")
                                      + p.get("options", {}).get("content", "")).lower()

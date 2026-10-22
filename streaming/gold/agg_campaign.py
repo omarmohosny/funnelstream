@@ -1,7 +1,8 @@
 """agg_campaign_daily as a pure Spark function over fact_orders, fact_attribution and the ad snapshots.
 
 Grain: campaign_id, report_date (the ad API's UTC day), attribution_model (always 'last_touch' here). The order columns
-of a row are the orders placed on the Cairo date with the same date value (at most 3 hours apart, accepted). Same semantics as
+of a row are the orders placed on the same UTC date (CAST(order_created_at AS DATE), so the session time zone must be
+UTC, as in every Gold build step). Same semantics as
 warehouse/gold/10_agg_campaign_daily.sql:
 
 * Ad measures come from the snapshot row with the LATEST pulled_at per (campaign_id, report_date); earlier pulls
@@ -9,7 +10,7 @@ warehouse/gold/10_agg_campaign_daily.sql:
   ad_platform (in that order); a NULL pulled_at loses. Rows with a NULL campaign_id or report_date are ignored.
   A day without an ad row has NULL ad measures.
 * Order measures come from the orders whose last_touch campaign is not NULL and not 'unknown', counted on the
-  Cairo date the order was PLACED (date_key), so delivered revenue sits on the order date. A day with ad data and
+  UTC date the order was PLACED (order_created_at), so delivered revenue sits on the order date. A day with ad data and
   no orders has 0 counts, 0.00 revenue and NULL order rates.
 * Rates are a double division cast to Decimal(8,4), money ratios Decimal(12,2); NULL when the denominator is NULL
   or 0 (cpa, cost_per_delivered_order and roas also when spend is NULL or 0).
@@ -64,8 +65,8 @@ def build_agg_campaign_daily(fact_orders: DataFrame, fact_attribution: DataFrame
     as_of_col = F.lit(as_of).cast("timestamp")
     is_open = (~_flag("is_delivered") & ~_flag("is_cancelled") & ~_flag("is_returned")
                & (F.col("order_created_at") < as_of_col - F.expr("INTERVAL %d DAYS" % OPEN_AFTER_DAYS)))
-    od = (fact_orders.drop("campaign_id").where(F.col("date_key").isNotNull()).join(attributed, "order_id")
-          .withColumn("report_date", F.to_date(F.col("date_key").cast("string"), "yyyyMMdd"))
+    od = (fact_orders.drop("campaign_id").where(F.col("order_created_at").isNotNull()).join(attributed, "order_id")
+          .withColumn("report_date", F.to_date(F.col("order_created_at")))
           .groupBy("campaign_id", "report_date").agg(
               F.count(F.lit(1)).cast("long").alias("orders_placed"),
               _count_if(_flag("is_delivered")).alias("orders_delivered"),

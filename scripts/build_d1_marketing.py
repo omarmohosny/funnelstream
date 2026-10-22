@@ -1,7 +1,6 @@
-"""Build the marketing D-1 mart in Postgres for one Cairo day (default: yesterday in Cairo).
+"""Build the marketing D-1 mart in Postgres for one UTC ad day (default: yesterday in UTC).
 
-Day rule: the demand is the Cairo day, the ad row is the row whose report_date (the ad API's UTC day) has the same date
-value; the mismatch of at most 3 hours is accepted. Needs Databricks settings (the spend) and PG_DSN, not Spark:
+Day rule: the ad row, the orders on it and the demand all use the ad API's UTC day. Needs Databricks settings (the spend) and PG_DSN, not Spark:
   docker compose run --rm spark python scripts/build_d1_marketing.py [--date 2026-10-09]
 """
 import argparse
@@ -20,11 +19,11 @@ from warehouse.store import get_store
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--date", help="Cairo day to report, YYYY-MM-DD (default yesterday in Cairo)")
+    ap.add_argument("--date", help="UTC ad day to report, YYYY-MM-DD (default yesterday in UTC)")
     args = ap.parse_args(argv)
     now = datetime.now(timezone.utc)
-    today = now.astimezone(d1.CAIRO).date()
-    report_date = date.fromisoformat(args.date) if args.date else d1.cairo_yesterday(now)
+    today = now.astimezone(timezone.utc).date()
+    report_date = date.fromisoformat(args.date) if args.date else d1.utc_yesterday(now)
     dbx, pg = get_store("databricks"), get_store("postgres")
     try:
         spend = d1.read_spend_rows(dbx, report_date)
