@@ -25,7 +25,7 @@
       "id": 1,
       "type": "stat",
       "title": "Spend (EGP)",
-      "description": "Ad spend of the latest D-1 day (the ad platform's UTC day), all campaigns.",
+      "description": "Ad spend of the latest D-1 day (Cairo day), all campaigns.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "fs-postgres"
@@ -795,7 +795,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend, orders and demand all use the ad platform's UTC day. Recent days are provisional: ROAS delivered matures after 1 to 3 days."
+        "content": "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend, orders and demand all use the Cairo day. Recent days are provisional: ROAS delivered matures after 1 to 3 days."
       }
     }
   ]

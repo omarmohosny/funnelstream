@@ -3,6 +3,7 @@ import json
 import random
 from datetime import date, datetime, timezone
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -214,9 +215,9 @@ def test_campaign_mediums():
 
 
 def test_campaign_numbers_unchanged():
-    n = campaign_numbers("camp_202", date(2026, 10, 5), datetime(2026, 10, 5, 12, tzinfo=timezone.utc), 42)
+    n = campaign_numbers("camp_202", date(2026, 10, 5), datetime(2026, 10, 5, 12, tzinfo=ZoneInfo("Africa/Cairo")), 42)  # noon in Cairo: half of the Cairo day
     assert n == {"campaign_id": "camp_202", "report_date": "2026-10-05",
-                 "pulled_at": "2026-10-05T12:00:00+00:00", "impressions": 44177, "clicks": 1002,
+                 "pulled_at": "2026-10-05T12:00:00+03:00", "impressions": 44177, "clicks": 1002,
                  "spend": 970.2089, "platform_conversions": 51, "currency": "EGP"}
 
 

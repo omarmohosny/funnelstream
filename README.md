@@ -52,7 +52,7 @@ An address is country, city, then district (spec section 18). Districts are the 
 
 ## Yesterday's ad report
 
-Airflow DAG `ads_yesterday_report` (03:00 UTC daily, `airflow/dags/`, logic in `batch/ads_report.py`) pulls the ad API for yesterday once, stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. A rerun on the same day returns the stored report without calling the API. Start Airflow with `docker compose --profile airflow up -d airflow`. Details in [docs/RUNNING.md](docs/RUNNING.md).
+Airflow DAG `ads_yesterday_report` (03:00 Cairo time daily, `airflow/dags/`, logic in `batch/ads_report.py`) pulls the ad API for yesterday once, stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. A rerun on the same day returns the stored report without calling the API. Start Airflow with `docker compose --profile airflow up -d airflow`. Details in [docs/RUNNING.md](docs/RUNNING.md).
 
 ## Status
 
@@ -75,7 +75,7 @@ Not yet run, because they need Docker with enough free memory or the owner's con
 - The live failure demo twice in a row, and `scripts/smoke_test.py`.
 - The pull request into `main`.
 
-Known limitations (each is stated on the dashboards and in the documents): the out-of-stock flag is the stock when the minute was written and is not replay-safe; stock is not put back when an order is cancelled; Store is conformed across the Postgres marts only; ad spend is a UTC day and orders a Cairo day; exposed spend is an estimate. See the "Resolution status" section of [docs/data-model-review.md](docs/data-model-review.md).
+Known limitations (each is stated on the dashboards and in the documents): the out-of-stock flag is the stock when the minute was written and is not replay-safe; stock is not put back when an order is cancelled; Store is conformed across the Postgres marts only; all dates are Cairo days; exposed spend is an estimate. See the "Resolution status" section of [docs/data-model-review.md](docs/data-model-review.md).
 
 ## Quick start
 

@@ -253,8 +253,8 @@ The Silver job fills three small Postgres tables that Grafana reads (spec 17.3, 
 
 | Table | One row per | Holds |
 |---|---|---|
-| `live_metrics_minute` | minute (UTC) and country | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed` of non-late, non-bot events (the rules of `streaming/gold/live.py`) |
-| `pipeline_health_minute` | minute (UTC) | `events` (Silver events by Kafka arrival minute), `late_events`, `quarantined` (by `received_at`), `silver_batches` (batches finished in the minute) |
+| `live_metrics_minute` | minute (shown in Cairo time) and country | `events`, `active_sessions`, `product_views`, `add_to_cart`, `orders_placed` of non-late, non-bot events (the rules of `streaming/gold/live.py`) |
+| `pipeline_health_minute` | minute (shown in Cairo time) | `events` (Silver events by Kafka arrival minute), `late_events`, `quarantined` (by `received_at`), `silver_batches` (batches finished in the minute) |
 | `pipeline_heartbeat` | component | `last_seen_at` and `details` for `silver_job` (`batch N` after every batch and `alive` every 15 s while the Silver query is active), `gold_build` and `publish` (after a successful run) |
 
 `pipeline_batch_log` (one row per finished Silver batch, key `job_run_id`, `batch_id`) is the source of `silver_batches`. Dashboards and alerts read these tables only, through the read-only role `grafana_ro` (SELECT on these four tables, password from `GRAFANA_DB_PASSWORD` in `.env`; `.env.example` lists the names).
@@ -346,7 +346,7 @@ docker compose run --rm spark python scripts/build_d1_marketing.py [--date 2026-
 
 How to read the numbers:
 
-- Day rule: ad spend belongs to the ad platform's UTC day; orders and demand belong to the Cairo day. The two differ by at most 3 hours, so a recent day can still move.
+- Day rule: ad spend, orders and demand all belong to the Cairo day, so a recent day only moves while orders are still being delivered.
 - Exposed spend is an estimate. It is spend multiplied by the share of landing clicks that met an out-of-stock product, and it assumes spend is spread evenly over served landing clicks. It is not a measured loss.
 - The out-of-stock flag on a demand minute is the stock when the minute was written. A replay can change it.
 - Oversold units on the daily dashboard are a lower bound.
@@ -486,7 +486,7 @@ Silver mirror tables not in the recreate list keep their old rows, because publi
 
 ## Yesterday's ad report (Airflow DAG `ads_yesterday_report`)
 
-Pulls the mock ad API for yesterday (UTC day), stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. The first run of a day pulls (`pulled`); any rerun the same day returns the stored report without calling the API (`cached`). The pull is final (as of 00:00 UTC today), so numbers never change on a rerun. Rows with negative spend or clicks above impressions go to `silver_quarantine`. Schedule: 03:00 UTC daily. It always writes to Databricks (the Silver mirror tables exist only there), whatever `GOLD_BACKEND` says in `.env`; the host command needs the `DATABRICKS_*` values, the Airflow container gets them from `.env`.
+Pulls the mock ad API for yesterday (Cairo day), stores it in `silver_campaign_snapshots` and writes `data/reports/ads_report_<date>.json`. The first run of a day pulls (`pulled`); any rerun the same day returns the stored report without calling the API (`cached`). The pull is final (as of 00:00 UTC today), so numbers never change on a rerun. Rows with negative spend or clicks above impressions go to `silver_quarantine`. Schedule: 03:00 UTC daily. It always writes to Databricks (the Silver mirror tables exist only there), whatever `GOLD_BACKEND` says in `.env`; the host command needs the `DATABRICKS_*` values, the Airflow container gets them from `.env`.
 
 ```powershell
 .venv\Scripts\python -m mock_apis.ad_api                        # terminal 1: mock ad API on :8000

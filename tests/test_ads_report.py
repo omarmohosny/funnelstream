@@ -4,6 +4,7 @@ import threading
 import urllib.error
 from datetime import date, datetime, timezone
 from http.server import HTTPServer
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -60,10 +61,13 @@ def _run(store, url, **kw):
     return run(store, url, now=kw.pop("now", NOW), report_dir=kw.pop("report_dir"), **kw)
 
 
-def test_yesterday_is_the_previous_utc_day():
+def test_yesterday_is_the_previous_cairo_day():
+    cairo = ZoneInfo("Africa/Cairo")
     assert yesterday(NOW) == YESTERDAY
-    assert yesterday(datetime(2026, 10, 6, 0, 0, tzinfo=timezone.utc)) == YESTERDAY
-    assert yesterday(datetime(2026, 10, 5, 23, 59, tzinfo=timezone.utc)) == date(2026, 10, 4)
+    assert yesterday(datetime(2026, 10, 6, 0, 0, tzinfo=cairo)) == YESTERDAY
+    assert yesterday(datetime(2026, 10, 5, 23, 59, tzinfo=cairo)) == date(2026, 10, 4)
+    # 21:30 UTC on the 5th is already 00:30 on the 6th in Cairo (UTC+3 until the end of October)
+    assert yesterday(datetime(2026, 10, 5, 21, 30, tzinfo=timezone.utc)) == YESTERDAY
 
 
 def test_first_run_pulls_and_stores_one_row_per_campaign(api, tmp_path):

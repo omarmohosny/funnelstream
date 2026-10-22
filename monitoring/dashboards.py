@@ -268,7 +268,7 @@ def build_marketing_d1():
         return "SELECT %s AS \"%s\" FROM marketing_d1_campaign WHERE report_date = %s" % (expr, alias, latest)
     blue = [{"color": "blue", "value": None}]
     panels = [
-        stat(1, "Spend (EGP)", "Ad spend of the latest D-1 day (the ad platform's UTC day), all campaigns.",
+        stat(1, "Spend (EGP)", "Ad spend of the latest D-1 day (Cairo day), all campaigns.",
              card("coalesce(sum(spend), 0)", "spend"), (0, 0, 4, 5), blue, unit="locale"),
         stat(2, "Orders placed", "Orders attributed to the campaigns (last touch) on the latest D-1 day.",
              card("coalesce(sum(orders_placed), 0)", "orders"), (4, 0, 4, 5), blue),
@@ -315,7 +315,7 @@ def build_marketing_d1():
              "Simulated data. Exposed spend = spend x out-of-stock landing clicks / served landing clicks, both counted "
              "in served districts; it is an estimate that assumes spend is spread evenly over served landing clicks. "
              "The out-of-stock flag is the stock when the minute was written, which a replay can change. Spend, "
-             "orders and demand all use the ad platform's UTC day. Recent days "
+             "orders and demand all use the Cairo day. Recent days "
              "are provisional: ROAS delivered matures after 1 to 3 days.", (0, 18, 24, 4)),
     ]
     d = dashboard("fs-marketing-d1", "FunnelStream: Marketing, D-1", panels)

@@ -409,7 +409,7 @@ Two daily builders write Postgres tables that Grafana and Power BI read:
 - `scripts/build_inventory_daily.py` rebuilds the last two Cairo days of `inventory_daily`, `oos_demand_daily` and `express_daily`. Rebuilding two days settles an order that was still open at midnight.
 - `scripts/build_d1_marketing.py` builds `marketing_d1_campaign` and `marketing_d1_product` for day minus one: spend, ROAS and CPA come from the Databricks `agg_campaign_daily`; out-of-stock demand comes from the Postgres live demand table.
 
-The Airflow DAG `ads_yesterday_report` (03:00 UTC) pulls the ad API once for yesterday, stores it in `silver_campaign_snapshots` and writes a JSON report. A rerun on the same day returns the stored report without calling the API.
+The Airflow DAG `ads_yesterday_report` (03:00 Cairo time) pulls the ad API once for yesterday, stores it in `silver_campaign_snapshots` and writes a JSON report. A rerun on the same day returns the stored report without calling the API.
 
 ---
 
@@ -490,7 +490,7 @@ Placed and delivered revenue, orders, average order value, delivered share and c
 
 #### 2. Campaigns: where should the next budget go?
 
-Spend, CPA, CTR, conversion rate and ROAS delivered; ROAS delivered against placed by campaign; cost per delivered order; a campaign scorecard. The subtitle reminds the reader that ad numbers use the ad API's UTC day and that the latest days are still settling.
+Spend, CPA, CTR, conversion rate and ROAS delivered; ROAS delivered against placed by campaign; cost per delivered order; a campaign scorecard. The subtitle reminds the reader that ad numbers use the Cairo day and that the latest days are still settling.
 
 ![Campaigns](images/powerbi/02_campaigns.png)
 
@@ -574,7 +574,7 @@ The full dictionary with formulas and filters is in `docs/metrics.md`. The headl
 | Exposed spend | `spend x out-of-stock click share` | An estimate |
 | Express on-time rate | on time / (on time + breached) | Target 95% |
 
-Two day definitions exist and are stated wherever they matter: ad spend and ad clicks belong to the ad platform's **UTC day**; orders and demand belong to the **Cairo day**. They differ by at most three hours and the mismatch is accepted.
+One day definition applies everywhere: every date, including the ad report day, is a **Cairo day** (Africa/Cairo, with daylight saving). Timestamps are stored as exact instants (UTC) and shown in Cairo time.
 
 ---
 
@@ -766,7 +766,7 @@ These are stated on the dashboards and in the documents, and are the honest answ
 | **Out-of-stock flag** | The flag on a demand minute is the stock when the minute was written. A replay or a late event can flag it differently, and a stock-out that begins mid-minute credits the whole minute. Exposed spend and the daily marts inherit this. The fix (zero-stock intervals from Silver joined by event time) is future work |
 | **No stock reversal** | Stock is reserved when an order is placed and not put back on cancellation, return or failed delivery, so stock drifts down |
 | **Exposed spend is an estimate** | Spread-evenly assumption over served landing clicks; Assiut and "other" are not served |
-| **Two day definitions** | Ad numbers use the UTC day, orders the Cairo day, at most three hours apart |
+| **One day definition** | Every date is a Cairo day, ad numbers included |
 | **Store is conformed in Postgres only** | Gold has City, not Store. "Orders and stock for the same store" is answered in Postgres only |
 | **Express KPIs** | Exist only in `express_daily` and `live_express_orders`; the Gold delivery measures include express with standard orders |
 | **Campaign key** | Traffic without a campaign is `direct`, which the Campaign dimension has no row for (it shows as blank) |

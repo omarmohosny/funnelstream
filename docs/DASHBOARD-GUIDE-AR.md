@@ -20,7 +20,7 @@
 
 **ألوان Grafana.** الـ stat tiles والـ gauges بتغيّر لونها حسب الـ thresholds. الأخضر معناه سليم، البرتقاني معناه راقب، والأحمر معناه تصرّف. التايلات الزرقا هي أعداد عادية من غير حلو أو وحش. الشرطة المحايدة معناها مفيش بيانات. في charts النسب، الفجوة معناها مفيش بيانات في الدقيقة دي، مش صفر.
 
-**تعريفين لليوم.** إنفاق الإعلانات وclicks الإعلانات بتنتمي ليوم منصة الإعلانات بتوقيت UTC. أما الـ orders والـ stock والـ demand فبتنتمي ليوم القاهرة. الفرق بينهم 3 ساعات بالكتير، وده مقبول.
+**تعريف واحد لليوم.** كل التواريخ بتوقيت القاهرة: إنفاق الإعلانات وclicks الإعلانات والـ orders والـ stock والـ demand.
 
 **معنى "out of stock وقت ما الدقيقة اتكتبت".** الـ demand على الرفوف الفاضية بيتعلّم بمستوى الـ stock في اللحظة اللي الـ live sink كتب فيها الدقيقة دي، مش وقت الـ event. الـ replay أو الـ late event ممكن يعلّمه بشكل مختلف. فهو تقدير.
 
@@ -161,7 +161,7 @@
 
 | Panel | بيعرض إيه وبيتحسب إزاي | إزاي تقراه |
 |---|---|---|
-| Spend (EGP) | Ad spend لآخر يوم D-1، كل الـ campaigns. ده يوم منصة الإعلانات بتوقيت UTC. | أزرق، الـ budget المستخدم. |
+| Spend (EGP) | Ad spend لآخر يوم D-1، كل الـ campaigns. ده يوم القاهرة. | أزرق، الـ budget المستخدم. |
 | Orders placed | الـ orders المنسوبة للـ campaigns بـ last touch في آخر يوم D-1. | أزرق. |
 | ROAS placed | الـ placed revenue مقسوم على الـ spend. | أزرق. هو العائد المتفائل، لأن الـ orders الملغية والفاشلة لسه معدودة. |
 | ROAS delivered (provisional) | الـ delivered revenue مقسوم على الـ spend. | أزرق. العائد الأساسي. التسليم بينضج بعد يوم لتلات أيام من يوم الـ order، فالأيام الأخيرة بتقرا واطية. |
@@ -169,7 +169,7 @@
 | Out-of-stock click share | landing clicks في الدقايق المعلّمة out of stock، مقسومة على كل landing clicks في الـ districts المخدومة. | أخضر تحت 5%، برتقاني من 5 لـ 15%، أحمر من 15%. |
 | Campaigns, sorted by exposed spend (table) | صف لكل campaign بـ spend و orders و CPA و ROAS placed و delivered و clicks اللي اتخدمت و out-of-stock و click share و exposed spend وعلامة provisional. | أنهي campaign بعتت أكتر shoppers لرفوف فاضية. الأيام الـ provisional لسه ممكن تتغيّر. |
 | Top 5 products by revenue at risk (table) | add-to-carts الـ out-of-stock مضروبة في السعر، لكل store و product، في آخر يوم D-1. | أنهي products تعيد تخزينها الأول، أو توقف إعلانها. الـ mart بيحتفظ بكل product out of stock. حد الخمسة ده بتاع الـ panel. |
-| About this data (text) | بيعرّف exposed spend وبيذكر يوم UTC مقابل يوم القاهرة والأيام الـ provisional. | اقراه قبل ما تقتبس الـ exposed spend. |
+| About this data (text) | بيعرّف exposed spend وبيذكر يوم القاهرة والأيام الـ provisional. | اقراه قبل ما تقتبس الـ exposed spend. |
 
 ### 2.7 الـ 8 alert rules
 
@@ -221,7 +221,7 @@
 
 | Visual | بيعرض إيه وبيتحسب إزاي | إزاي تقراه |
 |---|---|---|
-| Card: Spend | مجموع ad spend من الـ ad API. | 11,730. أيام الإعلانات هي أيام UTC. |
+| Card: Spend | مجموع ad spend من الـ ad API. | 11,730. أيام الإعلانات هي أيام القاهرة. |
 | Card: CPA | Cost per acquisition: الـ spend مقسوم على الـ placed orders المنسوبة في الأيام اللي فيها spend. | 93. placed orders بس. |
 | Card: CTR | Click-through rate: الـ clicks اللي بلّغ عنها الـ API مقسومة على impressions. | 2.4%. دي عدّ المنصة للـ clicks، مش الـ click المستخدم في الـ attribution. |
 | Card: Conversion Rate | الـ orders المنسوبة مقسومة على clicks الـ API. | 1.0%. |
@@ -250,7 +250,7 @@
 | Table: Products by revenue at risk (all campaigns) | الـ product والـ store والـ revenue at risk، مترتّبة بالـ revenue at risk. | قايمة الـ products اللي تعيد تخزينها أو توقف إعلانها. في الـ screenshot التلاتة في dark store مدينة نصر. |
 | Bar chart: Revenue at risk by category | الـ revenue at risk لكل category. | عرض الفلوس لـ chart الـ category: fashion حوالي 50K و home 22K. |
 
-**ملاحظة قراءة.** الصفحة دي تقدير. الـ spend هو يوم UTC للإعلانات، والـ demand هو يوم القاهرة. وعلامة الـ out-of-stock هي الـ stock وقت ما الدقيقة اتكتبت.
+**ملاحظة قراءة.** الصفحة دي تقدير. الـ spend والـ orders والـ demand كلها بيوم القاهرة. وعلامة الـ out-of-stock هي الـ stock وقت ما الدقيقة اتكتبت.
 
 ### 3.4 Operations: نعيد تخزين إيه؟ ووعد الـ 20 دقيقة ماشي؟
 

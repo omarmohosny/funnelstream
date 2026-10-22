@@ -2,6 +2,7 @@
 import random
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
@@ -208,7 +209,7 @@ BASELINE = {
 
 def _num(cid, h, seed=42):
     d = date(2026, 10, 1)
-    return campaign_numbers(cid, d, datetime(2026, 10, 1, tzinfo=timezone.utc) + timedelta(hours=h), seed)
+    return campaign_numbers(cid, d, datetime(2026, 10, 1, tzinfo=ZoneInfo("Africa/Cairo")) + timedelta(hours=h), seed)
 
 
 def test_existing_campaign_numbers_unchanged():

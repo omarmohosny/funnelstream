@@ -186,7 +186,7 @@ def test_timezone_offset_honored():
 
 
 def test_as_of_before_day_starts():
-    """as_of before day starts (2026-10-03T23:00:00) returns 0 impressions, clicks, spend."""
+    """as_of before the Cairo day starts (2026-10-03T20:00:00 UTC = 23:00 in Cairo) returns 0 impressions, clicks, spend."""
     server = HTTPServer(("127.0.0.1", 0), Handler)
     host, port = server.server_address
 
@@ -195,7 +195,7 @@ def test_as_of_before_day_starts():
     server_thread.start()
 
     try:
-        url = f"http://{host}:{port}/campaigns?report_date=2026-10-04&as_of=2026-10-03T23:00:00"
+        url = f"http://{host}:{port}/campaigns?report_date=2026-10-04&as_of=2026-10-03T20:00:00"
         with urllib.request.urlopen(url) as response:
             data = json.loads(response.read())
 

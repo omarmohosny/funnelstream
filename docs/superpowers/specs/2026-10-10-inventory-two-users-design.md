@@ -106,9 +106,9 @@ One new alert, `fs-oos-demand`: at least 5 add-to-carts in minutes flagged `oos_
 
 ## 9. Marketing D-1
 
-A daily job `scripts/build_d1_marketing.py` for a given report date (default: yesterday on the UTC calendar).
+A daily job `scripts/build_d1_marketing.py` for a given report date (default: yesterday on the Cairo calendar).
 
-**Day rule (one rule everywhere).** Every campaign measure uses the ad API's UTC day. `agg_campaign_daily.report_date` is the ad day and its order columns are the orders placed on that UTC date. The D-1 job takes yesterday in UTC, reads the demand minutes of that UTC day and the ad row with that `report_date`. (Changed 22 October 2026; before, orders and demand were the Cairo day and the 3-hour mismatch was accepted.)
+**Day rule (one rule everywhere).** Every campaign measure uses the Cairo day. `agg_campaign_daily.report_date` is the Cairo ad day and its order columns are the orders placed on that Cairo date. The D-1 job takes yesterday in Cairo, reads the demand minutes of that Cairo day and the ad row with that `report_date`. (Changed 22 October 2026; before, the ad report was a UTC day and the 3-hour mismatch was accepted.)
 
 1. Read that day's spend, impressions, clicks, orders placed, revenue placed and delivered, CPA, ROAS placed and ROAS delivered per campaign from the Databricks `agg_campaign_daily` (`attribution_model = 'last_touch'`).
 2. From Postgres `live_oos_demand_minute` (the Cairo day), count per campaign the served landing clicks (product views that carry a campaign, in served districts) and how many of them were in minutes flagged `oos_at_write`; and per store and product the flagged views and add-to-carts. Prices come from `dim_product_current`. There is no read of local Silver and no Spark in this job.
@@ -156,7 +156,7 @@ Cuts that stay: reservations, the Databricks mirror of the stock tables and a Go
 ## 14. Known limitations (stated in the documents and on the dashboards)
 
 - **Out-of-stock flag.** `oos_at_write` is the stock when the minute was written. It is not replay-safe, a stock-out that starts mid-minute credits the whole minute, and a late event is judged against the stock at write time (section 7). Exposed spend, `oos_demand_daily` and the D-1 marts inherit this.
-- **Two day definitions.** Campaign measures all use the ad API's UTC day (section 9); other order tables stay on the Cairo day.
+- **Two day definitions.** All dates, including the ad report day, are Cairo days (section 9).
 - **Exposed spend is an estimate.** It assumes spend is spread evenly over served landing clicks; Assiut and "Other" are not served and are excluded from both counts.
 - **Express and Gold.** Express KPIs exist only in `express_daily` and `live_express_orders`; the Gold delivery metrics include express orders together with standard ones, and there is no Gold path from a sale to a store.
 - **No stock reversal.** The model is reserve-on-order: stock is not put back when an order is cancelled, returned or fails delivery, so stock drifts down with every cancellation.

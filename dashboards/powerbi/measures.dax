@@ -25,8 +25,8 @@
 //  5. Stock is semi-additive: closing stock is never summed over days (see "Closing Stock"); sales and receipts are
 //     flows and add normally.
 //  6. All inventory data is SIMULATED. Reservations are out of scope, so available stock equals on-hand stock.
-//  7. Day rule: ad measures (Spend, Impressions, Ad Clicks) are the ad API's UTC day; order and demand measures are the
-//     Cairo day; 'Campaign Daily'[report_date] is the ad day. The mismatch is at most 3 hours and is accepted
+//  7. Day rule: every measure uses the Cairo day, ad measures (Spend, Impressions, Ad Clicks) included;
+//     'Campaign Daily'[report_date] is the Cairo ad day
 //     (MODEL.md, section 3). ROAS is a period ratio: read it over a week or a campaign flight, not as a daily truth.
 //  8. "Out of stock" in the demand measures is the stock when the live sink wrote the minute (oos_at_write); it is not
 //     replay-safe (MODEL.md, section 3).

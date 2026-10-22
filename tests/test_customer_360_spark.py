@@ -8,6 +8,7 @@ gold.fact_orders, gold.fact_order_lines and gold.dim_customer / gold.dim_product
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -134,7 +135,7 @@ def test_the_last_campaign_is_the_one_of_the_newest_order(spark, world):
 
 def test_days_since_last_order_counts_whole_days_to_today(spark, world):
     run_build(world, steps=STEPS, **MONTH)
-    expected = (datetime.now(timezone.utc).date() - date(2026, 10, 7)).days
+    expected = (datetime.now(ZoneInfo("Africa/Cairo")).date() - date(2026, 10, 7)).days
     assert abs(customers(spark, world)["c1"]["days_since_last_order"] - expected) <= 1  # a midnight between two calls
 
 

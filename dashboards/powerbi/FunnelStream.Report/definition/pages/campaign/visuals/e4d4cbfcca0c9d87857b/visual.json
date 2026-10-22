@@ -33,7 +33,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling",
+                    "value": "Where should the next budget go? Ad numbers use the Cairo day; the latest days are still settling",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "9pt",

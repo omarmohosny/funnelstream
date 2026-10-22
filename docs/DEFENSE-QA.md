@@ -79,7 +79,7 @@ It provisions dashboards and alert rules as code, supports a read-only data sour
 It is the common business tool, it supports a semantic model with measures and relationships, and the project format (`.pbip`) keeps the report in text files that a generator can produce and a test can check. We used Import mode with read-only credentials.
 
 **21. What is the role of Airflow?**
-One DAG, `ads_yesterday_report`, runs at 03:00 UTC, pulls the ad API once for the finished UTC day, stores a snapshot and writes a JSON report. It retries on HTTP 503 and returns the stored report on a rerun. It is an optional Docker profile, and the same steps also run as a Python script.
+One DAG, `ads_yesterday_report`, runs at 03:00 Cairo time, pulls the ad API once for the finished Cairo day, stores a snapshot and writes a JSON report. It retries on HTTP 503 and returns the stored report on a rerun. It is an optional Docker profile, and the same steps also run as a Python script.
 
 **22. Why does the Airflow data go straight to Silver and not Bronze?**
 Bronze holds raw Kafka messages with partition, offset and ingest time. The ad report does not come from Kafka. It is one HTTP pull a day, validated when pulled and stored in `silver_campaign_snapshots`. Every pull is kept as its own snapshot, keyed by campaign, report date and pull time, and bad rows go to quarantine. The trade-off is that the raw API response is not kept. A `bronze_ad_pulls` table would close that gap, and that is the honest next step.
@@ -144,7 +144,7 @@ Yes. In the failure demo we killed the Silver job with `docker kill`, watched th
 Ten seconds. On this laptop Silver batches can be slower than the trigger and Spark logs a "batch is falling behind" warning. That is normal here, and we keep the Gold sync off during a demo.
 
 **40. How is event time handled?**
-Events carry `event_time` in UTC. An event is late when Kafka time minus event time exceeds 10 minutes. Late events stay in Silver and Gold, are flagged `is_late`, are left out of the live metrics, and are corrected by the batch. Business days are taken in `Africa/Cairo` time.
+Events carry `event_time` as an exact instant (UTC; reports show Cairo time). An event is late when Kafka time minus event time exceeds 10 minutes. Late events stay in Silver and Gold, are flagged `is_late`, are left out of the live metrics, and are corrected by the batch. Business days are taken in `Africa/Cairo` time.
 
 **41. How do you handle out-of-order order statuses?**
 Arrival order is not trusted. The current status of an order is the status with the highest rank: `order_created` 1, `payment_authorised` 2, `order_packed` 3, `order_shipped` 4, `out_for_delivery` and `delivery_failed` 5, `delivered` 6, `order_completed` and `order_returned` 7. `order_cancelled` has rank 2 and is terminal, and a cancel after shipment is rejected to quarantine.
@@ -224,7 +224,7 @@ No. Last touch favours bottom-funnel channels such as search and retargeting, an
 CPA is spend divided by placed orders. Cost per delivered order is spend divided by delivered orders only. They differ by definition. For example, on the campaigns page ramadan_offer_1 shows a CPA of 171 and a cost per delivered order of 377.
 
 **64. Why are ad numbers on a different day from orders?**
-The ad platform reports on its UTC day, and orders belong to the Cairo day. They differ by at most three hours, and the mismatch is accepted and stated on the pages where it matters.
+Every date is a Cairo day, including the ad report day, so spend, orders and demand line up. Timestamps are stored as exact instants (UTC) and shown in Cairo time.
 
 **65. What is the Postgres fallback for Gold?**
 A `GoldStore` interface has a Databricks backend and a Postgres backend, so the Gold tables can load into Postgres if Databricks is unavailable. The Airflow steps also run as a Python script.
@@ -339,7 +339,7 @@ The live lane and the local lake keep working, because they do not depend on it.
 `.env` is never committed, and `.env.example` lists names only. Kafka, Postgres, Grafana and Airflow ports are bound to `127.0.0.1`. Grafana and Power BI use read-only credentials, and the Databricks write token is used only by the load jobs. The smoke test refuses to touch the real catalog and works in a scratch catalog.
 
 **97. What are the main limitations?**
-All data is simulated. The out-of-stock flag is the stock when the minute was written, so a replay or a late event could flag it differently. Stock is not put back on cancel, return or failed delivery. Exposed spend is an estimate. Ad numbers use the UTC day and orders the Cairo day. Gold has City but no Store dimension. Express KPIs exist only in the Postgres tables. The benchmark is one setup on Databricks Free Edition.
+All data is simulated. The out-of-stock flag is the stock when the minute was written, so a replay or a late event could flag it differently. Stock is not put back on cancel, return or failed delivery. Exposed spend is an estimate. Every date, ad numbers included, is a Cairo day. Gold has City but no Store dimension. Express KPIs exist only in the Postgres tables. The benchmark is one setup on Databricks Free Edition.
 
 **98. What would you do next?**
 Compute stock intervals from Silver by event time so the out-of-stock flag is replay-safe, put stock back on cancel and return, publish the stock tables to Databricks with a Gold table for out-of-stock demand, add delivery zones and a Store dimension in Gold, fill the `rec_product` recommendations table, add margin after cash-on-delivery and cancellation cost, run incrementality tests, overlap simulator rounds so live traffic never goes quiet, and add Great Expectations or dbt on top of the SQL checks.

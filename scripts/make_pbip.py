@@ -74,6 +74,31 @@ def q(name):
     return "'%s'" % name if re.search(r"[^A-Za-z0-9_]", name) else name
 
 
+# Timestamps are stored as UTC instants; the report shows Cairo time. Egypt's daylight saving runs from the last Friday
+# of April 00:00 (UTC+2, Thursday 22:00 UTC) to the last Thursday of October 24:00 (UTC+3, Thursday 21:00 UTC).
+TO_CAIRO_M = (
+    'ToCairo = (t) => if t = null then null else let '
+    'u = if t is datetimezone then DateTimeZone.RemoveZone(DateTimeZone.ToUtc(t)) else t, '
+    'yr = Date.Year(u), '
+    'lastDay = (m as number, dow as number) => let last = #date(yr, m, Date.DaysInMonth(#date(yr, m, 1))) in '
+    'Date.AddDays(last, -Number.Mod(Date.DayOfWeek(last, Day.Sunday) - dow + 7, 7)), '
+    'dstStart = DateTime.From(lastDay(4, 5)) - #duration(0, 2, 0, 0), '
+    'dstEnd = DateTime.From(lastDay(10, 4)) + #duration(0, 21, 0, 0), '
+    'offset = if u >= dstStart and u < dstEnd then 3 else 2 '
+    'in u + #duration(0, offset, 0, 0)')
+
+
+def _m_text(steps, cols):
+    """The M query text; timestamp (_at) columns are converted from UTC to Cairo time as the last step."""
+    at = [c for c, t in cols if t == "dateTime" and c.endswith("_at")]
+    glue = ",\n\t\t\t\t"
+    if not at:
+        return "let\n\t\t\t\t" + glue.join(steps) + "\n\t\t\tin\n\t\t\t\tSelected"
+    conv = "Cairo = Table.TransformColumns(Selected, {%s})" % ", ".join(
+        '{"%s", ToCairo, type nullable datetime}' % c for c in at)
+    return "let\n\t\t\t\t" + glue.join([TO_CAIRO_M] + steps + [conv]) + "\n\t\t\tin\n\t\t\t\tCairo"
+
+
 def infer(col, values):
     if col in INT_NAMES:
         return "int64"
@@ -135,7 +160,7 @@ def table_tmdl(name, gold, step):
         steps.append("Filtered = " + step.replace('#"Selected"', "Raw"))
         last = "Filtered"
     steps.append("Selected = Table.SelectColumns(%s, {%s})" % (last, names))
-    m = "let\n\t\t\t\t" + ",\n\t\t\t\t".join(steps) + "\n\t\t\tin\n\t\t\t\tSelected"
+    m = _m_text(steps, cols)
     out = ["table " + q(name)]
     if name == "Date":
         out.append("\tdataCategory: Time")
@@ -169,7 +194,7 @@ def pg_table_tmdl(name, pg_table, cols):
         'Raw = Source{[Schema = "%s", Item = "%s"]}[Data]' % (PG_SCHEMA, pg_table),
         "Selected = Table.SelectColumns(Raw, {%s})" % names,
     ]
-    m = "let\n\t\t\t\t" + ",\n\t\t\t\t".join(steps) + "\n\t\t\tin\n\t\t\t\tSelected"
+    m = _m_text(steps, cols)
     out = ["table " + q(name), ""]
     for c, t in cols:
         out.append("\tcolumn " + q(c))
@@ -439,7 +464,7 @@ def page_layouts():
                {"Category": [payment], "Y": [M("Orders Placed")]}, sort=M("Orders Placed"))])
     camp, camp_platform = C("Campaign", "name"), C("Campaign", "platform")
     left, right_top, right_low = cols([1, 1], top, BODY_H), cols([1, 1], top, ROW_H), cols([1, 1], mid, ROW_H)
-    pages["campaign"] = ("Campaign", header("FunnelStream  |  Campaigns", "Where should the next budget go? Ad numbers are the ad API's UTC day; the latest days are still settling")
+    pages["campaign"] = ("Campaign", header("FunnelStream  |  Campaigns", "Where should the next budget go? Ad numbers use the Cairo day; the latest days are still settling")
         + slicer_row([date, camp, camp_platform])
         + card_row(["Spend", "CPA", "CTR", "Conversion Rate", "ROAS Delivered"])
         + [vis("clusteredBarChart", "Return on ad spend by campaign: delivered and placed", left[0],
@@ -450,7 +475,7 @@ def page_layouts():
                {"Values": [camp, M("Spend"), M("Orders on Spend Days"), M("CPA"), M("ROAS Delivered"), M("CTR")]},
                sort=M("Spend"))])
     store, category, product = C("Store", "store_name"), C("Product", "category"), C("Product", "name")
-    pages["marketing_inventory"] = ("Marketing and stock", header("FunnelStream  |  Marketing and stock", "Which campaign sent shoppers to empty shelves? An estimate: spend is the ad UTC day and demand the Cairo day")
+    pages["marketing_inventory"] = ("Marketing and stock", header("FunnelStream  |  Marketing and stock", "Which campaign sent shoppers to empty shelves? An estimate: spend, orders and demand all use the Cairo day")
         + slicer_row([date, camp])
         + card_row(["Exposed Spend", "OOS Click Share", "Exposed Share of Spend", "Revenue at Risk", "OOS Add to Cart"])
         + [vis("clusteredBarChart", "Exposed spend and campaign spend (D-1)", t1[0],

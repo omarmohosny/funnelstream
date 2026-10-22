@@ -33,7 +33,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Which campaign sent shoppers to empty shelves? An estimate: spend is the ad UTC day and demand the Cairo day",
+                    "value": "Which campaign sent shoppers to empty shelves? An estimate: spend, orders and demand all use the Cairo day",
                     "textStyle": {
                       "fontFamily": "Segoe UI",
                       "fontSize": "9pt",

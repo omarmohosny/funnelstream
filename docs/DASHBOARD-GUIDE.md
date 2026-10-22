@@ -18,7 +18,7 @@ All numbers in the screenshots come from simulated data. The Grafana screenshots
 
 **Colour conventions in Grafana.** Stat tiles and gauges change colour by thresholds. Green means healthy, orange means watch, red means act. Blue tiles are plain counts with no good or bad. A neutral dash means there is no data. On rate charts, a gap means no data in that minute, not zero.
 
-**Two day definitions.** Ad spend and ad clicks belong to the ad platform's UTC day. Orders, stock and demand belong to the Cairo day. They differ by at most three hours, and this is accepted.
+**One day definition.** Every date is a Cairo day: ad spend, ad clicks, orders, stock and demand.
 
 **What "out of stock when the minute was written" means.** Demand on empty shelves is flagged with the stock level at the moment the live sink wrote that minute, not at the event time. A replay or a late event can flag it differently. It is an estimate.
 
@@ -151,7 +151,7 @@ Six dashboards are provisioned as code. Each panel below is listed in the order 
 
 | Panel | What it shows and how it is calculated | How to read it |
 |---|---|---|
-| Spend (EGP) | Ad spend of the latest D-1 day, all campaigns. This is the ad platform's UTC day. | Blue, the budget used. |
+| Spend (EGP) | Ad spend of the latest D-1 day, all campaigns. This is the Cairo day. | Blue, the budget used. |
 | Orders placed | Orders attributed to the campaigns by last touch on the latest D-1 day. | Blue. |
 | ROAS placed | Placed revenue divided by spend. | Blue. It is the optimistic return, because cancelled and failed orders are still counted. |
 | ROAS delivered (provisional) | Delivered revenue divided by spend. | Blue. The headline return. Delivery matures one to three days after the order day, so recent days read low. |
@@ -159,7 +159,7 @@ Six dashboards are provisioned as code. Each panel below is listed in the order 
 | Out-of-stock click share | Landing clicks in minutes flagged out of stock, divided by all landing clicks in served districts. | Green below 5%, orange 5 to 15%, red from 15%. |
 | Campaigns, sorted by exposed spend (table) | One row per campaign with spend, orders, CPA, ROAS placed and delivered, served and out-of-stock clicks, the click share, exposed spend and a provisional flag. | Which campaign sent the most shoppers to empty shelves. Provisional days can still change. |
 | Top 5 products by revenue at risk (table) | Out-of-stock add-to-carts multiplied by price, by store and product, on the latest D-1 day. | Which products to restock first, or to stop advertising. The mart keeps every out-of-stock product. The limit of five is this panel's. |
-| About this data (text) | Defines exposed spend and notes the UTC versus Cairo day and the provisional days. | Read before quoting the exposed spend. |
+| About this data (text) | Defines exposed spend and notes the Cairo day and the provisional days. | Read before quoting the exposed spend. |
 
 ### 2.7 The eight alert rules
 
@@ -211,7 +211,7 @@ Definitions of the measures are in `dashboards/powerbi/measures.dax`. Three rule
 
 | Visual | What it shows and how it is calculated | How to read it |
 |---|---|---|
-| Card: Spend | Sum of ad spend from the ad API. | 11,730. Ad days are UTC days. |
+| Card: Spend | Sum of ad spend from the ad API. | 11,730. Ad days are Cairo days. |
 | Card: CPA | Cost per acquisition: spend divided by attributed placed orders on days that had spend. | 93. Placed orders only. |
 | Card: CTR | Click-through rate: API-reported clicks divided by impressions. | 2.4%. This is the platform's click count, not the click used for attribution. |
 | Card: Conversion Rate | Attributed orders divided by API clicks. | 1.0%. |
@@ -240,7 +240,7 @@ Definitions of the measures are in `dashboards/powerbi/measures.dax`. Three rule
 | Table: Products by revenue at risk (all campaigns) | Product, store and revenue at risk, sorted by revenue at risk. | The product list to restock or stop advertising. In the screenshot all three are at the Nasr City dark store. |
 | Bar chart: Revenue at risk by category | Revenue at risk per category. | The money view of the category chart: fashion about 50K and home 22K. |
 
-**Reading note.** This page is an estimate. Spend is the ad UTC day and demand is the Cairo day. The out-of-stock flag is the stock when the minute was written.
+**Reading note.** This page is an estimate. Spend, orders and demand all use the Cairo day. The out-of-stock flag is the stock when the minute was written.
 
 ### 3.4 Operations: what to restock, and is the 20-minute promise holding?
 

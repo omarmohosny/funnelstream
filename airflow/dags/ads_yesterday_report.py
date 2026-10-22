@@ -1,4 +1,4 @@
-"""Daily DAG: yesterday's ad report. Runs at 03:00 UTC, when the UTC day that just ended is complete.
+"""Daily DAG: yesterday's ad report. Runs at 03:00 Cairo time, when the Cairo day that just ended is complete.
 
 First run of a day pulls the mock ad API and stores the report; any later run the same day returns the stored
 report without pulling (batch.ads_report.run). Trigger with config {"report_date": "YYYY-MM-DD"} to backfill a day,
@@ -6,6 +6,8 @@ or {"force": true} to pull again.
 """
 import os
 from datetime import date, datetime, timedelta, timezone
+
+import pendulum
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -29,7 +31,7 @@ with DAG(
     dag_id="ads_yesterday_report",
     description="Yesterday's ad report: pull once per day, serve the stored copy on reruns",
     schedule="0 3 * * *",
-    start_date=datetime(2026, 10, 1, tzinfo=timezone.utc),
+    start_date=pendulum.datetime(2026, 10, 1, tz="Africa/Cairo"),
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 2, "retry_delay": timedelta(minutes=5)},

@@ -1,6 +1,6 @@
 """Yesterday's ad report: pull once per day, store it, serve the stored copy on any rerun.
 
-Rule: report_date is yesterday (UTC, the ad API's report day). The pull is final, taken as of 00:00 UTC today,
+Rule: report_date is yesterday on the Cairo calendar (the ad API's report day). The pull is final, taken as of 00:00 Cairo today,
 so every number is the full-day total and a rerun returns the same figures. If the store already holds a
 snapshot for every campaign on that date, nothing is pulled and the stored report is returned
 (status "cached"). Otherwise the API is pulled, validated, stored (status "pulled").
@@ -19,6 +19,7 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from simulator.campaigns import CAMPAIGNS
 
@@ -27,17 +28,18 @@ COLUMNS = ["campaign_id", "report_date", "pulled_at", "utm_campaign", "ad_platfo
            "platform_conversions", "spend", "currency"]
 RETRY_STATUS = {503}
 _BY_ID = {c["campaign_id"]: c for c in CAMPAIGNS}
+CAIRO = ZoneInfo("Africa/Cairo")
 
 
 def yesterday(now: datetime = None) -> date:
     now = now or datetime.now(timezone.utc)
-    return now.astimezone(timezone.utc).date() - timedelta(days=1)
+    return now.astimezone(CAIRO).date() - timedelta(days=1)
 
 
 def final_as_of(report_date: date) -> datetime:
-    """The moment the day is complete: 00:00 UTC of the next day. Fixed per date, so pulled_at never changes."""
+    """The moment the day is complete: 00:00 Cairo of the next day. Fixed per date, so pulled_at never changes."""
     nxt = report_date + timedelta(days=1)
-    return datetime(nxt.year, nxt.month, nxt.day, tzinfo=timezone.utc)
+    return datetime(nxt.year, nxt.month, nxt.day, tzinfo=CAIRO)
 
 
 def pull(api_url: str, report_date: date, as_of: datetime, tries: int = 3, backoff: float = 1.0, sleep=time.sleep):
@@ -104,7 +106,7 @@ def run(store, api_url: str, now: datetime = None, report_date: date = None, for
     """Return {"report_date", "status": "cached"|"pulled", "rows", "rejected", "path"}."""
     now = now or datetime.now(timezone.utc)
     report_date = report_date or yesterday(now)
-    if report_date >= now.astimezone(timezone.utc).date():
+    if report_date >= now.astimezone(CAIRO).date():
         raise ValueError("report_date %s is not a finished day" % report_date)
     rows, rejected, status = stored_report(store, report_date), 0, "cached"
     expected = {c["campaign_id"] for c in CAMPAIGNS}
@@ -138,7 +140,7 @@ def format_report(result) -> str:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--report-date", type=date.fromisoformat, default=None, help="default: yesterday (UTC)")
+    ap.add_argument("--report-date", type=date.fromisoformat, default=None, help="default: yesterday (Cairo)")
     ap.add_argument("--api-url", default=os.environ.get("AD_API_URL", "http://localhost:8000"))
     ap.add_argument("--force", action="store_true", help="pull again even if the report is stored")
     a = ap.parse_args(argv)

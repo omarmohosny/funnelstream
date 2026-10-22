@@ -129,10 +129,12 @@ table 'Customer 360'
 		mode: import
 		source =
 			let
+				ToCairo = (t) => if t = null then null else let u = if t is datetimezone then DateTimeZone.RemoveZone(DateTimeZone.ToUtc(t)) else t, yr = Date.Year(u), lastDay = (m as number, dow as number) => let last = #date(yr, m, Date.DaysInMonth(#date(yr, m, 1))) in Date.AddDays(last, -Number.Mod(Date.DayOfWeek(last, Day.Sunday) - dow + 7, 7)), dstStart = DateTime.From(lastDay(4, 5)) - #duration(0, 2, 0, 0), dstEnd = DateTime.From(lastDay(10, 4)) + #duration(0, 21, 0, 0), offset = if u >= dstStart and u < dstEnd then 3 else 2 in u + #duration(0, offset, 0, 0),
 				Source = Databricks.Catalogs("dbc-a56fe50a-1b9d.cloud.databricks.com", "/sql/1.0/warehouses/17ec51a6e0e7906f", [Catalog = "funnelstream", Database = null, EnableAutomaticProxyDiscovery = null]),
 				Db = Source{[Name = "funnelstream", Kind = "Database"]}[Data],
 				Gold = Db{[Name = "gold", Kind = "Schema"]}[Data],
 				Raw = Gold{[Name = "customer_360", Kind = "Table"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"customer_id", "customer_key", "country", "city", "district", "total_sessions", "product_views", "add_to_cart_count", "checkouts_count", "orders_count", "delivered_count", "cancelled_count", "total_spend", "avg_order_value", "first_order_at", "last_order_at", "last_seen_at", "days_since_last_order", "top_category", "preferred_payment_method", "last_campaign_id", "is_repeat_buyer"})
+				Selected = Table.SelectColumns(Raw, {"customer_id", "customer_key", "country", "city", "district", "total_sessions", "product_views", "add_to_cart_count", "checkouts_count", "orders_count", "delivered_count", "cancelled_count", "total_spend", "avg_order_value", "first_order_at", "last_order_at", "last_seen_at", "days_since_last_order", "top_category", "preferred_payment_method", "last_campaign_id", "is_repeat_buyer"}),
+				Cairo = Table.TransformColumns(Selected, {{"first_order_at", ToCairo, type nullable datetime}, {"last_order_at", ToCairo, type nullable datetime}, {"last_seen_at", ToCairo, type nullable datetime}})
 			in
-				Selected
+				Cairo

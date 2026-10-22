@@ -46,8 +46,10 @@ table 'Stock Now'
 		mode: import
 		source =
 			let
+				ToCairo = (t) => if t = null then null else let u = if t is datetimezone then DateTimeZone.RemoveZone(DateTimeZone.ToUtc(t)) else t, yr = Date.Year(u), lastDay = (m as number, dow as number) => let last = #date(yr, m, Date.DaysInMonth(#date(yr, m, 1))) in Date.AddDays(last, -Number.Mod(Date.DayOfWeek(last, Day.Sunday) - dow + 7, 7)), dstStart = DateTime.From(lastDay(4, 5)) - #duration(0, 2, 0, 0), dstEnd = DateTime.From(lastDay(10, 4)) + #duration(0, 21, 0, 0), offset = if u >= dstStart and u < dstEnd then 3 else 2 in u + #duration(0, offset, 0, 0),
 				Source = PostgreSQL.Database("localhost:5432", "funnelstream"),
 				Raw = Source{[Schema = "public", Item = "live_stock_now"]}[Data],
-				Selected = Table.SelectColumns(Raw, {"store_id", "product_id", "on_hand", "reserved_qty", "available", "reorder_point", "updated_at"})
+				Selected = Table.SelectColumns(Raw, {"store_id", "product_id", "on_hand", "reserved_qty", "available", "reorder_point", "updated_at"}),
+				Cairo = Table.TransformColumns(Selected, {{"updated_at", ToCairo, type nullable datetime}})
 			in
-				Selected
+				Cairo

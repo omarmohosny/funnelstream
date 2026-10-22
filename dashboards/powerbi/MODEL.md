@@ -82,7 +82,7 @@ Findings that shaped the model:
 8. **Not served.** Assiut and "Other" have no store; their demand is excluded from every inventory measure and the report says so.
 9. **Attribution.** Last touch favours bottom-funnel channels; nothing here proves incrementality.
 10. **The 20-minute promise.** Every express order carries its own promise (`promised_minutes`, 20 by default); the on-time test always uses the order's promise, never a constant. A breach is a delivery later than the promise, or an undelivered order older than the promise plus a one-minute grace; orders whose latest status is cancelled or returned are not counted as undelivered past the promise. The SLA clock compares the `order_created` time with the `delivered` event time, both simulator event times. The report must show zero breaches as 0, not blank, so `Express Breaches` returns 0 when there are none.
-11. **Day rule.** Every campaign measure uses the ad API's UTC day: `Campaign Daily[report_date]` is the ad day, its order columns are the orders placed on that UTC date, and the D-1 mart takes yesterday in UTC for the demand and the ad row. Other order tables (`agg_orders_daily`, `fact_orders[date_key]`) stay on the Cairo day, so a campaign-day order count can differ from the Cairo-day count of the same orders.
+11. **Day rule.** Every date is a Cairo day: `Campaign Daily[report_date]` is the Cairo ad day, its order columns are the orders placed on that Cairo date, and the D-1 mart takes yesterday in Cairo for the demand and the ad row.
 12. **ROAS is a period ratio.** A day's ROAS divides that day's spend by revenue credited to that order date, whose clicks can be up to 7 days older; read it over a week or a campaign flight (the Campaign page defaults to a weekly granularity), not as a per-day truth.
 13. **Known limitations.** Express KPIs exist only in `Express Daily` (and the live table); the Gold delivery measures include express orders. Stock is not put back when an order is cancelled (reserve-on-order). `Store` is conformed across the Postgres marts only: Gold has City, not Store.
 
@@ -120,7 +120,7 @@ Canvas 16:9 (1280 x 720). Read order: filters, headline numbers, the main chart,
 - Cards: `Exposed Spend`, `OOS Click Share` (with `Served Clicks` as its denominator), `Exposed Share of Spend`, `Revenue at Risk`, `OOS Add to Cart`.
 - Bars: `Exposed Spend` per campaign next to `Spend` (same axis). Table: products by `Revenue at Risk` with their store and `Days of Cover (max 90)`, with a Top N = 5 filter set in the visual (`Marketing D1 Product` keeps every out-of-stock product, related to `Store` and `Product`).
 - Line: `OOS Add to Cart` per day, with the days the hero products ran out visible.
-- Footnote: the metric is an estimate that assumes spend is spread evenly over served landing clicks; out-of-stock is the stock when the minute was written; spend, orders and demand all use the ad platform's UTC day; recent days are provisional.
+- Footnote: the metric is an estimate that assumes spend is spread evenly over served landing clicks; out-of-stock is the stock when the minute was written; spend, orders and demand all use the Cairo day; recent days are provisional.
 
 Pages 6 to 8 (Delivery and COD, City and product, Customer 360) follow the same pattern after these five.
 

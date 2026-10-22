@@ -6,11 +6,10 @@
 --   Silver and are never summed. Ties on pulled_at: the row with the greatest impressions, then clicks,
 --   platform_conversions, spend, ad_platform. A pull without pulled_at loses to any pull that has one. Snapshot rows
 --   with a NULL campaign_id or report_date are ignored. A day without an ad row has NULL ad measures (not 0).
--- Day rule: report_date is the ad API's UTC day and the order columns use the same day: the orders PLACED on that
---   UTC date (CAST(order_created_at AS DATE) in the forced UTC session), so spend and orders of a row share one day.
---   Other order tables (agg_orders_daily, fact_orders.date_key) stay on the Cairo day.
--- Order measures: orders whose last_touch campaign is not NULL and not 'unknown', on the UTC date the order was
---   PLACED (order_created_at), so delivered revenue sits on the order day. A day with ad data and no orders
+-- Day rule: report_date is the Cairo day (the ad report is a Cairo day). The order columns of a row are the orders
+--   PLACED on that Cairo date (fact_orders.date_key), so spend and orders share one day.
+-- Order measures: orders whose last_touch campaign is not NULL and not 'unknown', on the Cairo date the order was
+--   PLACED (fact_orders.date_key), so delivered revenue sits on the order day. A day with ad data and no orders
 --   has 0 counts and 0.00 revenue and NULL order rates.
 -- Rates are DOUBLE division cast to DECIMAL(8,4); money ratios are cast to DECIMAL(12,2); NULL when the
 --   denominator is NULL or 0 (cpa, cost_per_delivered_order, roas_*: also when spend is NULL or 0).
@@ -19,8 +18,8 @@
 --
 -- (WHEN clause order is fixed by the grammar: MATCHED, NOT MATCHED, NOT MATCHED BY SOURCE.)
 -- Window handling, ONE atomic MERGE: the source holds the campaign-days whose report_date is in the window plus
---   every UTC date of an order the fact_orders step recomputed (a late status row for an old order moves the outcome
---   counts of the UTC day it was PLACED). Matched keys get all measures updated, new keys are
+--   every date of an order the fact_orders step recomputed (a late status row for an old order moves the outcome
+--   counts of the day it was PLACED, as in agg_orders_daily). Matched keys get all measures updated, new keys are
 --   inserted, and NOT MATCHED BY SOURCE deletes a target row inside the window that has neither ad data nor
 --   orders any more. A failure rolls the whole statement back. Limits: a vanished key on a widened date OUTSIDE the
 --   window is not deleted (a MERGE condition cannot hold a subquery); a late snapshot pull for an old report day
@@ -52,9 +51,9 @@ USING (
     WHERE o.order_created_at >= f.first_at
   ),
   days AS (
-    SELECT DISTINCT CAST(f.order_created_at AS DATE) AS report_date
+    SELECT DISTINCT to_date(CAST(f.date_key AS STRING), 'yyyyMMdd') AS report_date
     FROM {gold}.fact_orders f JOIN r ON r.order_id = f.order_id
-    WHERE f.order_created_at IS NOT NULL
+    WHERE f.date_key IS NOT NULL
   ),
   snap AS (
     SELECT x.campaign_id, x.report_date, x.ad_platform, x.impressions, x.clicks, x.platform_conversions, x.spend,
@@ -72,7 +71,7 @@ USING (
     FROM snap WHERE rn = 1
   ),
   od AS (
-    SELECT a.campaign_id, CAST(f.order_created_at AS DATE) AS report_date,
+    SELECT a.campaign_id, to_date(CAST(f.date_key AS STRING), 'yyyyMMdd') AS report_date,
            CAST(COUNT(1) AS BIGINT) AS orders_placed,
            CAST(SUM(CASE WHEN COALESCE(f.is_delivered, FALSE) THEN 1 ELSE 0 END) AS BIGINT) AS orders_delivered,
            CAST(SUM(CASE WHEN COALESCE(f.is_cancelled, FALSE) THEN 1 ELSE 0 END) AS BIGINT) AS orders_cancelled,
@@ -89,11 +88,11 @@ USING (
                          THEN 1 ELSE 0 END) AS BIGINT) AS orders_open
     FROM {gold}.fact_orders f
     JOIN {gold}.fact_attribution a ON a.order_id = f.order_id AND a.model = 'last_touch'
-    LEFT JOIN days d ON d.report_date = CAST(f.order_created_at AS DATE)
-    WHERE a.campaign_id IS NOT NULL AND a.campaign_id <> 'unknown' AND f.order_created_at IS NOT NULL
-      AND (CAST(f.order_created_at AS DATE) BETWEEN DATE'{from_date}' AND DATE'{to_date}'
+    LEFT JOIN days d ON d.report_date = to_date(CAST(f.date_key AS STRING), 'yyyyMMdd')
+    WHERE a.campaign_id IS NOT NULL AND a.campaign_id <> 'unknown' AND f.date_key IS NOT NULL
+      AND (to_date(CAST(f.date_key AS STRING), 'yyyyMMdd') BETWEEN DATE'{from_date}' AND DATE'{to_date}'
            OR d.report_date IS NOT NULL)
-    GROUP BY a.campaign_id, CAST(f.order_created_at AS DATE)
+    GROUP BY a.campaign_id, to_date(CAST(f.date_key AS STRING), 'yyyyMMdd')
   ),
   m AS (
     SELECT COALESCE(ad.campaign_id, od.campaign_id) AS campaign_id,

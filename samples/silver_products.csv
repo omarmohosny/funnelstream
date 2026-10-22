@@ -1,201 +1,201 @@
 product_id,updated_at,name,category,price,is_active
-prod_0001,2025-01-01T00:00:00+00:00,Denim jacket 1,fashion,220.50,true
-prod_0002,2025-01-01T00:00:00+00:00,Argan oil 2,beauty,138.14,true
-prod_0003,2025-01-01T00:00:00+00:00,Phone case 3,electronics,1177.73,false
-prod_0004,2025-01-01T00:00:00+00:00,Bed sheets 4,home,224.22,true
-prod_0005,2025-01-01T00:00:00+00:00,Galabeya 5,fashion,445.72,true
-prod_0006,2025-01-01T00:00:00+00:00,Argan oil 6,beauty,155.62,true
-prod_0007,2025-01-01T00:00:00+00:00,Power bank 7,electronics,1359.51,true
-prod_0008,2025-01-01T00:00:00+00:00,Coffee set 8,home,262.16,true
-prod_0009,2025-01-01T00:00:00+00:00,Abaya 9,fashion,252.93,true
-prod_0010,2025-01-01T00:00:00+00:00,Lipstick 10,beauty,291.06,true
-prod_0011,2025-01-01T00:00:00+00:00,Phone case 11,electronics,1328.11,true
-prod_0012,2025-01-01T00:00:00+00:00,Coffee set 12,home,180.59,true
-prod_0013,2025-01-01T00:00:00+00:00,Denim jacket 13,fashion,581.89,true
-prod_0014,2025-01-01T00:00:00+00:00,Argan oil 14,beauty,260.19,false
-prod_0015,2025-01-01T00:00:00+00:00,Smart watch 15,electronics,1374.91,true
-prod_0016,2025-01-01T00:00:00+00:00,Water filter 16,home,426.34,true
-prod_0017,2025-01-01T00:00:00+00:00,Abaya 17,fashion,476.99,true
-prod_0018,2025-01-01T00:00:00+00:00,Lipstick 18,beauty,184.74,true
-prod_0019,2025-01-01T00:00:00+00:00,Smart watch 19,electronics,1197.86,true
-prod_0020,2025-01-01T00:00:00+00:00,Coffee set 20,home,206.98,true
-prod_0021,2025-01-01T00:00:00+00:00,Denim jacket 21,fashion,302.24,true
-prod_0022,2025-01-01T00:00:00+00:00,Argan oil 22,beauty,157.47,false
-prod_0023,2025-01-01T00:00:00+00:00,Phone case 23,electronics,973.26,true
-prod_0024,2025-01-01T00:00:00+00:00,Water filter 24,home,222.34,true
-prod_0025,2025-01-01T00:00:00+00:00,Galabeya 25,fashion,270.01,true
-prod_0026,2025-01-01T00:00:00+00:00,Argan oil 26,beauty,269.35,true
-prod_0027,2025-01-01T00:00:00+00:00,Smart watch 27,electronics,930.96,true
-prod_0028,2025-01-01T00:00:00+00:00,Towel set 28,home,314.97,true
-prod_0029,2025-01-01T00:00:00+00:00,Abaya 29,fashion,571.66,true
-prod_0030,2025-01-01T00:00:00+00:00,Face serum 30,beauty,279.09,true
-prod_0031,2025-01-01T00:00:00+00:00,Power bank 31,electronics,955.55,true
-prod_0032,2025-01-01T00:00:00+00:00,Water filter 32,home,321.08,true
-prod_0033,2025-01-01T00:00:00+00:00,Hijab set 33,fashion,495.72,true
-prod_0034,2025-01-01T00:00:00+00:00,Kohl pencil 34,beauty,274.02,true
-prod_0035,2025-01-01T00:00:00+00:00,Smart watch 35,electronics,1009.55,true
-prod_0036,2025-01-01T00:00:00+00:00,Water filter 36,home,459.23,true
-prod_0037,2025-01-01T00:00:00+00:00,Abaya 37,fashion,593.30,true
-prod_0038,2025-01-01T00:00:00+00:00,Argan oil 38,beauty,289.80,true
-prod_0039,2025-01-01T00:00:00+00:00,Phone case 39,electronics,705.07,true
-prod_0040,2025-01-01T00:00:00+00:00,Towel set 40,home,342.87,true
-prod_0041,2025-01-01T00:00:00+00:00,Abaya 41,fashion,600.22,true
-prod_0042,2025-01-01T00:00:00+00:00,Argan oil 42,beauty,159.72,true
-prod_0043,2025-01-01T00:00:00+00:00,Smart watch 43,electronics,632.51,true
-prod_0044,2025-01-01T00:00:00+00:00,Water filter 44,home,461.13,true
-prod_0045,2025-01-01T00:00:00+00:00,Galabeya 45,fashion,263.92,true
-prod_0046,2025-01-01T00:00:00+00:00,Argan oil 46,beauty,165.25,true
-prod_0047,2025-01-01T00:00:00+00:00,Earbuds 47,electronics,1581.51,true
-prod_0048,2025-01-01T00:00:00+00:00,Towel set 48,home,378.44,true
-prod_0049,2025-01-01T00:00:00+00:00,Abaya 49,fashion,394.00,true
-prod_0050,2025-01-01T00:00:00+00:00,Lipstick 50,beauty,161.55,true
-prod_0051,2025-01-01T00:00:00+00:00,Smart watch 51,electronics,1175.37,true
-prod_0052,2025-01-01T00:00:00+00:00,Water filter 52,home,158.24,true
-prod_0053,2025-01-01T00:00:00+00:00,Abaya 53,fashion,306.16,true
-prod_0054,2025-01-01T00:00:00+00:00,Lipstick 54,beauty,123.31,true
-prod_0055,2025-01-01T00:00:00+00:00,Earbuds 55,electronics,771.38,true
-prod_0056,2025-01-01T00:00:00+00:00,Towel set 56,home,231.82,true
-prod_0057,2025-01-01T00:00:00+00:00,Galabeya 57,fashion,289.97,true
-prod_0058,2025-01-01T00:00:00+00:00,Argan oil 58,beauty,184.53,true
-prod_0059,2025-01-01T00:00:00+00:00,Phone case 59,electronics,1267.23,true
-prod_0060,2025-01-01T00:00:00+00:00,Bed sheets 60,home,174.91,true
-prod_0061,2025-01-01T00:00:00+00:00,Denim jacket 61,fashion,314.44,true
-prod_0062,2025-01-01T00:00:00+00:00,Face serum 62,beauty,138.28,true
-prod_0063,2025-01-01T00:00:00+00:00,Power bank 63,electronics,809.79,true
-prod_0064,2025-01-01T00:00:00+00:00,Coffee set 64,home,408.10,true
-prod_0065,2025-01-01T00:00:00+00:00,Sneakers 65,fashion,231.25,true
-prod_0066,2025-01-01T00:00:00+00:00,Lipstick 66,beauty,317.30,true
-prod_0067,2025-01-01T00:00:00+00:00,Phone case 67,electronics,719.62,true
-prod_0068,2025-01-01T00:00:00+00:00,Bed sheets 68,home,425.77,true
-prod_0069,2025-01-01T00:00:00+00:00,Denim jacket 69,fashion,369.17,true
-prod_0070,2025-01-01T00:00:00+00:00,Argan oil 70,beauty,308.13,true
-prod_0071,2025-01-01T00:00:00+00:00,Earbuds 71,electronics,996.85,true
-prod_0072,2025-01-01T00:00:00+00:00,Water filter 72,home,204.30,true
-prod_0073,2025-01-01T00:00:00+00:00,Sneakers 73,fashion,453.26,true
-prod_0074,2025-01-01T00:00:00+00:00,Lipstick 74,beauty,120.35,true
-prod_0075,2025-01-01T00:00:00+00:00,Smart watch 75,electronics,601.43,true
-prod_0076,2025-01-01T00:00:00+00:00,Coffee set 76,home,177.38,true
-prod_0077,2025-01-01T00:00:00+00:00,Abaya 77,fashion,379.59,true
-prod_0078,2025-01-01T00:00:00+00:00,Kohl pencil 78,beauty,233.05,false
-prod_0079,2025-01-01T00:00:00+00:00,Smart watch 79,electronics,992.76,true
-prod_0080,2025-01-01T00:00:00+00:00,Bed sheets 80,home,447.63,true
-prod_0081,2025-01-01T00:00:00+00:00,Galabeya 81,fashion,310.25,true
-prod_0082,2025-01-01T00:00:00+00:00,Kohl pencil 82,beauty,206.76,true
-prod_0083,2025-01-01T00:00:00+00:00,Power bank 83,electronics,550.06,true
-prod_0084,2025-01-01T00:00:00+00:00,Bed sheets 84,home,178.86,true
-prod_0085,2025-01-01T00:00:00+00:00,Hijab set 85,fashion,265.63,true
-prod_0086,2025-01-01T00:00:00+00:00,Lipstick 86,beauty,297.92,true
-prod_0087,2025-01-01T00:00:00+00:00,Smart watch 87,electronics,1013.24,true
-prod_0088,2025-01-01T00:00:00+00:00,Bed sheets 88,home,346.84,true
-prod_0089,2025-01-01T00:00:00+00:00,Galabeya 89,fashion,213.29,true
-prod_0090,2025-01-01T00:00:00+00:00,Argan oil 90,beauty,309.26,true
-prod_0091,2025-01-01T00:00:00+00:00,Power bank 91,electronics,825.62,true
-prod_0092,2025-01-01T00:00:00+00:00,Coffee set 92,home,240.97,true
-prod_0093,2025-01-01T00:00:00+00:00,Hijab set 93,fashion,295.51,true
-prod_0094,2025-01-01T00:00:00+00:00,Argan oil 94,beauty,217.17,true
-prod_0095,2025-01-01T00:00:00+00:00,Earbuds 95,electronics,639.68,true
-prod_0096,2025-01-01T00:00:00+00:00,Coffee set 96,home,169.76,true
-prod_0097,2025-01-01T00:00:00+00:00,Hijab set 97,fashion,477.59,true
-prod_0098,2025-01-01T00:00:00+00:00,Lipstick 98,beauty,227.16,true
-prod_0099,2025-01-01T00:00:00+00:00,Smart watch 99,electronics,660.82,true
-prod_0100,2025-01-01T00:00:00+00:00,Towel set 100,home,326.22,true
-prod_0101,2025-01-01T00:00:00+00:00,Abaya 101,fashion,442.06,true
-prod_0102,2025-01-01T00:00:00+00:00,Argan oil 102,beauty,174.58,true
-prod_0103,2025-01-01T00:00:00+00:00,Power bank 103,electronics,1510.84,true
-prod_0104,2025-01-01T00:00:00+00:00,Towel set 104,home,364.08,true
-prod_0105,2025-01-01T00:00:00+00:00,Abaya 105,fashion,581.34,true
-prod_0106,2025-01-01T00:00:00+00:00,Lipstick 106,beauty,307.96,true
-prod_0107,2025-01-01T00:00:00+00:00,Smart watch 107,electronics,1594.30,true
-prod_0108,2025-01-01T00:00:00+00:00,Water filter 108,home,163.73,true
-prod_0109,2025-01-01T00:00:00+00:00,Abaya 109,fashion,538.60,true
-prod_0110,2025-01-01T00:00:00+00:00,Kohl pencil 110,beauty,165.63,true
-prod_0111,2025-01-01T00:00:00+00:00,Phone case 111,electronics,953.15,false
-prod_0112,2025-01-01T00:00:00+00:00,Towel set 112,home,225.40,true
-prod_0113,2025-01-01T00:00:00+00:00,Galabeya 113,fashion,356.86,true
-prod_0114,2025-01-01T00:00:00+00:00,Lipstick 114,beauty,156.15,true
-prod_0115,2025-01-01T00:00:00+00:00,Power bank 115,electronics,894.52,true
-prod_0116,2025-01-01T00:00:00+00:00,Towel set 116,home,265.56,true
-prod_0117,2025-01-01T00:00:00+00:00,Abaya 117,fashion,349.08,false
-prod_0118,2025-01-01T00:00:00+00:00,Kohl pencil 118,beauty,146.57,true
-prod_0119,2025-01-01T00:00:00+00:00,Phone case 119,electronics,581.32,true
-prod_0120,2025-01-01T00:00:00+00:00,Water filter 120,home,383.31,true
-prod_0121,2025-01-01T00:00:00+00:00,Galabeya 121,fashion,623.38,true
-prod_0122,2025-01-01T00:00:00+00:00,Argan oil 122,beauty,163.02,true
-prod_0123,2025-01-01T00:00:00+00:00,Earbuds 123,electronics,1101.51,true
-prod_0124,2025-01-01T00:00:00+00:00,Bed sheets 124,home,269.64,true
-prod_0125,2025-01-01T00:00:00+00:00,Sneakers 125,fashion,471.73,true
-prod_0126,2025-01-01T00:00:00+00:00,Kohl pencil 126,beauty,263.47,true
-prod_0127,2025-01-01T00:00:00+00:00,Power bank 127,electronics,1260.24,true
-prod_0128,2025-01-01T00:00:00+00:00,Coffee set 128,home,328.98,true
-prod_0129,2025-01-01T00:00:00+00:00,Abaya 129,fashion,494.47,true
-prod_0130,2025-01-01T00:00:00+00:00,Lipstick 130,beauty,195.71,true
-prod_0131,2025-01-01T00:00:00+00:00,Smart watch 131,electronics,849.87,true
-prod_0132,2025-01-01T00:00:00+00:00,Towel set 132,home,301.08,true
-prod_0133,2025-01-01T00:00:00+00:00,Galabeya 133,fashion,424.69,true
-prod_0134,2025-01-01T00:00:00+00:00,Face serum 134,beauty,250.31,true
-prod_0135,2025-01-01T00:00:00+00:00,Smart watch 135,electronics,640.86,true
-prod_0136,2025-01-01T00:00:00+00:00,Water filter 136,home,365.91,true
-prod_0137,2025-01-01T00:00:00+00:00,Sneakers 137,fashion,271.89,false
-prod_0138,2025-01-01T00:00:00+00:00,Face serum 138,beauty,240.04,true
-prod_0139,2025-01-01T00:00:00+00:00,Power bank 139,electronics,987.60,true
-prod_0140,2025-01-01T00:00:00+00:00,Coffee set 140,home,380.12,true
-prod_0141,2025-01-01T00:00:00+00:00,Denim jacket 141,fashion,312.47,true
-prod_0142,2025-01-01T00:00:00+00:00,Kohl pencil 142,beauty,300.81,true
-prod_0143,2025-01-01T00:00:00+00:00,Phone case 143,electronics,1380.69,true
-prod_0144,2025-01-01T00:00:00+00:00,Coffee set 144,home,171.67,true
-prod_0145,2025-01-01T00:00:00+00:00,Sneakers 145,fashion,401.71,true
-prod_0146,2025-01-01T00:00:00+00:00,Lipstick 146,beauty,313.21,true
-prod_0147,2025-01-01T00:00:00+00:00,Power bank 147,electronics,1437.01,true
-prod_0148,2025-01-01T00:00:00+00:00,Bed sheets 148,home,388.02,true
-prod_0149,2025-01-01T00:00:00+00:00,Sneakers 149,fashion,525.75,true
-prod_0150,2025-01-01T00:00:00+00:00,Face serum 150,beauty,273.42,true
-prod_0151,2025-01-01T00:00:00+00:00,Earbuds 151,electronics,836.57,true
-prod_0152,2025-01-01T00:00:00+00:00,Water filter 152,home,229.16,true
-prod_0153,2025-01-01T00:00:00+00:00,Denim jacket 153,fashion,243.84,true
-prod_0154,2025-01-01T00:00:00+00:00,Face serum 154,beauty,257.89,true
-prod_0155,2025-01-01T00:00:00+00:00,Smart watch 155,electronics,988.06,true
-prod_0156,2025-01-01T00:00:00+00:00,Water filter 156,home,285.72,true
-prod_0157,2025-01-01T00:00:00+00:00,Abaya 157,fashion,373.58,true
-prod_0158,2025-01-01T00:00:00+00:00,Kohl pencil 158,beauty,293.05,true
-prod_0159,2025-01-01T00:00:00+00:00,Power bank 159,electronics,1055.14,true
-prod_0160,2025-01-01T00:00:00+00:00,Coffee set 160,home,391.08,true
-prod_0161,2025-01-01T00:00:00+00:00,Abaya 161,fashion,436.05,true
-prod_0162,2025-01-01T00:00:00+00:00,Lipstick 162,beauty,213.46,true
-prod_0163,2025-01-01T00:00:00+00:00,Smart watch 163,electronics,571.35,true
-prod_0164,2025-01-01T00:00:00+00:00,Bed sheets 164,home,381.94,true
-prod_0165,2025-01-01T00:00:00+00:00,Galabeya 165,fashion,621.90,true
-prod_0166,2025-01-01T00:00:00+00:00,Argan oil 166,beauty,235.85,true
-prod_0167,2025-01-01T00:00:00+00:00,Smart watch 167,electronics,1234.17,true
-prod_0168,2025-01-01T00:00:00+00:00,Towel set 168,home,212.70,true
-prod_0169,2025-01-01T00:00:00+00:00,Abaya 169,fashion,298.90,true
-prod_0170,2025-01-01T00:00:00+00:00,Kohl pencil 170,beauty,168.10,true
-prod_0171,2025-01-01T00:00:00+00:00,Phone case 171,electronics,812.45,true
-prod_0172,2025-01-01T00:00:00+00:00,Bed sheets 172,home,389.70,true
-prod_0173,2025-01-01T00:00:00+00:00,Denim jacket 173,fashion,304.17,true
-prod_0174,2025-01-01T00:00:00+00:00,Face serum 174,beauty,270.91,true
-prod_0175,2025-01-01T00:00:00+00:00,Phone case 175,electronics,1446.37,true
-prod_0176,2025-01-01T00:00:00+00:00,Bed sheets 176,home,195.38,true
-prod_0177,2025-01-01T00:00:00+00:00,Hijab set 177,fashion,608.06,true
-prod_0178,2025-01-01T00:00:00+00:00,Argan oil 178,beauty,273.65,true
-prod_0179,2025-01-01T00:00:00+00:00,Phone case 179,electronics,1380.02,true
-prod_0180,2025-01-01T00:00:00+00:00,Coffee set 180,home,189.73,false
-prod_0181,2025-01-01T00:00:00+00:00,Hijab set 181,fashion,451.83,true
-prod_0182,2025-01-01T00:00:00+00:00,Lipstick 182,beauty,193.68,true
-prod_0183,2025-01-01T00:00:00+00:00,Power bank 183,electronics,1179.47,true
-prod_0184,2025-01-01T00:00:00+00:00,Towel set 184,home,187.79,true
-prod_0185,2025-01-01T00:00:00+00:00,Hijab set 185,fashion,548.32,true
-prod_0186,2025-01-01T00:00:00+00:00,Lipstick 186,beauty,183.00,true
-prod_0187,2025-01-01T00:00:00+00:00,Smart watch 187,electronics,614.47,true
-prod_0188,2025-01-01T00:00:00+00:00,Water filter 188,home,421.07,true
-prod_0189,2025-01-01T00:00:00+00:00,Abaya 189,fashion,392.08,true
-prod_0190,2025-01-01T00:00:00+00:00,Argan oil 190,beauty,260.78,true
-prod_0191,2025-01-01T00:00:00+00:00,Phone case 191,electronics,1205.19,true
-prod_0192,2025-01-01T00:00:00+00:00,Bed sheets 192,home,301.04,true
-prod_0193,2025-01-01T00:00:00+00:00,Denim jacket 193,fashion,322.73,true
-prod_0194,2025-01-01T00:00:00+00:00,Kohl pencil 194,beauty,168.25,true
-prod_0195,2025-01-01T00:00:00+00:00,Phone case 195,electronics,1155.44,true
-prod_0196,2025-01-01T00:00:00+00:00,Coffee set 196,home,164.95,true
-prod_0197,2025-01-01T00:00:00+00:00,Denim jacket 197,fashion,414.77,true
-prod_0198,2025-01-01T00:00:00+00:00,Lipstick 198,beauty,181.51,true
-prod_0199,2025-01-01T00:00:00+00:00,Phone case 199,electronics,1140.25,true
-prod_0200,2025-01-01T00:00:00+00:00,Coffee set 200,home,182.71,true
+prod_0001,2025-01-01T02:00:00+02:00,Denim jacket 1,fashion,220.50,true
+prod_0002,2025-01-01T02:00:00+02:00,Argan oil 2,beauty,138.14,true
+prod_0003,2025-01-01T02:00:00+02:00,Phone case 3,electronics,1177.73,false
+prod_0004,2025-01-01T02:00:00+02:00,Bed sheets 4,home,224.22,true
+prod_0005,2025-01-01T02:00:00+02:00,Galabeya 5,fashion,445.72,true
+prod_0006,2025-01-01T02:00:00+02:00,Argan oil 6,beauty,155.62,true
+prod_0007,2025-01-01T02:00:00+02:00,Power bank 7,electronics,1359.51,true
+prod_0008,2025-01-01T02:00:00+02:00,Coffee set 8,home,262.16,true
+prod_0009,2025-01-01T02:00:00+02:00,Abaya 9,fashion,252.93,true
+prod_0010,2025-01-01T02:00:00+02:00,Lipstick 10,beauty,291.06,true
+prod_0011,2025-01-01T02:00:00+02:00,Phone case 11,electronics,1328.11,true
+prod_0012,2025-01-01T02:00:00+02:00,Coffee set 12,home,180.59,true
+prod_0013,2025-01-01T02:00:00+02:00,Denim jacket 13,fashion,581.89,true
+prod_0014,2025-01-01T02:00:00+02:00,Argan oil 14,beauty,260.19,false
+prod_0015,2025-01-01T02:00:00+02:00,Smart watch 15,electronics,1374.91,true
+prod_0016,2025-01-01T02:00:00+02:00,Water filter 16,home,426.34,true
+prod_0017,2025-01-01T02:00:00+02:00,Abaya 17,fashion,476.99,true
+prod_0018,2025-01-01T02:00:00+02:00,Lipstick 18,beauty,184.74,true
+prod_0019,2025-01-01T02:00:00+02:00,Smart watch 19,electronics,1197.86,true
+prod_0020,2025-01-01T02:00:00+02:00,Coffee set 20,home,206.98,true
+prod_0021,2025-01-01T02:00:00+02:00,Denim jacket 21,fashion,302.24,true
+prod_0022,2025-01-01T02:00:00+02:00,Argan oil 22,beauty,157.47,false
+prod_0023,2025-01-01T02:00:00+02:00,Phone case 23,electronics,973.26,true
+prod_0024,2025-01-01T02:00:00+02:00,Water filter 24,home,222.34,true
+prod_0025,2025-01-01T02:00:00+02:00,Galabeya 25,fashion,270.01,true
+prod_0026,2025-01-01T02:00:00+02:00,Argan oil 26,beauty,269.35,true
+prod_0027,2025-01-01T02:00:00+02:00,Smart watch 27,electronics,930.96,true
+prod_0028,2025-01-01T02:00:00+02:00,Towel set 28,home,314.97,true
+prod_0029,2025-01-01T02:00:00+02:00,Abaya 29,fashion,571.66,true
+prod_0030,2025-01-01T02:00:00+02:00,Face serum 30,beauty,279.09,true
+prod_0031,2025-01-01T02:00:00+02:00,Power bank 31,electronics,955.55,true
+prod_0032,2025-01-01T02:00:00+02:00,Water filter 32,home,321.08,true
+prod_0033,2025-01-01T02:00:00+02:00,Hijab set 33,fashion,495.72,true
+prod_0034,2025-01-01T02:00:00+02:00,Kohl pencil 34,beauty,274.02,true
+prod_0035,2025-01-01T02:00:00+02:00,Smart watch 35,electronics,1009.55,true
+prod_0036,2025-01-01T02:00:00+02:00,Water filter 36,home,459.23,true
+prod_0037,2025-01-01T02:00:00+02:00,Abaya 37,fashion,593.30,true
+prod_0038,2025-01-01T02:00:00+02:00,Argan oil 38,beauty,289.80,true
+prod_0039,2025-01-01T02:00:00+02:00,Phone case 39,electronics,705.07,true
+prod_0040,2025-01-01T02:00:00+02:00,Towel set 40,home,342.87,true
+prod_0041,2025-01-01T02:00:00+02:00,Abaya 41,fashion,600.22,true
+prod_0042,2025-01-01T02:00:00+02:00,Argan oil 42,beauty,159.72,true
+prod_0043,2025-01-01T02:00:00+02:00,Smart watch 43,electronics,632.51,true
+prod_0044,2025-01-01T02:00:00+02:00,Water filter 44,home,461.13,true
+prod_0045,2025-01-01T02:00:00+02:00,Galabeya 45,fashion,263.92,true
+prod_0046,2025-01-01T02:00:00+02:00,Argan oil 46,beauty,165.25,true
+prod_0047,2025-01-01T02:00:00+02:00,Earbuds 47,electronics,1581.51,true
+prod_0048,2025-01-01T02:00:00+02:00,Towel set 48,home,378.44,true
+prod_0049,2025-01-01T02:00:00+02:00,Abaya 49,fashion,394.00,true
+prod_0050,2025-01-01T02:00:00+02:00,Lipstick 50,beauty,161.55,true
+prod_0051,2025-01-01T02:00:00+02:00,Smart watch 51,electronics,1175.37,true
+prod_0052,2025-01-01T02:00:00+02:00,Water filter 52,home,158.24,true
+prod_0053,2025-01-01T02:00:00+02:00,Abaya 53,fashion,306.16,true
+prod_0054,2025-01-01T02:00:00+02:00,Lipstick 54,beauty,123.31,true
+prod_0055,2025-01-01T02:00:00+02:00,Earbuds 55,electronics,771.38,true
+prod_0056,2025-01-01T02:00:00+02:00,Towel set 56,home,231.82,true
+prod_0057,2025-01-01T02:00:00+02:00,Galabeya 57,fashion,289.97,true
+prod_0058,2025-01-01T02:00:00+02:00,Argan oil 58,beauty,184.53,true
+prod_0059,2025-01-01T02:00:00+02:00,Phone case 59,electronics,1267.23,true
+prod_0060,2025-01-01T02:00:00+02:00,Bed sheets 60,home,174.91,true
+prod_0061,2025-01-01T02:00:00+02:00,Denim jacket 61,fashion,314.44,true
+prod_0062,2025-01-01T02:00:00+02:00,Face serum 62,beauty,138.28,true
+prod_0063,2025-01-01T02:00:00+02:00,Power bank 63,electronics,809.79,true
+prod_0064,2025-01-01T02:00:00+02:00,Coffee set 64,home,408.10,true
+prod_0065,2025-01-01T02:00:00+02:00,Sneakers 65,fashion,231.25,true
+prod_0066,2025-01-01T02:00:00+02:00,Lipstick 66,beauty,317.30,true
+prod_0067,2025-01-01T02:00:00+02:00,Phone case 67,electronics,719.62,true
+prod_0068,2025-01-01T02:00:00+02:00,Bed sheets 68,home,425.77,true
+prod_0069,2025-01-01T02:00:00+02:00,Denim jacket 69,fashion,369.17,true
+prod_0070,2025-01-01T02:00:00+02:00,Argan oil 70,beauty,308.13,true
+prod_0071,2025-01-01T02:00:00+02:00,Earbuds 71,electronics,996.85,true
+prod_0072,2025-01-01T02:00:00+02:00,Water filter 72,home,204.30,true
+prod_0073,2025-01-01T02:00:00+02:00,Sneakers 73,fashion,453.26,true
+prod_0074,2025-01-01T02:00:00+02:00,Lipstick 74,beauty,120.35,true
+prod_0075,2025-01-01T02:00:00+02:00,Smart watch 75,electronics,601.43,true
+prod_0076,2025-01-01T02:00:00+02:00,Coffee set 76,home,177.38,true
+prod_0077,2025-01-01T02:00:00+02:00,Abaya 77,fashion,379.59,true
+prod_0078,2025-01-01T02:00:00+02:00,Kohl pencil 78,beauty,233.05,false
+prod_0079,2025-01-01T02:00:00+02:00,Smart watch 79,electronics,992.76,true
+prod_0080,2025-01-01T02:00:00+02:00,Bed sheets 80,home,447.63,true
+prod_0081,2025-01-01T02:00:00+02:00,Galabeya 81,fashion,310.25,true
+prod_0082,2025-01-01T02:00:00+02:00,Kohl pencil 82,beauty,206.76,true
+prod_0083,2025-01-01T02:00:00+02:00,Power bank 83,electronics,550.06,true
+prod_0084,2025-01-01T02:00:00+02:00,Bed sheets 84,home,178.86,true
+prod_0085,2025-01-01T02:00:00+02:00,Hijab set 85,fashion,265.63,true
+prod_0086,2025-01-01T02:00:00+02:00,Lipstick 86,beauty,297.92,true
+prod_0087,2025-01-01T02:00:00+02:00,Smart watch 87,electronics,1013.24,true
+prod_0088,2025-01-01T02:00:00+02:00,Bed sheets 88,home,346.84,true
+prod_0089,2025-01-01T02:00:00+02:00,Galabeya 89,fashion,213.29,true
+prod_0090,2025-01-01T02:00:00+02:00,Argan oil 90,beauty,309.26,true
+prod_0091,2025-01-01T02:00:00+02:00,Power bank 91,electronics,825.62,true
+prod_0092,2025-01-01T02:00:00+02:00,Coffee set 92,home,240.97,true
+prod_0093,2025-01-01T02:00:00+02:00,Hijab set 93,fashion,295.51,true
+prod_0094,2025-01-01T02:00:00+02:00,Argan oil 94,beauty,217.17,true
+prod_0095,2025-01-01T02:00:00+02:00,Earbuds 95,electronics,639.68,true
+prod_0096,2025-01-01T02:00:00+02:00,Coffee set 96,home,169.76,true
+prod_0097,2025-01-01T02:00:00+02:00,Hijab set 97,fashion,477.59,true
+prod_0098,2025-01-01T02:00:00+02:00,Lipstick 98,beauty,227.16,true
+prod_0099,2025-01-01T02:00:00+02:00,Smart watch 99,electronics,660.82,true
+prod_0100,2025-01-01T02:00:00+02:00,Towel set 100,home,326.22,true
+prod_0101,2025-01-01T02:00:00+02:00,Abaya 101,fashion,442.06,true
+prod_0102,2025-01-01T02:00:00+02:00,Argan oil 102,beauty,174.58,true
+prod_0103,2025-01-01T02:00:00+02:00,Power bank 103,electronics,1510.84,true
+prod_0104,2025-01-01T02:00:00+02:00,Towel set 104,home,364.08,true
+prod_0105,2025-01-01T02:00:00+02:00,Abaya 105,fashion,581.34,true
+prod_0106,2025-01-01T02:00:00+02:00,Lipstick 106,beauty,307.96,true
+prod_0107,2025-01-01T02:00:00+02:00,Smart watch 107,electronics,1594.30,true
+prod_0108,2025-01-01T02:00:00+02:00,Water filter 108,home,163.73,true
+prod_0109,2025-01-01T02:00:00+02:00,Abaya 109,fashion,538.60,true
+prod_0110,2025-01-01T02:00:00+02:00,Kohl pencil 110,beauty,165.63,true
+prod_0111,2025-01-01T02:00:00+02:00,Phone case 111,electronics,953.15,false
+prod_0112,2025-01-01T02:00:00+02:00,Towel set 112,home,225.40,true
+prod_0113,2025-01-01T02:00:00+02:00,Galabeya 113,fashion,356.86,true
+prod_0114,2025-01-01T02:00:00+02:00,Lipstick 114,beauty,156.15,true
+prod_0115,2025-01-01T02:00:00+02:00,Power bank 115,electronics,894.52,true
+prod_0116,2025-01-01T02:00:00+02:00,Towel set 116,home,265.56,true
+prod_0117,2025-01-01T02:00:00+02:00,Abaya 117,fashion,349.08,false
+prod_0118,2025-01-01T02:00:00+02:00,Kohl pencil 118,beauty,146.57,true
+prod_0119,2025-01-01T02:00:00+02:00,Phone case 119,electronics,581.32,true
+prod_0120,2025-01-01T02:00:00+02:00,Water filter 120,home,383.31,true
+prod_0121,2025-01-01T02:00:00+02:00,Galabeya 121,fashion,623.38,true
+prod_0122,2025-01-01T02:00:00+02:00,Argan oil 122,beauty,163.02,true
+prod_0123,2025-01-01T02:00:00+02:00,Earbuds 123,electronics,1101.51,true
+prod_0124,2025-01-01T02:00:00+02:00,Bed sheets 124,home,269.64,true
+prod_0125,2025-01-01T02:00:00+02:00,Sneakers 125,fashion,471.73,true
+prod_0126,2025-01-01T02:00:00+02:00,Kohl pencil 126,beauty,263.47,true
+prod_0127,2025-01-01T02:00:00+02:00,Power bank 127,electronics,1260.24,true
+prod_0128,2025-01-01T02:00:00+02:00,Coffee set 128,home,328.98,true
+prod_0129,2025-01-01T02:00:00+02:00,Abaya 129,fashion,494.47,true
+prod_0130,2025-01-01T02:00:00+02:00,Lipstick 130,beauty,195.71,true
+prod_0131,2025-01-01T02:00:00+02:00,Smart watch 131,electronics,849.87,true
+prod_0132,2025-01-01T02:00:00+02:00,Towel set 132,home,301.08,true
+prod_0133,2025-01-01T02:00:00+02:00,Galabeya 133,fashion,424.69,true
+prod_0134,2025-01-01T02:00:00+02:00,Face serum 134,beauty,250.31,true
+prod_0135,2025-01-01T02:00:00+02:00,Smart watch 135,electronics,640.86,true
+prod_0136,2025-01-01T02:00:00+02:00,Water filter 136,home,365.91,true
+prod_0137,2025-01-01T02:00:00+02:00,Sneakers 137,fashion,271.89,false
+prod_0138,2025-01-01T02:00:00+02:00,Face serum 138,beauty,240.04,true
+prod_0139,2025-01-01T02:00:00+02:00,Power bank 139,electronics,987.60,true
+prod_0140,2025-01-01T02:00:00+02:00,Coffee set 140,home,380.12,true
+prod_0141,2025-01-01T02:00:00+02:00,Denim jacket 141,fashion,312.47,true
+prod_0142,2025-01-01T02:00:00+02:00,Kohl pencil 142,beauty,300.81,true
+prod_0143,2025-01-01T02:00:00+02:00,Phone case 143,electronics,1380.69,true
+prod_0144,2025-01-01T02:00:00+02:00,Coffee set 144,home,171.67,true
+prod_0145,2025-01-01T02:00:00+02:00,Sneakers 145,fashion,401.71,true
+prod_0146,2025-01-01T02:00:00+02:00,Lipstick 146,beauty,313.21,true
+prod_0147,2025-01-01T02:00:00+02:00,Power bank 147,electronics,1437.01,true
+prod_0148,2025-01-01T02:00:00+02:00,Bed sheets 148,home,388.02,true
+prod_0149,2025-01-01T02:00:00+02:00,Sneakers 149,fashion,525.75,true
+prod_0150,2025-01-01T02:00:00+02:00,Face serum 150,beauty,273.42,true
+prod_0151,2025-01-01T02:00:00+02:00,Earbuds 151,electronics,836.57,true
+prod_0152,2025-01-01T02:00:00+02:00,Water filter 152,home,229.16,true
+prod_0153,2025-01-01T02:00:00+02:00,Denim jacket 153,fashion,243.84,true
+prod_0154,2025-01-01T02:00:00+02:00,Face serum 154,beauty,257.89,true
+prod_0155,2025-01-01T02:00:00+02:00,Smart watch 155,electronics,988.06,true
+prod_0156,2025-01-01T02:00:00+02:00,Water filter 156,home,285.72,true
+prod_0157,2025-01-01T02:00:00+02:00,Abaya 157,fashion,373.58,true
+prod_0158,2025-01-01T02:00:00+02:00,Kohl pencil 158,beauty,293.05,true
+prod_0159,2025-01-01T02:00:00+02:00,Power bank 159,electronics,1055.14,true
+prod_0160,2025-01-01T02:00:00+02:00,Coffee set 160,home,391.08,true
+prod_0161,2025-01-01T02:00:00+02:00,Abaya 161,fashion,436.05,true
+prod_0162,2025-01-01T02:00:00+02:00,Lipstick 162,beauty,213.46,true
+prod_0163,2025-01-01T02:00:00+02:00,Smart watch 163,electronics,571.35,true
+prod_0164,2025-01-01T02:00:00+02:00,Bed sheets 164,home,381.94,true
+prod_0165,2025-01-01T02:00:00+02:00,Galabeya 165,fashion,621.90,true
+prod_0166,2025-01-01T02:00:00+02:00,Argan oil 166,beauty,235.85,true
+prod_0167,2025-01-01T02:00:00+02:00,Smart watch 167,electronics,1234.17,true
+prod_0168,2025-01-01T02:00:00+02:00,Towel set 168,home,212.70,true
+prod_0169,2025-01-01T02:00:00+02:00,Abaya 169,fashion,298.90,true
+prod_0170,2025-01-01T02:00:00+02:00,Kohl pencil 170,beauty,168.10,true
+prod_0171,2025-01-01T02:00:00+02:00,Phone case 171,electronics,812.45,true
+prod_0172,2025-01-01T02:00:00+02:00,Bed sheets 172,home,389.70,true
+prod_0173,2025-01-01T02:00:00+02:00,Denim jacket 173,fashion,304.17,true
+prod_0174,2025-01-01T02:00:00+02:00,Face serum 174,beauty,270.91,true
+prod_0175,2025-01-01T02:00:00+02:00,Phone case 175,electronics,1446.37,true
+prod_0176,2025-01-01T02:00:00+02:00,Bed sheets 176,home,195.38,true
+prod_0177,2025-01-01T02:00:00+02:00,Hijab set 177,fashion,608.06,true
+prod_0178,2025-01-01T02:00:00+02:00,Argan oil 178,beauty,273.65,true
+prod_0179,2025-01-01T02:00:00+02:00,Phone case 179,electronics,1380.02,true
+prod_0180,2025-01-01T02:00:00+02:00,Coffee set 180,home,189.73,false
+prod_0181,2025-01-01T02:00:00+02:00,Hijab set 181,fashion,451.83,true
+prod_0182,2025-01-01T02:00:00+02:00,Lipstick 182,beauty,193.68,true
+prod_0183,2025-01-01T02:00:00+02:00,Power bank 183,electronics,1179.47,true
+prod_0184,2025-01-01T02:00:00+02:00,Towel set 184,home,187.79,true
+prod_0185,2025-01-01T02:00:00+02:00,Hijab set 185,fashion,548.32,true
+prod_0186,2025-01-01T02:00:00+02:00,Lipstick 186,beauty,183.00,true
+prod_0187,2025-01-01T02:00:00+02:00,Smart watch 187,electronics,614.47,true
+prod_0188,2025-01-01T02:00:00+02:00,Water filter 188,home,421.07,true
+prod_0189,2025-01-01T02:00:00+02:00,Abaya 189,fashion,392.08,true
+prod_0190,2025-01-01T02:00:00+02:00,Argan oil 190,beauty,260.78,true
+prod_0191,2025-01-01T02:00:00+02:00,Phone case 191,electronics,1205.19,true
+prod_0192,2025-01-01T02:00:00+02:00,Bed sheets 192,home,301.04,true
+prod_0193,2025-01-01T02:00:00+02:00,Denim jacket 193,fashion,322.73,true
+prod_0194,2025-01-01T02:00:00+02:00,Kohl pencil 194,beauty,168.25,true
+prod_0195,2025-01-01T02:00:00+02:00,Phone case 195,electronics,1155.44,true
+prod_0196,2025-01-01T02:00:00+02:00,Coffee set 196,home,164.95,true
+prod_0197,2025-01-01T02:00:00+02:00,Denim jacket 197,fashion,414.77,true
+prod_0198,2025-01-01T02:00:00+02:00,Lipstick 198,beauty,181.51,true
+prod_0199,2025-01-01T02:00:00+02:00,Phone case 199,electronics,1140.25,true
+prod_0200,2025-01-01T02:00:00+02:00,Coffee set 200,home,182.71,true

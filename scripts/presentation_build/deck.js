@@ -335,7 +335,7 @@ slides.push({ bg: C.white, minutes: "1:00",
 // ============================== 12. Power BI campaigns ================================================================
 slides.push({ bg: C.white, minutes: "1:15",
   items: shotSlide(12, "3  OBSERVABILITY AND BUSINESS INTELLIGENCE", "Power BI: where should the next budget go?", "pbi_campaigns",
-    "Power BI, Campaigns page. Simulated data. Ad numbers use the ad API's UTC day.",
+    "Power BI, Campaigns page. Simulated data. Ad numbers use the Cairo day.",
     "What marketing reads", [
       [b("Headline ROAS is on delivered orders: 8.39. "), r("On placed orders it is higher everywhere (eid_sale_1: 21.55 placed, 11.67 delivered), because cash-on-delivery orders cancel or fail.")],
       [b("Cost per delivered order: "), r("377 for ramadan_offer_1, 184 for retarget_cart_1, 119 for eid_sale_1.")],

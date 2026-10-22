@@ -14,7 +14,7 @@
 --   total_spend (EGP) = order_total of the orders that were neither cancelled nor returned, and avg_order_value =
 --   total_spend divided by the number of those orders (NULL when there are none);
 --   first_order_at and last_order_at = the oldest and newest order_created_at;
---   days_since_last_order = whole days from the last order to today (session time zone, UTC): the one column that
+--   days_since_last_order = whole Cairo calendar days from the last order to today in Cairo: the one column that
 --   changes with the clock, as open_rate does;
 --   is_repeat_buyer = at least two placed orders;
 --   preferred_payment_method = the payment method used most often (ties: the first alphabetically);
@@ -125,7 +125,9 @@ USING (
               AS DECIMAL(12,2)) AS avg_order_value,
          o.first_order_at, o.last_order_at, e.last_seen_at,
          CAST(CASE WHEN o.last_order_at IS NOT NULL
-                   THEN datediff(current_date(), CAST(o.last_order_at AS DATE)) END AS INT) AS days_since_last_order,
+                   THEN datediff(CAST(from_utc_timestamp(current_timestamp(), 'Africa/Cairo') AS DATE),
+                                 CAST(from_utc_timestamp(o.last_order_at, 'Africa/Cairo') AS DATE)) END AS INT)
+         AS days_since_last_order,
          k.category AS top_category,
          p.payment_method AS preferred_payment_method,
          l.campaign_id AS last_campaign_id,
