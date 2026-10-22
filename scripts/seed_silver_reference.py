@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from contracts.geo import normalize_district
-from contracts.normalize import normalize_city, normalize_device
+from contracts.normalize import normalize_city, normalize_device, to_cairo_naive
 from simulator.catalog import make_catalog, make_customers
 
 _CENT = Decimal("0.01")
@@ -21,13 +21,14 @@ def catalog_to_silver_rows(catalog, customers, updated_at):
     products = [{
         "product_id": p["product_id"], "updated_at": updated_at, "name": p["name"], "category": p["category"],
         "price": Decimal(str(p["price"])).quantize(_CENT), "is_active": bool(p["is_active"]),
+        "updated_at_cairo": to_cairo_naive(updated_at),
     } for p in catalog]
     custs = [{
         "customer_id": c["customer_id"], "updated_at": updated_at, "country": c["country"],
         "city": normalize_city(c["city"]),
         "district": normalize_district(normalize_city(c["city"]), c.get("district")), "signup_date": c["signup_date"],
         "primary_device": normalize_device(c["device_primary"]),
-        "marketing_consent": bool(c["marketing_consent"]),
+        "marketing_consent": bool(c["marketing_consent"]), "updated_at_cairo": to_cairo_naive(updated_at),
     } for c in customers]
     return products, custs
 

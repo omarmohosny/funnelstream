@@ -41,9 +41,10 @@ STEPS = [
 CHECKS_STEP = "checks"  # runs warehouse/checks.py instead of a SQL file
 _NO_TABLE = (CHECKS_STEP,)  # steps that have no target table to count
 
-# Cairo dates are made with from_utc_timestamp(ts, 'Africa/Cairo') and then cast or formatted in the SESSION time
-# zone, which is only right when that zone is UTC. Every step starts with this statement (so it also holds after a
-# store reconnect between steps) and the first executed statement of a run is this one.
+# Cairo dates come from the Silver *_cairo columns (the Silver transformation to Cairo time). Only customer_360 still
+# converts a Gold timestamp with from_utc_timestamp(ts, 'Africa/Cairo') and casts it in the SESSION time zone, which is
+# only right when that zone is UTC. Every step starts with this statement (so it also holds after a store reconnect
+# between steps) and the first executed statement of a run is this one.
 TIME_ZONE_SQL = "SET TIME ZONE 'UTC'"
 
 ORDERS_WITHOUT_CREATED_AT_SQL = (

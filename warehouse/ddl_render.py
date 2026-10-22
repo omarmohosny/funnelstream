@@ -136,6 +136,12 @@ def _dbx_table(t, catalog=CATALOG):
         catalog, t.schema_group, t.name, ",\n".join(lines), tail)
 
 
+def add_columns_statement(t, columns, catalog=CATALOG):
+    """ALTER TABLE ... ADD COLUMNS for `columns` (Column objects) that an existing table of `t` lacks."""
+    cols = ", ".join("%s %s" % (c.name, _dbx_type(c.type)) for c in columns)
+    return "ALTER TABLE %s.%s.%s ADD COLUMNS (%s);" % (catalog, t.schema_group, t.name, cols)
+
+
 def render_databricks(tables, catalog=CATALOG, volume=None) -> str:
     """catalog: target catalog (default funnelstream). volume: if given, add
     CREATE VOLUME IF NOT EXISTS <catalog>.silver.<volume> after the schemas and before the tables."""

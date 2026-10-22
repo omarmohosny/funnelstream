@@ -20,7 +20,7 @@ USING (
     SELECT o.order_id
     FROM {silver}.silver_orders o
     WHERE o.order_created_at IS NOT NULL
-      AND CAST(from_utc_timestamp(o.order_created_at, 'Africa/Cairo') AS DATE)
+      AND CAST(o.order_created_at_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
     UNION
     SELECT s.order_id
@@ -80,7 +80,7 @@ USING (
   d AS (
     SELECT so.order_id, so.customer_id, so.session_id, so.channel, so.platform, so.utm_source, so.utm_campaign,
            so.click_id, so.payment_method, a.carrier, so.city, so.district, so.country, so.order_total,
-           c.current_status, c.status_rank, so.order_created_at, a.delivered_at,
+           c.current_status, c.status_rank, so.order_created_at, so.order_created_at_cairo, a.delivered_at,
            a.counted_cancel_at AS cancelled_at, a.returned_at, a.delivery_failed_count,
            (a.delivered_at IS NOT NULL) AS is_delivered,
            (a.counted_cancel_at IS NOT NULL AND a.delivered_at IS NULL) AS is_cancelled,
@@ -126,7 +126,7 @@ USING (
          d.is_cancelled, d.is_delivered, d.is_returned,
          seq.order_seq,
          COALESCE(seq.order_seq = 1, FALSE) AS is_first_order,
-         CAST(date_format(from_utc_timestamp(d.order_created_at, 'Africa/Cairo'), 'yyyyMMdd') AS INT) AS date_key
+         CAST(date_format(d.order_created_at_cairo, 'yyyyMMdd') AS INT) AS date_key
   FROM d JOIN ck ON ck.order_id = d.order_id JOIN seq ON seq.order_id = d.order_id
 ) AS s
 ON t.order_id = s.order_id

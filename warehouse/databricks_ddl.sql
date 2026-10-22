@@ -270,7 +270,9 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_events (
     cart_id STRING,
     order_id STRING,
     search_term STRING,
-    event_date DATE
+    event_date DATE,
+    event_time_cairo TIMESTAMP,
+    kafka_timestamp_cairo TIMESTAMP
 )
 USING DELTA
 PARTITIONED BY (event_date)
@@ -292,7 +294,8 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_orders (
     country STRING,
     order_total DECIMAL(12,2),
     order_created_at TIMESTAMP,
-    event_date DATE
+    event_date DATE,
+    order_created_at_cairo TIMESTAMP
 )
 USING DELTA
 PARTITIONED BY (event_date)
@@ -308,7 +311,8 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_order_status (
     payment_method STRING,
     carrier STRING,
     reason STRING,
-    event_date DATE
+    event_date DATE,
+    status_time_cairo TIMESTAMP
 )
 USING DELTA
 PARTITIONED BY (event_date)
@@ -322,7 +326,8 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_order_items (
     unit_price DECIMAL(12,2),
     line_total DECIMAL(12,2),
     currency STRING,
-    order_time TIMESTAMP
+    order_time TIMESTAMP,
+    order_time_cairo TIMESTAMP
 )
 USING DELTA
 COMMENT 'keys: order_id, line_no (documented, not enforced); Databricks mirror of local Silver';
@@ -344,7 +349,8 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_products (
     name STRING,
     category STRING,
     price DECIMAL(10,2),
-    is_active BOOLEAN
+    is_active BOOLEAN,
+    updated_at_cairo TIMESTAMP
 )
 USING DELTA
 COMMENT 'keys: product_id, updated_at (documented, not enforced); Databricks mirror of local Silver';
@@ -357,7 +363,8 @@ CREATE TABLE IF NOT EXISTS funnelstream.silver.silver_customers (
     district STRING,
     signup_date DATE,
     primary_device STRING,
-    marketing_consent BOOLEAN
+    marketing_consent BOOLEAN,
+    updated_at_cairo TIMESTAMP
 )
 USING DELTA
 COMMENT 'keys: customer_id, updated_at (documented, not enforced); Databricks mirror of local Silver';

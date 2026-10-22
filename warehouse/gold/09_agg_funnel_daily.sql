@@ -36,7 +36,7 @@ USING (
     SELECT DISTINCT e.event_date
     FROM {silver}.silver_events e
     WHERE e.event_date < DATE'{from_date}' AND e.kafka_timestamp IS NOT NULL
-      AND CAST(from_utc_timestamp(e.kafka_timestamp, 'Africa/Cairo') AS DATE)
+      AND CAST(e.kafka_timestamp_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
   ),
   ev AS (

@@ -10,7 +10,7 @@ USING (
   WITH daily AS (
     SELECT p.product_id, p.name, p.category, p.price, p.is_active, p.updated_at,
            ROW_NUMBER() OVER (PARTITION BY p.product_id,
-                                           CAST(from_utc_timestamp(p.updated_at, 'Africa/Cairo') AS DATE)
+                                           CAST(p.updated_at_cairo AS DATE)
                               ORDER BY p.updated_at DESC) AS rn
     FROM {silver}.silver_products p
     WHERE p.product_id IS NOT NULL AND p.updated_at IS NOT NULL

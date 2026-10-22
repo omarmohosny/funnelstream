@@ -19,9 +19,10 @@ CATALOG = make_catalog(3)
 def test_schema_names_equal_columns():
     for table, cols in TABLE_COLUMNS.items():
         assert SCHEMAS[table].names == cols
-    assert SCHEMAS["silver_products"].names == ["product_id", "updated_at", "name", "category", "price", "is_active"]
+    assert SCHEMAS["silver_products"].names == ["product_id", "updated_at", "name", "category", "price", "is_active",
+                                                "updated_at_cairo"]
     assert SCHEMAS["silver_customers"].names == ["customer_id", "updated_at", "country", "city", "district", "signup_date",
-                                                 "primary_device", "marketing_consent"]
+                                                 "primary_device", "marketing_consent", "updated_at_cairo"]
     assert set(SCHEMAS) == set(ALL_COLUMNS)
 
 

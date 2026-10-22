@@ -11,7 +11,7 @@ USING (
     SELECT o.order_id
     FROM {silver}.silver_orders o
     WHERE o.order_created_at IS NOT NULL
-      AND CAST(from_utc_timestamp(o.order_created_at, 'Africa/Cairo') AS DATE)
+      AND CAST(o.order_created_at_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
     UNION
     SELECT s.order_id
@@ -19,7 +19,7 @@ USING (
     WHERE s.event_date BETWEEN DATE'{from_date}' AND DATE'{to_date}'
   ),
   base AS (
-    SELECT i.order_id, i.line_no, o.customer_id, i.product_id, o.order_created_at, o.city, o.district,
+    SELECT i.order_id, i.line_no, o.customer_id, i.product_id, o.order_created_at, o.order_created_at_cairo, o.city, o.district,
            i.quantity, i.line_total
     FROM {silver}.silver_order_items i
       JOIN {silver}.silver_orders o ON o.order_id = i.order_id
@@ -54,7 +54,7 @@ USING (
          b.customer_id,
          COALESCE(pk.product_key, CAST(-1 AS BIGINT)) AS product_key,
          b.product_id,
-         CAST(date_format(from_utc_timestamp(b.order_created_at, 'Africa/Cairo'), 'yyyyMMdd') AS INT) AS date_key,
+         CAST(date_format(b.order_created_at_cairo, 'yyyyMMdd') AS INT) AS date_key,
          b.city, b.district, b.quantity, b.line_total
   FROM base b
     JOIN ck ON ck.order_id = b.order_id AND ck.line_no = b.line_no

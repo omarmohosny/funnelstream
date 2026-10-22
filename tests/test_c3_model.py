@@ -125,6 +125,9 @@ class FakeStore:
     def execute(self, sql, retry=True):
         self.executed.append(sql)
 
+    def query(self, sql, params=None, retry=True):  # DESCRIBE TABLE: no table exists in this fake
+        return []
+
     def run_script(self, sql_text, retry=True):  # pragma: no cover - apply_ddl must not use it any more
         raise AssertionError("seeds need individual execute calls")
 

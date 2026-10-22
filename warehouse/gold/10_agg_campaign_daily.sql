@@ -30,7 +30,7 @@ USING (
     SELECT o.order_id
     FROM {silver}.silver_orders o
     WHERE o.order_created_at IS NOT NULL
-      AND CAST(from_utc_timestamp(o.order_created_at, 'Africa/Cairo') AS DATE)
+      AND CAST(o.order_created_at_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
     UNION
     SELECT s.order_id

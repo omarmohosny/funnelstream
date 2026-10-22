@@ -27,10 +27,10 @@ MOVE = {"event_id": "evt_m1", "event_type": "stock_movement", "event_version": 1
 def test_the_new_tables_have_their_columns():
     assert TABLE_COLUMNS["silver_stock_snapshots"] == [
         "event_id", "store_id", "product_id", "on_hand", "reserved_qty", "reorder_point", "event_time",
-        "kafka_timestamp", "event_date"]
+        "kafka_timestamp", "event_date", "event_time_cairo"]
     assert TABLE_COLUMNS["silver_stock_movements"] == [
         "event_id", "store_id", "product_id", "qty_delta", "reason", "order_id", "requested_qty", "event_time",
-        "kafka_timestamp", "event_date"]
+        "kafka_timestamp", "event_date", "event_time_cairo"]
 
 
 def test_a_snapshot_becomes_one_snapshot_row_with_reserved_defaulting_to_zero():

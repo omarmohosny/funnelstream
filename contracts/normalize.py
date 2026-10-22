@@ -2,6 +2,9 @@
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
+
+CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
 CANONICAL_CITIES = ("Cairo", "Giza", "Alexandria", "Mansoura", "Tanta", "Assiut", "Other")
 
@@ -47,6 +50,17 @@ def to_utc_iso(value) -> str:
         return ts.astimezone(timezone.utc).isoformat()
     except OverflowError as e:
         raise ValueError(str(e))
+
+
+def to_cairo_naive(value):
+    """The Cairo wall-clock time of an instant, as a naive datetime. `value` is an ISO string or a datetime (naive = UTC).
+    Silver stores it next to the UTC instant (the *_cairo columns); the UTC value stays the exact instant, so the hour
+    that repeats when Egypt's clocks go back is never ambiguous there."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.strip())
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CAIRO_TZ).replace(tzinfo=None)
 
 
 def to_decimal(value) -> Decimal:

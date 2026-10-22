@@ -59,7 +59,7 @@ def run(event):
 
 def test_the_express_table_has_its_columns():
     assert TABLE_COLUMNS["silver_express_orders"] == ["order_id", "store_id", "promised_minutes", "created_at",
-                                                      "event_date"]
+                                                      "event_date", "created_at_cairo"]
 
 
 def test_an_express_order_adds_one_express_row_to_the_usual_rows():

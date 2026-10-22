@@ -33,26 +33,28 @@ PUBLISH_ALLOWLIST = {
         "event_id", "event_type", "event_time", "kafka_timestamp", "is_late", "is_bot", "event_version",
         "session_id", "customer_id", "device", "channel", "platform", "country", "city", "district",
         "campaign_id", "utm_source", "utm_campaign", "utm_medium", "click_id", "page_url", "product_id", "element", "dwell_seconds", "cart_id", "order_id",
-        "search_term", "event_date",
+        "search_term", "event_date", "event_time_cairo", "kafka_timestamp_cairo",
     ],
     "silver_orders": [
         "order_id", "customer_id", "session_id", "channel", "platform", "utm_source", "utm_campaign", "utm_medium",
         "click_id", "payment_method", "city", "district", "country", "order_total", "order_created_at", "event_date",
+        "order_created_at_cairo",
     ],
     "silver_order_status": [
         "event_id", "order_id", "customer_id", "status", "status_rank", "status_time", "payment_method",
-        "carrier", "reason", "event_date",
+        "carrier", "reason", "event_date", "status_time_cairo",
     ],
     "silver_order_items": [
         "order_id", "line_no", "product_id", "quantity", "unit_price", "line_total", "currency", "order_time",
+        "order_time_cairo",
     ],
     "silver_quarantine": [  # raw_payload deliberately absent: raw rows never leave the machine
         "quarantine_id", "source_topic", "error_code", "error_detail", "received_at",
     ],
-    "silver_products": ["product_id", "updated_at", "name", "category", "price", "is_active"],
+    "silver_products": ["product_id", "updated_at", "name", "category", "price", "is_active", "updated_at_cairo"],
     "silver_customers": [
         "customer_id", "updated_at", "country", "city", "district", "signup_date", "primary_device",
-        "marketing_consent",
+        "marketing_consent", "updated_at_cairo",
     ],
     "silver_campaign_snapshots": [
         "campaign_id", "report_date", "pulled_at", "utm_campaign", "ad_platform", "impressions", "clicks",

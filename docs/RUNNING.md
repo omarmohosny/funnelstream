@@ -176,6 +176,8 @@ After Amendment C (step C2) `silver_events` and `silver_orders` have a nullable 
 
 After Amendment D, `silver_events` has `district` (right after `city`), `utm_medium` (after `utm_campaign`) and `page_url` (after `click_id`); `silver_orders` has `district` and `utm_medium` in the same places; `silver_customers` has `district` after `city`. `utm_source`, `utm_medium` and `utm_campaign` of an event are parsed from its `page_url` (older Bronze data without `page_url` falls back to the payload fields, `utm_medium` NULL). A district outside its city becomes `unknown` and the row is kept; `silver_clean` logs the number of such events and orders per batch as `district_violations=N`. Existing Silver Delta tables must be recreated (delete `data/lake/silver` and the Silver checkpoint, rerun `seed_silver_reference.py` and Silver) because the schemas changed. No counts were measured for this change in this document.
 
+Cairo time in Silver. Every Silver timestamp has a Cairo-time twin (`event_time_cairo`, `order_created_at_cairo`, `status_time_cairo` and the others listed in `docs/metrics.md`), written by the Silver transformation. A lake written before this change has no such columns: run `scripts/backfill_cairo_columns.py --lake data/lake` (plan only) and then with `--yes` once. The Databricks Silver mirror is rebuilt with `apply_ddl.py --recreate` and a new publish.
+
 ### 6. Gold reference build
 
 ```powershell

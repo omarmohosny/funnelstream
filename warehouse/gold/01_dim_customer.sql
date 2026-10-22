@@ -13,7 +13,7 @@ USING (
     SELECT c.customer_id, c.country, c.city, c.district, c.signup_date, c.primary_device, c.marketing_consent,
            c.updated_at,
            ROW_NUMBER() OVER (PARTITION BY c.customer_id,
-                                           CAST(from_utc_timestamp(c.updated_at, 'Africa/Cairo') AS DATE)
+                                           CAST(c.updated_at_cairo AS DATE)
                               ORDER BY c.updated_at DESC) AS rn
     FROM {silver}.silver_customers c
     WHERE c.customer_id IS NOT NULL AND c.updated_at IS NOT NULL

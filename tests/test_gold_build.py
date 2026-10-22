@@ -363,7 +363,7 @@ def test_window_predicates_are_in_the_expected_steps_and_summaries_delete_before
     for name in ("fact_orders", "fact_order_lines"):
         text = "\n".join(step_statements(name, values))
         assert "silver_order_status" in text and "event_date BETWEEN DATE'2026-10-01' AND DATE'2026-10-03'" in text
-        assert "order_created_at" in text and "Africa/Cairo" in text
+        assert "order_created_at_cairo" in text and "from_utc_timestamp" not in text  # the Cairo conversion is a Silver column
 
 
 def test_funnel_sql_carries_the_bot_rule_and_late_row_inclusion():

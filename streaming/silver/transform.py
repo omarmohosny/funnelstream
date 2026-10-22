@@ -8,10 +8,10 @@ from zoneinfo import ZoneInfo
 
 from contracts.geo import district_violation, normalize_district
 from contracts.stores import store_for
-from contracts.normalize import normalize_city, normalize_device, to_decimal, to_utc_iso
+from contracts.normalize import normalize_city, normalize_device, to_cairo_naive, to_decimal, to_utc_iso
 from contracts.validate import APP_EVENT_TYPES, INVENTORY_EVENT_TYPES, validate_raw
 from streaming.common.status import STATUS_RANK
-from streaming.silver.schemas import (CURRENCY, ERROR_CODES, LATE_AFTER_SECONDS, SILVER_EVENTS_COLUMNS,
+from streaming.silver.schemas import (CAIRO_TWINS, CURRENCY, ERROR_CODES, LATE_AFTER_SECONDS, SILVER_EVENTS_COLUMNS,
                                       SILVER_EXPRESS_ORDERS_COLUMNS, SILVER_ORDER_ITEMS_COLUMNS,
                                       SILVER_ORDER_STATUS_COLUMNS,
                                       SILVER_ORDERS_COLUMNS, SILVER_QUARANTINE_COLUMNS,
@@ -83,7 +83,13 @@ def _platform(v):
 
 
 def _row(columns, **values):
-    return {c: values.get(c) for c in columns}
+    """A row with every column of `columns`; the Cairo-time twins (CAIRO_TWINS) are derived here from their UTC column,
+    which is the Silver transformation to Cairo time."""
+    row = {c: values.get(c) for c in columns}
+    for twin, source in CAIRO_TWINS.items():
+        if twin in row and row[twin] is None and row.get(source) is not None:
+            row[twin] = to_cairo_naive(row[source])
+    return row
 
 
 def _clean_utm(v):

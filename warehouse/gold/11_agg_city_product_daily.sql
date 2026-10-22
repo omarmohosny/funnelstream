@@ -43,7 +43,7 @@ USING (
     SELECT o.order_id
     FROM {silver}.silver_orders o
     WHERE o.order_created_at IS NOT NULL
-      AND CAST(from_utc_timestamp(o.order_created_at, 'Africa/Cairo') AS DATE)
+      AND CAST(o.order_created_at_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
     UNION
     SELECT s.order_id
@@ -61,7 +61,7 @@ USING (
     SELECT DISTINCT e.event_date
     FROM {silver}.silver_events e
     WHERE e.event_date < DATE'{from_date}' AND e.kafka_timestamp IS NOT NULL
-      AND CAST(from_utc_timestamp(e.kafka_timestamp, 'Africa/Cairo') AS DATE)
+      AND CAST(e.kafka_timestamp_cairo AS DATE)
           BETWEEN DATE'{from_date}' AND DATE'{to_date}'
     UNION
     SELECT DISTINCT to_date(CAST(l.date_key AS STRING), 'yyyyMMdd')

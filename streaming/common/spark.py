@@ -25,6 +25,7 @@ def spark_conf() -> dict:
         "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
         "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         "spark.sql.shuffle.partitions": "8",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true",  # an older lake gains the *_cairo columns on the next MERGE
         "spark.databricks.delta.snapshotPartitions": os.environ.get("FS_DELTA_SNAPSHOT_PARTITIONS", "4"),
         "spark.sql.session.timeZone": "UTC",
         "spark.executorEnv.TZ": "UTC",

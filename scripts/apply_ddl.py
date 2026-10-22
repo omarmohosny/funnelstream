@@ -15,7 +15,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from warehouse.ddl_render import render_databricks, split_statements
+from warehouse.ddl_render import add_columns_statement, render_databricks, split_statements
 from warehouse.store import StoreConfigError, _ident, env_catalog, env_volume, get_store
 from warehouse.tables import all_tables
 from warehouse.unknown_members import seed_statements
@@ -56,6 +56,33 @@ def with_drops(statements, tables):
             out.append("DROP TABLE IF EXISTS %s.%s.%s;" % m.groups())
         out.append(stmt)
     return out
+
+
+def existing_columns(store, catalog, table):
+    """Column names of an existing Databricks table (DESCRIBE TABLE rows up to the first blank or # row)."""
+    names = []
+    for row in store.query("DESCRIBE TABLE %s.%s.%s" % (catalog, table.schema_group, table.name)):
+        if not isinstance(row[0], str):  # not a DESCRIBE answer: nothing is known about the table
+            return []
+        name = row[0].strip()
+        if not name or name.startswith("#"):
+            break
+        names.append(name)
+    return names
+
+
+def migrate_columns(store, catalog, tables=None):
+    """Add the columns a table lacks (CREATE TABLE IF NOT EXISTS never changes an existing table). Only adds: a column is
+    never dropped or retyped here. Returns the ALTER statements that ran."""
+    ran = []
+    for t in (all_tables() if tables is None else tables):
+        have = {c.lower() for c in existing_columns(store, catalog, t)}
+        missing = [c for c in t.columns if c.name.lower() not in have and not c.identity]
+        if have and missing:
+            stmt = add_columns_statement(t, missing, catalog)
+            store.execute(stmt)
+            ran.append(stmt)
+    return ran
 
 
 def main(argv=None):
@@ -132,6 +159,8 @@ def main(argv=None):
                 for stmt in statements:
                     store.execute(stmt)
                 n = len(statements)
+                for stmt in migrate_columns(store, catalog):
+                    print("added columns: %s" % stmt)
     except StoreConfigError as e:
         print("error: %s" % e, file=sys.stderr)
         return 2
